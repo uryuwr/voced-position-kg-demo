@@ -112,6 +112,10 @@ class UCAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
+        # CORS 预检：浏览器规范规定 OPTIONS 预检不携带 Authorization，
+        # 在此拦成 401 会让浏览器只报跨域。放行交给外层 CORSMiddleware 应答。
+        if request.method == "OPTIONS":
+            return await call_next(request)
         # 每个请求重置
         token = _current_user.set(None)
         try:

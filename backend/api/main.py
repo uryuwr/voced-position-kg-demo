@@ -142,15 +142,28 @@ app = FastAPI(
     },
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_CORS if _CORS != ["*"] else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-# 后添加 = 更靠外；请求先过 UC 鉴权
+# ⚠ 中间件顺序：Starlette 中「后 add = 更靠外」。
+# CORS 必须在最外层（最后 add），把鉴权包在里面。否则：
+#   1) CORS 预检 OPTIONS（按浏览器规范不带 Authorization）会被鉴权直接 401；
+#   2) 鉴权返回的 401 不经过 CORS 中间件、响应缺 Access-Control-* 头，
+#      浏览器只报「跨域」，看不到真实的鉴权失败原因。
 app.add_middleware(UCAuthMiddleware)
+
+_cors_kwargs: dict[str, Any] = {
+    "allow_credentials": True,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+    "expose_headers": ["*"],
+    "max_age": 600,
+}
+if _CORS == ["*"]:
+    # 用 allow_origin_regex 而非 allow_origins=["*"]：
+    # 后者与 allow_credentials=True 组合会回 `ACAO: *`，浏览器按规范拒收带凭据的响应；
+    # regex 匹配会回显具体 Origin，跨域携带 Authorization/Cookie 才能生效。
+    _cors_kwargs["allow_origin_regex"] = ".*"
+else:
+    _cors_kwargs["allow_origins"] = _CORS
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
 if SCHEMAS_DIR.exists():
     app.mount("/schemas", StaticFiles(directory=str(SCHEMAS_DIR)), name="schemas")

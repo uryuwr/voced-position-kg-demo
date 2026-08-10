@@ -38,10 +38,24 @@
     return _config;
   }
 
+  /**
+   * API 基地址。跨域部署时（前端与接口不同源）在页面里设置：
+   *   window.__VOCED_API_BASE__ = "http://192.168.1.50:8088";
+   * 不设置则回落当前页面 origin，同源行为与之前完全一致。
+   */
+  function apiBase() {
+    var b = String(window.__VOCED_API_BASE__ || "").replace(/\/+$/, "");
+    return b || window.location.origin;
+  }
+  /** 相对路径补成绝对地址；已是绝对地址则原样返回。 */
+  function absUrl(u) {
+    return /^https?:\/\//i.test(u) ? u : apiBase() + u;
+  }
+
   async function getAuthHeader(urlPath, method) {
     if (_config && _config.auth_bypass) return null;
     if (!_uc) throw new Error("UC SDK 未初始化");
-    const fullUrl = window.location.origin + urlPath;
+    const fullUrl = absUrl(urlPath);
     return await _uc.getAuthHeaderAsync({ url: fullUrl, method: method || "GET" });
   }
 
@@ -166,7 +180,7 @@
       h["Content-Type"] = h["Content-Type"] || "application/json";
       body = JSON.stringify(body);
     }
-    const res = await fetch(url, Object.assign({}, opts, { headers: h, body: body, method: method }));
+    const res = await fetch(absUrl(url), Object.assign({}, opts, { headers: h, body: body, method: method }));
     const text = await res.text();
     let data = null;
     try {
