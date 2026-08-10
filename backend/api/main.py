@@ -1139,6 +1139,16 @@ def api_list_edges(
     src_id: str | None = Query(None, description="仅起点 id"),
     dst_id: str | None = Query(None, description="仅终点 id"),
     q: str | None = Query(None, description="端点名称或边 id 关键字"),
+    status: str | None = Query(
+        None,
+        description=(
+            "状态过滤：published（默认只返回这个）| draft | archived | disabled。"
+            "归档边只留在库里、默认不返回；要核对或恢复时显式传 archived"
+        ),
+    ),
+    scope: str | None = Query(
+        None, description="manage=不限状态（管理端核对用）；缺省仅 published"
+    ),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     user: TempUser = Depends(require_temp_user),
@@ -1151,6 +1161,8 @@ def api_list_edges(
             src_id=src_id,
             dst_id=dst_id,
             q=q,
+            status=status,
+            scope=scope,
             page=page,
             page_size=page_size,
         )

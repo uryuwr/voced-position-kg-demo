@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.kg.pg_store.client import connect
-from backend.kg.pg_store.config import DEFAULT_REGION
+from backend.kg.pg_store.config import DEFAULT_REGION, edge_published
 from backend.kg.pg_store.migrate import stats as pg_stats
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
@@ -138,6 +138,9 @@ def _default_region(region: str | None) -> str | None:
 
 
 _PUBLISHED_SQL = "COALESCE(status, 'published') = 'published'"
+# 边可见性：归档/草稿边不对外返回。节点过滤挡不住两端都正常的边（如 parent_of）。
+_EDGE_PUB = edge_published("e")
+_EDGE_PUB_BARE = "COALESCE(status, 'published') = 'published'"
 
 
 def search_nodes(
@@ -378,12 +381,12 @@ def graph_by_industry(
 
         # majors → industry
         major_rows = conn.execute(
-            """
+            f"""
             SELECT m.*
             FROM kg_edge e
             JOIN kg_node m ON m.id = e.src_id AND m.type = 'major'
               AND COALESCE(m.status, 'published') = 'published'
-            WHERE e.dst_id = %s AND e.rel_type = 'belongs_to'
+            WHERE e.dst_id = %s AND e.rel_type = 'belongs_to' AND {_EDGE_PUB}
               AND COALESCE(e.status, 'published') = 'published'
             ORDER BY m.sort_order NULLS LAST, m.name, m.id
             """,
@@ -400,7 +403,7 @@ def graph_by_industry(
                 FROM kg_edge e
                 JOIN kg_node o ON o.id = e.dst_id AND o.type = 'occupation'
                   AND COALESCE(o.status, 'published') = 'published'
-                WHERE e.rel_type = 'prepares_for'
+                WHERE e.rel_type = 'prepares_for' AND {_EDGE_PUB}
                   AND e.src_id = ANY(%s)
                   AND COALESCE(e.status, 'published') = 'published'
                 ORDER BY o.sort_order NULLS LAST, o.name, o.id
@@ -416,7 +419,7 @@ def graph_by_industry(
                 FROM kg_edge e
                 JOIN kg_node o ON o.id = e.src_id AND o.type = 'occupation'
                   AND COALESCE(o.status, 'published') = 'published'
-                WHERE e.dst_id = %s AND e.rel_type = 'belongs_to'
+                WHERE e.dst_id = %s AND e.rel_type = 'belongs_to' AND {_EDGE_PUB}
                   AND COALESCE(e.status, 'published') = 'published'
                 ORDER BY o.sort_order NULLS LAST, o.name, o.id
                 """,
@@ -624,7 +627,7 @@ def occupation_requires(
     name: str, limit: int = 30, region: str | None = None
 ) -> list[dict]:
     reg = _default_region(region if region is not None else "CN")
-    sql = """
+    sql = f"""
     SELECT
       o.name AS occupation,
       o.source_url AS occupation_url,
@@ -636,7 +639,7 @@ def occupation_requires(
     FROM kg_edge e
     JOIN kg_node o ON o.id = e.src_id AND o.type = 'occupation'
     JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level'
-    WHERE e.rel_type = 'requires'
+    WHERE e.rel_type = 'requires' AND {_EDGE_PUB}
       AND lower(o.name) LIKE lower(%s)
       AND (%s::text IS NULL OR o.region = %s)
     ORDER BY e.weight DESC NULLS LAST
@@ -953,12 +956,18 @@ def list_edges(
     src_id: str | None = None,
     dst_id: str | None = None,
     q: str | None = None,
+    status: str | None = None,
+    scope: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
     """
     边列表（管理端核对删节点是否连带删边）。
     node_id：匹配 src 或 dst；可与 rel_type / q（端点名称）组合。
+
+    默认只返回 published——归档/草稿边只留在库里，接口不吐。
+    status 指定某一状态（如 archived）可精确查询；scope=manage 时不限状态，
+    供管理端核对与恢复。
     """
     page = max(1, int(page))
     page_size = max(1, min(int(page_size), 200))
@@ -970,9 +979,18 @@ def list_edges(
     did = (dst_id or "").strip() or None
     q_raw = (q or "").strip()
     q_like = f"%{q_raw}%" if q_raw else None
+    st = (status or "").strip() or None
+    if st in ("", "all", "*"):
+        st = None
+    manage = (scope or "").strip().lower() in ("manage", "admin", "all")
 
     where = ["1=1"]
     params: list[Any] = []
+    if st:
+        where.append("COALESCE(e.status, 'published') = %s")
+        params.append(st)
+    elif not manage:
+        where.append(_EDGE_PUB)
     if rel:
         where.append("e.rel_type = %s")
         params.append(rel)
@@ -1316,11 +1334,11 @@ def major_occupations(
     with connect() as conn:
         if major_id:
             rows = conn.execute(
-                """
+                f"""
                 SELECT o.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence, e.evidence
                 FROM kg_edge e
                 JOIN kg_node o ON o.id = e.dst_id AND o.type = 'occupation'
-                WHERE e.src_id = %s AND e.rel_type = 'prepares_for'
+                WHERE e.src_id = %s AND e.rel_type = 'prepares_for' AND {_EDGE_PUB}
                   AND COALESCE(e.status, 'published') <> 'archived'
                 ORDER BY o.name
                 LIMIT %s
@@ -1330,12 +1348,12 @@ def major_occupations(
         else:
             q_like = f"%{q}%" if q else None
             rows = conn.execute(
-                """
+                f"""
                 SELECT DISTINCT ON (o.id) o.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence
                 FROM kg_edge e
                 JOIN kg_node m ON m.id = e.src_id AND m.type = 'major'
                 JOIN kg_node o ON o.id = e.dst_id AND o.type = 'occupation'
-                WHERE e.rel_type = 'prepares_for'
+                WHERE e.rel_type = 'prepares_for' AND {_EDGE_PUB}
                   AND (%s::text IS NULL OR m.region = %s)
                   AND (%s::text IS NULL OR lower(m.name) LIKE lower(%s))
                 ORDER BY o.id, o.name
@@ -1368,11 +1386,11 @@ def occupation_skills(
     with connect() as conn:
         if occupation_id:
             rows = conn.execute(
-                """
+                f"""
                 SELECT s.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence, e.evidence
                 FROM kg_edge e
                 JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level'
-                WHERE e.src_id = %s AND e.rel_type = 'requires'
+                WHERE e.src_id = %s AND e.rel_type = 'requires' AND {_EDGE_PUB}
                   AND COALESCE(e.status, 'published') <> 'archived'
                 ORDER BY e.weight DESC NULLS LAST, s.name
                 LIMIT %s
@@ -1428,9 +1446,9 @@ def industry_tree(region: str | None = None, limit: int = 500) -> dict[str, Any]
         edges = []
         if ids:
             edges = conn.execute(
-                """
+                f"""
                 SELECT * FROM kg_edge
-                WHERE rel_type = 'parent_of'
+                WHERE rel_type = 'parent_of' AND {_EDGE_PUB_BARE}
                   AND src_id = ANY(%s) AND dst_id = ANY(%s)
                 """,
                 (ids, ids),
@@ -1460,11 +1478,11 @@ def industry_occupations(
 ) -> list[dict[str, Any]]:
     with connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT o.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence
             FROM kg_edge e
             JOIN kg_node o ON o.id = e.src_id AND o.type = 'occupation'
-            WHERE e.dst_id = %s AND e.rel_type = 'belongs_to'
+            WHERE e.dst_id = %s AND e.rel_type = 'belongs_to' AND {_EDGE_PUB}
               AND COALESCE(e.status, 'published') <> 'archived'
             ORDER BY o.name
             LIMIT %s

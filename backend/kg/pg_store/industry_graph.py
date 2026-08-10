@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import connect
-from backend.kg.pg_store.config import DEFAULT_REGION
+from backend.kg.pg_store.config import DEFAULT_REGION, edge_published
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 from backend.kg.pg_store.skill_taxonomy import (
     UNCATEGORIZED,
@@ -18,6 +18,12 @@ from backend.kg.pg_store.skill_taxonomy import (
 )
 
 _PUB_N = "COALESCE(n.status,'published')='published'"
+
+# 边可见性：归档/草稿边不对外返回（各别名一份，供 f-string SQL 内插）
+EP_E = edge_published("e")
+EP_BE = edge_published("be")
+EP_PE = edge_published("pe")
+EP_RE = edge_published("re")
 
 
 def search_industries(
@@ -34,9 +40,11 @@ def search_industries(
                    count(DISTINCT o.id) AS occupation_count
             FROM kg_node n
             LEFT JOIN kg_edge be ON be.dst_id = n.id AND be.rel_type = 'belongs_to'
+                 AND {EP_BE}
             LEFT JOIN kg_node m ON m.id = be.src_id AND m.type = 'major'
                  AND COALESCE(m.status,'published') = 'published'
             LEFT JOIN kg_edge pe ON pe.src_id = m.id AND pe.rel_type = 'prepares_for'
+                 AND {EP_PE}
             LEFT JOIN kg_node o ON o.id = pe.dst_id AND o.type = 'occupation'
                  AND COALESCE(o.status,'published') = 'published'
             WHERE n.type = 'industry' AND {_PUB_N}
@@ -89,9 +97,10 @@ def industry_graph(
             FROM kg_edge be
             JOIN kg_node n ON n.id = be.src_id AND n.type='major' AND {_PUB_N}
             LEFT JOIN kg_edge pe ON pe.src_id = n.id AND pe.rel_type='prepares_for'
+                 AND {EP_PE}
             LEFT JOIN kg_node o ON o.id = pe.dst_id AND o.type='occupation'
                  AND COALESCE(o.status,'published')='published'
-            WHERE be.dst_id = %s AND be.rel_type = 'belongs_to'
+            WHERE be.dst_id = %s AND be.rel_type = 'belongs_to' AND {EP_BE}
             GROUP BY n.id, n.name, n.attrs, n.region
             ORDER BY count(DISTINCT o.id) DESC, n.name
             LIMIT %s
@@ -101,7 +110,7 @@ def industry_graph(
         major_total = conn.execute(
             f"""SELECT count(*) c FROM kg_edge be JOIN kg_node n ON n.id=be.src_id
                 AND n.type='major' AND {_PUB_N}
-                WHERE be.dst_id=%s AND be.rel_type='belongs_to'""",
+                WHERE be.dst_id=%s AND be.rel_type='belongs_to' AND {EP_BE}""",
             (iid,),
         ).fetchone()["c"]
 
@@ -116,7 +125,7 @@ def industry_graph(
                 f"""SELECT count(DISTINCT o.id) c FROM kg_edge pe
                     JOIN kg_node o ON o.id=pe.dst_id AND o.type='occupation'
                     AND COALESCE(o.status,'published')='published'
-                    WHERE pe.src_id = ANY(%s) AND pe.rel_type='prepares_for'""",
+                    WHERE pe.src_id = ANY(%s) AND pe.rel_type='prepares_for' AND {EP_PE}""",
                 (major_ids,),
             ).fetchone()["c"]
             # 每个专业各取前 N 个岗位（按技能数倒序，技能多的更有代表性）
@@ -132,7 +141,8 @@ def industry_graph(
                   FROM kg_edge pe
                   JOIN kg_node n ON n.id = pe.dst_id AND n.type='occupation' AND {_PUB_N}
                   LEFT JOIN kg_edge re ON re.src_id = n.id AND re.rel_type='requires'
-                  WHERE pe.src_id = ANY(%s) AND pe.rel_type='prepares_for'
+                 AND {EP_RE}
+                  WHERE pe.src_id = ANY(%s) AND pe.rel_type='prepares_for' AND {EP_PE}
                   GROUP BY pe.src_id, n.id, n.name, n.level, n.region
                 ) t WHERE t.rn <= %s
                 """,
@@ -220,7 +230,8 @@ def occupation_skills_graph(
             SELECT ({SKILL_KEY_SQL}) AS skill_key, n.category,
                    array_agg(DISTINCT (n.attrs::json->>'level_code')) AS levels
             FROM kg_edge e JOIN kg_node n ON n.id = e.dst_id
-            WHERE e.src_id=%s AND e.rel_type='requires' AND n.type='skill_level' AND {_PUB_N}
+            WHERE e.src_id=%s AND e.rel_type='requires' AND {EP_E}
+              AND n.type='skill_level' AND {_PUB_N}
             GROUP BY 1, 2
             ORDER BY 1
             LIMIT %s
@@ -305,12 +316,12 @@ def _build_matrix(conn, major_ids: list[str], occ_ids: list[str]) -> dict[str, A
         WITH mo AS (
           SELECT pe.src_id AS m, pe.dst_id AS o
           FROM kg_edge pe
-          WHERE pe.rel_type='prepares_for'
+          WHERE pe.rel_type='prepares_for' AND {EP_PE}
             AND pe.src_id = ANY(%s) AND pe.dst_id = ANY(%s)
         ), os AS (
           SELECT e.src_id AS o, ({SKILL_KEY_SQL}) AS k
           FROM kg_edge e JOIN kg_node n ON n.id = e.dst_id
-          WHERE e.rel_type='requires' AND n.type='skill_level' AND {_PUB_N}
+          WHERE e.rel_type='requires' AND {EP_E} AND n.type='skill_level' AND {_PUB_N}
             AND e.src_id = ANY(%s)
         ), ms AS (
           SELECT mo.m, os.k, count(DISTINCT os.o) AS cnt

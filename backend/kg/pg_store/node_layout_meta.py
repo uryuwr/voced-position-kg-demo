@@ -14,9 +14,13 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import connect
+from backend.kg.pg_store.config import edge_published
 
 _PUB_E = "COALESCE(e.status, 'published') = 'published'"
 
+
+# child_count 不计归档/草稿边，否则前端树上的子节点数与实际可见数不一致
+EP_E = edge_published("e")
 
 def refresh_sort_order(*, region: str | None = None) -> int:
     """按 region+type 内 name,id 排序写入 sort_order（从 1 起）。"""
@@ -95,7 +99,7 @@ def refresh_child_count(*, region: str | None = None) -> int:
               FROM kg_edge e
               JOIN kg_node m ON m.id = e.src_id AND m.type = 'major'
                 AND COALESCE(m.status, 'published') = 'published'
-              WHERE e.rel_type = 'belongs_to' AND {_PUB_E}
+              WHERE e.rel_type = 'belongs_to' AND {EP_E} AND {_PUB_E}
               GROUP BY e.dst_id
             ) s
             WHERE n.id = s.id AND n.type = 'industry' {reg_sql}
@@ -111,7 +115,7 @@ def refresh_child_count(*, region: str | None = None) -> int:
               FROM kg_edge e
               JOIN kg_node o ON o.id = e.dst_id AND o.type = 'occupation'
                 AND COALESCE(o.status, 'published') = 'published'
-              WHERE e.rel_type = 'prepares_for' AND {_PUB_E}
+              WHERE e.rel_type = 'prepares_for' AND {EP_E} AND {_PUB_E}
               GROUP BY e.src_id
             ) s
             WHERE n.id = s.id AND n.type = 'major' {reg_sql}
@@ -127,7 +131,7 @@ def refresh_child_count(*, region: str | None = None) -> int:
               FROM kg_edge e
               JOIN kg_node sk ON sk.id = e.dst_id AND sk.type = 'skill_level'
                 AND COALESCE(sk.status, 'published') = 'published'
-              WHERE e.rel_type = 'requires' AND {_PUB_E}
+              WHERE e.rel_type = 'requires' AND {EP_E} AND {_PUB_E}
               GROUP BY e.src_id
             ) s
             WHERE n.id = s.id AND n.type = 'occupation' {reg_sql}

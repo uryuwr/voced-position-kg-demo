@@ -4,7 +4,13 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import connect
+from backend.kg.pg_store.config import edge_published
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
+
+# 关联计数不能把归档/草稿边算进去，否则前端显示的关联数虚高
+EP_E = edge_published("e")
+EP_PF = edge_published("pf")
+EP_RQ = edge_published("rq")
 
 _PUB_N = "COALESCE(n.status, 'published') = 'published'"
 _PUB_E = "COALESCE(e.status, 'published') = 'published'"
@@ -37,7 +43,7 @@ def counts_for_industries(ids: list[str]) -> dict[str, dict[str, int]]:
             SELECT e.dst_id AS id, count(DISTINCT e.src_id) AS c
             FROM kg_edge e
             JOIN kg_node o ON o.id = e.src_id AND o.type = 'occupation' AND {_PUB_O}
-            WHERE e.rel_type = 'belongs_to'
+            WHERE e.rel_type = 'belongs_to' AND {EP_E}
               AND e.dst_id = ANY(%s)
               AND {_PUB_E}
             GROUP BY e.dst_id
@@ -54,7 +60,7 @@ def counts_for_industries(ids: list[str]) -> dict[str, dict[str, int]]:
             SELECT e.dst_id AS id, count(DISTINCT e.src_id) AS c
             FROM kg_edge e
             JOIN kg_node m ON m.id = e.src_id AND m.type = 'major' AND {_PUB_M}
-            WHERE e.rel_type = 'belongs_to'
+            WHERE e.rel_type = 'belongs_to' AND {EP_E}
               AND e.dst_id = ANY(%s)
               AND {_PUB_E}
             GROUP BY e.dst_id
@@ -78,7 +84,7 @@ def counts_for_majors(ids: list[str]) -> dict[str, dict[str, int]]:
             SELECT e.src_id AS id, count(DISTINCT e.dst_id) AS c
             FROM kg_edge e
             JOIN kg_node o ON o.id = e.dst_id AND o.type = 'occupation' AND {_PUB_O}
-            WHERE e.rel_type = 'prepares_for'
+            WHERE e.rel_type = 'prepares_for' AND {EP_E}
               AND e.src_id = ANY(%s)
               AND {_PUB_E}
             GROUP BY e.src_id
@@ -95,10 +101,10 @@ def counts_for_majors(ids: list[str]) -> dict[str, dict[str, int]]:
             SELECT pf.src_id AS id, count(DISTINCT ({SKILL_KEY_SQL})) AS c
             FROM kg_edge pf
             JOIN kg_node o ON o.id = pf.dst_id AND o.type = 'occupation' AND {_PUB_O}
-            JOIN kg_edge rq ON rq.src_id = o.id AND rq.rel_type = 'requires'
+            JOIN kg_edge rq ON rq.src_id = o.id AND rq.rel_type = 'requires' AND {EP_RQ}
               AND COALESCE(rq.status, 'published') = 'published'
             JOIN kg_node n ON n.id = rq.dst_id AND n.type = 'skill_level' AND {_PUB_N}
-            WHERE pf.rel_type = 'prepares_for'
+            WHERE pf.rel_type = 'prepares_for' AND {EP_PF}
               AND pf.src_id = ANY(%s)
               AND COALESCE(pf.status, 'published') = 'published'
             GROUP BY pf.src_id
@@ -122,7 +128,7 @@ def counts_for_occupations(ids: list[str]) -> dict[str, dict[str, int]]:
             SELECT e.src_id AS id, count(DISTINCT ({SKILL_KEY_SQL})) AS c
             FROM kg_edge e
             JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level' AND {_PUB_N}
-            WHERE e.rel_type = 'requires'
+            WHERE e.rel_type = 'requires' AND {EP_E}
               AND e.src_id = ANY(%s)
               AND {_PUB_E}
             GROUP BY e.src_id
@@ -138,7 +144,7 @@ def counts_for_occupations(ids: list[str]) -> dict[str, dict[str, int]]:
             SELECT e.dst_id AS id, count(DISTINCT e.src_id) AS c
             FROM kg_edge e
             JOIN kg_node m ON m.id = e.src_id AND m.type = 'major' AND {_PUB_M}
-            WHERE e.rel_type = 'prepares_for'
+            WHERE e.rel_type = 'prepares_for' AND {EP_E}
               AND e.dst_id = ANY(%s)
               AND {_PUB_E}
             GROUP BY e.dst_id
@@ -157,7 +163,7 @@ def counts_for_occupations(ids: list[str]) -> dict[str, dict[str, int]]:
               FROM kg_edge e
               JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry'
                 AND COALESCE(i.status, 'published') NOT IN ('archived', 'disabled')
-              WHERE e.rel_type = 'belongs_to'
+              WHERE e.rel_type = 'belongs_to' AND {EP_E}
                 AND e.src_id = ANY(%s)
                 AND COALESCE(e.status, 'published') NOT IN ('archived')
               UNION
@@ -165,11 +171,11 @@ def counts_for_occupations(ids: list[str]) -> dict[str, dict[str, int]]:
               FROM kg_edge pf
               JOIN kg_node m ON m.id = pf.src_id AND m.type = 'major'
                 AND COALESCE(m.status, 'published') NOT IN ('archived', 'disabled')
-              JOIN kg_edge e ON e.src_id = m.id AND e.rel_type = 'belongs_to'
+              JOIN kg_edge e ON e.src_id = m.id AND e.rel_type = 'belongs_to' AND {EP_E}
                 AND COALESCE(e.status, 'published') NOT IN ('archived')
               JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry'
                 AND COALESCE(i.status, 'published') NOT IN ('archived', 'disabled')
-              WHERE pf.rel_type = 'prepares_for'
+              WHERE pf.rel_type = 'prepares_for' AND {EP_PF}
                 AND pf.dst_id = ANY(%s)
                 AND COALESCE(pf.status, 'published') NOT IN ('archived')
             ) t
@@ -216,7 +222,7 @@ def industries_for_occupations(
             SELECT e.src_id AS occ_id, i.id, i.name
             FROM kg_edge e
             JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry' AND {i_ok}
-            WHERE e.rel_type = 'belongs_to'
+            WHERE e.rel_type = 'belongs_to' AND {EP_E}
               AND e.src_id = ANY(%s)
               AND {e_ok}
             ORDER BY e.src_id, i.name, i.id
@@ -229,9 +235,9 @@ def industries_for_occupations(
             SELECT pf.dst_id AS occ_id, i.id, i.name
             FROM kg_edge pf
             JOIN kg_node m ON m.id = pf.src_id AND m.type = 'major' AND {m_ok}
-            JOIN kg_edge e ON e.src_id = m.id AND e.rel_type = 'belongs_to' AND {e_ok}
+            JOIN kg_edge e ON e.src_id = m.id AND e.rel_type = 'belongs_to' AND {EP_E} AND {e_ok}
             JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry' AND {i_ok}
-            WHERE pf.rel_type = 'prepares_for'
+            WHERE pf.rel_type = 'prepares_for' AND {EP_PF}
               AND pf.dst_id = ANY(%s)
               AND COALESCE(pf.status, 'published') NOT IN ('archived')
             ORDER BY pf.dst_id, i.name, i.id
