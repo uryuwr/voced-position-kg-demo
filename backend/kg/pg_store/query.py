@@ -802,11 +802,12 @@ def explore_graph(
                 if not frontier or len(nodes_map) >= max_nodes:
                     break
                 rows = conn.execute(
-                    """
-                    SELECT e.*, 
+                    f"""
+                    SELECT e.*,
                            CASE WHEN e.src_id = ANY(%s) THEN e.dst_id ELSE e.src_id END AS other_id
                     FROM kg_edge e
                     WHERE (e.src_id = ANY(%s) OR e.dst_id = ANY(%s))
+                      AND {_EDGE_PUB}
                       AND (%s::text[] IS NULL OR e.confidence = ANY(%s))
                       AND (%s::text[] IS NULL OR e.rel_type = ANY(%s))
                     LIMIT %s
