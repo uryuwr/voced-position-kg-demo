@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>知识图谱 · 行业 → 专业 → 岗位 → 技能</title>
+  <script src="/js/api-client.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+  <style>
+    :root {
+      --bg:#f8fafc; --panel:#fff; --line:#e2e8f0; --text:#0f172a; --muted:#64748b;
+      --primary:#2563eb; --ind:#1d4ed8; --maj:#3b82f6; --occ:#93c5fd; --sk:#94a3b8;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text);
+      font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif; }
+    header { background:var(--panel); border-bottom:1px solid var(--line); padding:14px 20px 12px; }
+    header h1 { margin:0 0 2px; font-size:19px; }
+    header .sub { color:var(--muted); font-size:12px; }
+    .bar { display:flex; gap:10px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+    .search { position:relative; flex:1 1 320px; max-width:460px; }
+    .search input { width:100%; border:1px solid #cbd5e1; border-radius:8px;
+      padding:9px 12px; font-size:14px; outline:none; }
+    .search input:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+    .sg { position:absolute; z-index:60; left:0; right:0; top:calc(100% + 4px); background:#fff;
+      border:1px solid var(--line); border-radius:8px; box-shadow:0 10px 30px rgba(15,23,42,.12);
+      max-height:320px; overflow:auto; display:none; }
+    .sg.on { display:block; }
+    .sg-item { padding:8px 12px; cursor:pointer; display:flex; align-items:center; gap:8px; font-size:13px; }
+    .sg-item:hover, .sg-item.active { background:#eff6ff; }
+    .sg-item .nm { flex:1; }
+    .sg-item .ct { color:var(--muted); font-size:11px; }
+    .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    .seg button { border:0; background:#fff; padding:8px 14px; font-size:13px; cursor:pointer; color:var(--muted); }
+    .seg button.on { background:var(--primary); color:#fff; font-weight:600; }
+    .chip { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:999px;
+      padding:5px 12px; font-size:13px; font-weight:600; display:inline-flex; gap:8px; align-items:center; }
+    .chip button { border:0; background:transparent; cursor:pointer; color:#1d4ed8; font-size:15px; line-height:1; }
+    .meta { color:var(--muted); font-size:12px; }
+    main { padding:16px 20px 24px; }
+    .stage { position:relative; background:var(--panel); border:1px solid var(--line);
+      border-radius:12px; height:calc(100vh - 210px); min-height:440px; overflow:hidden; }
+    #cy { width:100%; height:100%; }
+    .lanes { position:absolute; left:0; top:0; width:66px; height:100%; pointer-events:none;
+      font-size:12px; color:var(--muted); }
+    .lane { position:absolute; left:12px; }
+    .empty { display:flex; align-items:center; justify-content:center; height:100%;
+      color:var(--muted); font-size:14px; flex-direction:column; gap:14px; text-align:center; }
+    .cards { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; max-width:760px; }
+    .card { border:1px solid var(--line); border-radius:10px; padding:10px 14px; cursor:pointer;
+      background:#fff; font-size:13px; min-width:150px; text-align:left; }
+    .card:hover { border-color:var(--primary); background:#eff6ff; }
+    .card b { display:block; color:var(--text); }
+    .card span { color:var(--muted); font-size:11px; }
+    /* 热力图 */
+    .heat { height:100%; overflow:auto; padding:12px; display:none; }
+    .heat table { border-collapse:separate; border-spacing:2px; font-size:12px; }
+    .heat th { font-weight:500; color:var(--muted); text-align:left; padding:3px 6px; white-space:nowrap; }
+    .heat th.col { writing-mode:vertical-rl; text-orientation:mixed; height:110px; vertical-align:bottom; }
+    .heat td { width:24px; height:24px; border-radius:4px; background:#f1f5f9; cursor:pointer; }
+    .heat td:hover { outline:2px solid var(--primary); }
+    /* 技能图谱覆盖层 */
+    .sk-view { position:fixed; inset:0; background:rgba(248,250,252,.98); z-index:80; display:none;
+      flex-direction:column; padding:16px 20px; }
+    .sk-view.on { display:flex; }
+    .sk-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+    .sk-head h2 { margin:0; font-size:17px; }
+    .sk-head .back { border:1px solid var(--line); background:#fff; border-radius:8px;
+      padding:7px 12px; cursor:pointer; font-size:13px; }
+    .sk-stage { flex:1; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+    #skcy { width:100%; height:100%; }
+    .legend { display:flex; gap:14px; align-items:center; font-size:12px; color:var(--muted); margin-top:10px; flex-wrap:wrap; }
+    .legend i { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:4px; }
+    .toast { position:fixed; left:50%; top:14px; transform:translateX(-50%); background:#0f172a; color:#fff;
+      padding:8px 16px; border-radius:8px; font-size:13px; z-index:99; display:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>知识图谱</h1>
+    <div class="sub">行业 → 专业 → 岗位 三层关联图。点击岗位查看其技能图谱（分类 + 前置关系）。</div>
+    <div class="bar">
+      <div class="search">
+        <input id="q" placeholder="搜索行业，如「建筑」「制造」「电子」" autocomplete="off" />
+        <div class="sg" id="sg"></div>
+      </div>
+      <div class="seg">
+        <button id="btnLayered" class="on" type="button">垂直分层</button>
+        <button id="btnMatrix" type="button">热力图</button>
+      </div>
+      <span id="chipBox"></span>
+      <span class="meta" id="meta"></span>
+    </div>
+  </header>
+  <main>
+    <div class="stage">
+      <div class="lanes" id="lanes"></div>
+      <div id="cy"></div>
+      <div class="heat" id="heat"></div>
+      <div class="empty" id="empty">
+        <div>请选择一个行业开始</div>
+        <div class="cards" id="cards"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--ind)"></i>行业</span>
+      <span><i style="background:var(--maj)"></i>专业</span>
+      <span><i style="background:var(--occ)"></i>岗位</span>
+      <span>—— 归属 belongs_to　—— 培养 prepares_for　<b style="color:#7c3aed">—— 晋升 advances_to</b></span>
+    </div>
+  </main>
+
+  <div class="sk-view" id="skView">
+    <div class="sk-head">
+      <button class="back" id="skBack" type="button">← 返回行业图</button>
+      <h2 id="skTitle">技能图谱</h2>
+      <span class="meta" id="skMeta"></span>
+    </div>
+    <div class="sk-stage"><div id="skcy"></div></div>
+    <div class="legend">
+      <span><b>学习顺序：从左上角开始，顺着箭头走</b></span>
+      <span>虚线框 = 技能分类，按学习顺序从左到右编号（国标职业功能维度）</span>
+      <span>区内自上而下 = 前置层深，最上一排无前置可直接学</span>
+      <span><b style="color:#16a34a">──→</b> 箭尾先学、箭头指向后学</span>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[m]));
+    const COLOR = { industry:"#1d4ed8", major:"#3b82f6", occupation:"#93c5fd" };
+    let cy = null, skcy = null, curIndustry = null, curData = null, view = "layered";
+
+    function toast(msg) {
+      const t = $("toast"); t.textContent = msg; t.style.display = "block";
+      setTimeout(() => { t.style.display = "none"; }, 2600);
+    }
+    // UC MAC 签名基于完整 URL，同一个 URL 重复请求会被 UC 判为重放（INVALID_MAC → 401）。
+    // 首屏 loadCards() 与用户清空搜索框会发出完全相同的 /v1/industries/search?limit=30，
+    // 因此给每个请求带一个自增序号让 URL 唯一。后端忽略未声明的 query 参数。
+    let _seq = 0;
+    function uniq(url) { return url + (url.includes("?") ? "&" : "?") + "_n=" + (++_seq); }
+    async function api(url) {
+      return await window.VocedApi.apiFetch(uniq(url), {});
+    }
+
+    /* ---------- 行业搜索 ---------- */
+    let sgData = [], sgIdx = -1, sgTimer = null, sgSeq = 0;
+    async function fetchIndustries(kw, opts) {
+      const mine = ++sgSeq;
+      try {
+        const rows = await api("/v1/industries/search?limit=30" + (kw ? "&q=" + encodeURIComponent(kw) : ""));
+        if (mine !== sgSeq) return null;          // 已有更新的一次搜索，丢弃这批结果
+        return Array.isArray(rows) ? rows : [];
+      } catch (e) {
+        if (mine !== sgSeq) return null;
+        if (!(opts && opts.silent)) toast("行业搜索失败：" + (e.message || e));
+        return [];
+      }
+    }
+    function renderSuggest(rows) {
+      sgData = rows; sgIdx = -1;
+      if (!rows.length) { $("sg").classList.remove("on"); return; }
+      $("sg").innerHTML = rows.map((r, i) =>
+        `<div class="sg-item" data-i="${i}"><span class="nm">${esc(r.name)}</span>`
+        + `<span class="ct">专业 ${r.major_count} · 岗位 ${r.occupation_count}</span></div>`).join("");
+      $("sg").classList.add("on");
+      $("sg").querySelectorAll("[data-i]").forEach((el) => {
+        el.onclick = () => pickIndustry(sgData[Number(el.dataset.i)]);
+      });
+    }
+    $("q").addEventListener("input", () => {
+      clearTimeout(sgTimer);
+      sgTimer = setTimeout(async () => {
+        const rows = await fetchIndustries($("q").value.trim());
+        if (rows) renderSuggest(rows);          // null = 结果已过期
+      }, 220);
+    });
+    $("q").addEventListener("keydown", (e) => {
+      const items = $("sg").querySelectorAll(".sg-item");
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault(); if (!items.length) return;
+        sgIdx = (sgIdx + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+        items.forEach((el, i) => el.classList.toggle("active", i === sgIdx));
+      } else if (e.key === "Enter") {
+        if (sgIdx >= 0 && sgData[sgIdx]) pickIndustry(sgData[sgIdx]);
+      } else if (e.key === "Escape") { $("sg").classList.remove("on"); }
+    });
+    document.addEventListener("click", (e) => {
+      if (!$("sg").contains(e.target) && e.target !== $("q")) $("sg").classList.remove("on");
+    });
+
+    function pickIndustry(row) {
+      if (!row) return;
+      curIndustry = row;
+      $("sg").classList.remove("on");
+      $("q").value = "";
+      $("chipBox").innerHTML = `<span class="chip">${esc(row.name)}<button type="button" id="chipX" aria-label="清除">×</button></span>`;
+      $("chipX").onclick = resetAll;
+      load();
+    }
+    function resetAll() {
+      curIndustry = null; curData = null;
+      $("chipBox").innerHTML = ""; $("meta").textContent = "";
+      $("empty").style.display = "flex"; $("heat").style.display = "none"; $("cy").style.display = "";
+      $("lanes").innerHTML = "";
+      if (cy) cy.elements().remove();
+      loadCards();
+    }
+
+    /* ---------- 初始行业卡片 ---------- */
+    async function loadCards() {
+      const rows = await fetchIndustries("");
+      if (!rows || !rows.length) return;
+      $("cards").innerHTML = rows.slice(0, 12).map((r, i) =>
+        `<button class="card" data-c="${i}"><b>${esc(r.name)}</b><span>专业 ${r.major_count} · 岗位 ${r.occupation_count}</span></button>`).join("");
+      $("cards").querySelectorAll("[data-c]").forEach((el) => {
+        el.onclick = () => pickIndustry(rows[Number(el.dataset.c)]);
+      });
+    }
+
+    /* ---------- 主图 ---------- */
+    async function load() {
+      if (!curIndustry) return;
+      $("empty").style.display = "none";
+      const url = "/v1/industry-graph?industry_id=" + encodeURIComponent(curIndustry.id)
+                + "&layout=" + (view === "matrix" ? "matrix" : "layered")
+                + "&limit_majors=" + (view === "matrix" ? 12 : 20);
+      try {
+        curData = await api(url);
+      } catch (e) {
+        $("empty").style.display = "flex";
+        toast("加载失败：" + (e.message || e));
+        return;
+      }
+      const m = curData.meta || {};
+      $("meta").textContent = `专业 ${m.major_shown}/${m.major_total} · 岗位 ${m.occupation_shown}/${m.occupation_total}`
+        + (m.truncated ? " · 已按关联度截断" : "") + ` · 晋升链 ${(curData.progressions || []).length}`;
+      if (view === "matrix") drawMatrix(); else drawLayered();
+    }
+
+    function initCy() {
+      if (cy) return cy;
+      cy = cytoscape({
+        container: $("cy"), elements: [], wheelSensitivity: 0.2, minZoom: 0.2, maxZoom: 3,
+        autounselectify: true, boxSelectionEnabled: false,
+        style: [
+          { selector: "node", style: {
+              "background-color": "data(color)", label: "data(label)", "font-size": 10,
+              color: "#334155", "text-valign": "bottom", "text-margin-y": 4, "text-wrap": "wrap",
+              "text-max-width": 88, "border-width": 1.5, "border-color": "#fff",
+              "text-background-color": "#fff", "text-background-opacity": .85,
+              "text-background-padding": 2, "text-background-shape": "roundrectangle" } },
+          { selector: "node.industry", style: { width: 46, height: 46, "font-size": 13, "font-weight": 600 } },
+          { selector: "node.major", style: { width: 30, height: 30, "font-size": 11 } },
+          { selector: "node.occupation", style: { width: 20, height: 20 } },
+          { selector: "edge", style: { width: 1, "line-color": "#cbd5e1", "curve-style": "bezier", opacity: .65 } },
+          { selector: "edge.adv", style: { width: 2.4, "line-color": "#7c3aed", "target-arrow-color": "#7c3aed",
+              "target-arrow-shape": "triangle", opacity: .95, "z-index": 20 } },
+          { selector: ".dim", style: { opacity: .07, "text-opacity": .05 } },
+          { selector: "node.focus", style: { "border-width": 3, "border-color": "#0f172a" } },
+        ],
+      });
+      cy.on("tap", "node", (e) => {
+        const d = e.target.data();
+        if (d.type === "occupation") openSkills(d.id, d.label);
+        else focusSubtree(e.target);
+      });
+      cy.on("tap", (e) => { if (e.target === cy) cy.elements().removeClass("dim focus"); });
+      return cy;
+    }
+
+    /** 三层手动布局：行业居顶、专业一行、岗位一行 —— 比自动力导向更贴合「分层」语义 */
+    function drawLayered() {
+      $("heat").style.display = "none"; $("cy").style.display = "";
+      initCy();
+      const d = curData, majors = d.layers.majors, occs = d.layers.occupations;
+      const W = $("cy").clientWidth || 1000, H = $("cy").clientHeight || 520;
+      const yI = 60, yM = H * 0.42, yO = H - 90;
+      const els = [];
+      els.push({ data: { id: d.industry.id, label: d.industry.name, type: "industry", color: COLOR.industry }, classes: "industry", position: { x: W / 2, y: yI } });
+      const spanM = Math.max(W - 160, 240), stepM = majors.length > 1 ? spanM / (majors.length - 1) : 0;
+      majors.forEach((m, i) => els.push({ data: { id: m.id, label: m.name, type: "major", color: COLOR.major },
+        classes: "major", position: { x: majors.length > 1 ? 80 + i * stepM : W / 2, y: yM } }));
+      const spanO = Math.max(W - 100, 240), stepO = occs.length > 1 ? spanO / (occs.length - 1) : 0;
+      occs.forEach((o, i) => els.push({ data: { id: o.id, label: o.name, type: "occupation", color: COLOR.occupation, skills: o.skill_count },
+        classes: "occupation", position: { x: occs.length > 1 ? 50 + i * stepO : W / 2, y: yO + (i % 2 ? 34 : 0) } }));
+      const ids = new Set(els.map((e) => e.data.id));
+      (d.links || []).forEach((l, i) => {
+        if (ids.has(l.from) && ids.has(l.to)) els.push({ data: { id: "l" + i, source: l.from, target: l.to } });
+      });
+      (d.progressions || []).forEach((p, i) => {
+        if (ids.has(p.from) && ids.has(p.to)) els.push({ data: { id: "p" + i, source: p.from, target: p.to }, classes: "adv" });
+      });
+      cy.batch(() => { cy.elements().remove(); cy.add(els); });
+      cy.fit(undefined, 30);
+      $("lanes").innerHTML = ["行业", "专业", "岗位"].map((t, i) =>
+        `<div class="lane" style="top:${[yI, yM, yO][i] - 8}px">${t}</div>`).join("");
+    }
+
+    /** 点行业/专业 → 高亮其子树，其余淡出 */
+    function focusSubtree(node) {
+      let keep = node.union(node.outgoers().targets());
+      keep = keep.union(keep.outgoers().targets());
+      cy.batch(() => {
+        cy.elements().addClass("dim").removeClass("focus");
+        keep.removeClass("dim"); keep.edgesWith(keep).removeClass("dim");
+        node.addClass("focus");
+      });
+    }
+
+    /* ---------- 热力图 ---------- */
+    function drawMatrix() {
+      $("cy").style.display = "none"; $("lanes").innerHTML = "";
+      const box = $("heat"); box.style.display = "block";
+      const d = curData, mx = d.matrix;
+      if (!mx || !mx.cells.length) { box.innerHTML = '<div class="empty">该行业暂无可用的关联强度数据</div>'; return; }
+      const mName = Object.fromEntries(d.layers.majors.map((m) => [m.id, m.name]));
+      const oName = Object.fromEntries(d.layers.occupations.map((o) => [o.id, o.name]));
+      const grid = {};
+      mx.cells.forEach((c) => { grid[c.r + ":" + c.c] = c.v; });
+      const max = mx.max || 1;
+      let h = "<table><tr><th></th>" + mx.cols.map((c) => `<th class="col">${esc(oName[c] || c)}</th>`).join("") + "</tr>";
+      mx.rows.forEach((r, ri) => {
+        h += `<tr><th>${esc(mName[r] || r)}</th>`;
+        mx.cols.forEach((c, ci) => {
+          const v = grid[ri + ":" + ci] || 0;
+          const a = v ? (0.15 + 0.85 * (v / max)) : 0;
+          h += `<td title="${esc(mName[r])} × ${esc(oName[c])}：${v}" data-o="${esc(c)}" data-n="${esc(oName[c] || "")}"`
+             + (v ? ` style="background:rgba(37,99,235,${a.toFixed(2)})"` : "") + "></td>";
+        });
+        h += "</tr>";
+      });
+      box.innerHTML = h + "</table><div class='meta' style='margin-top:10px'>颜色深浅 = 技能贴合度（该岗位技能与同专业其他岗位的重合量），点格子看技能图谱</div>";
+      box.querySelectorAll("td[data-o]").forEach((td) => {
+        td.onclick = () => openSkills(td.dataset.o, td.dataset.n);
+      });
+    }
+
+    $("btnLayered").onclick = () => { view = "layered"; $("btnLayered").classList.add("on"); $("btnMatrix").classList.remove("on"); if (curIndustry) load(); };
+    $("btnMatrix").onclick = () => { view = "matrix"; $("btnMatrix").classList.add("on"); $("btnLayered").classList.remove("on"); if (curIndustry) load(); };
+
+    /* ---------- 技能图谱 ---------- */
+    async function openSkills(occId, name) {
+      $("skTitle").textContent = name || "技能图谱";
+      $("skMeta").textContent = "加载中…";
+      $("skView").classList.add("on");
+      let d;
+      try { d = await api("/v1/occupation-skills-graph?occupation_id=" + encodeURIComponent(occId)); }
+      catch (e) { $("skMeta").textContent = "加载失败：" + (e.message || e); return; }
+      const m = d.meta || {};
+      $("skMeta").textContent = `${m.skill_total} 项技能 · ${m.category_count} 个分类 · ${m.prereq_total} 条前置`
+        + (m.uncategorized ? ` · ${m.uncategorized} 项未分类` : "");
+      drawSkills(d);
+    }
+    function drawSkills(d) {
+      if (!skcy) {
+        skcy = cytoscape({
+          container: $("skcy"), elements: [], wheelSensitivity: .2, autounselectify: true,
+          style: [
+            { selector: "node", style: { "background-color": "#22c55e", label: "data(label)", "font-size": 11,
+                width: 18, height: 18, color: "#334155", "text-valign": "bottom", "text-margin-y": 4,
+                "text-wrap": "wrap", "text-max-width": 100, "text-background-color": "#fff",
+                "text-background-opacity": .85, "text-background-padding": 2 } },
+            { selector: "node.grp", style: { "background-opacity": 0, "border-width": 1.5, "border-color": "#cbd5e1",
+                "border-style": "dashed", label: "data(label)", "font-size": 12, "font-weight": 600,
+                color: "#475569", "text-valign": "top", "text-margin-y": -6, shape: "roundrectangle", padding: 18 } },
+            { selector: "edge", style: { width: 1.8, "line-color": "#16a34a", "target-arrow-color": "#16a34a",
+                "target-arrow-shape": "triangle", "curve-style": "bezier", opacity: .85, "arrow-scale": .9 } },
+          ],
+        });
+      }
+      // 布局语义：分区从左到右 = 学习推进顺序（后端已按职业功能顺序排好）；
+      // 区内从上到下 = 前置层深 depth（0 = 无前置，可直接开始学）。
+      // 因此箭头总体朝右下方走，用户从最左上角开始学。
+      const els = [];
+      const COL_W = 260, ROW_H = 64;
+      d.categories.forEach((g, gi) => {
+        const gid = "g" + gi;
+        els.push({ data: { id: gid, label: `${gi + 1}. ${g.key}（${g.skills.length}）` }, classes: "grp" });
+        const bx = 150 + gi * COL_W;
+        // 同一 depth 的技能在区内并排，避免纵向拉太长
+        const seen = {};
+        g.skills.forEach((s) => {
+          const dep = s.depth || 0;
+          const k = (seen[dep] = (seen[dep] || 0) + 1) - 1;
+          els.push({
+            data: { id: s.skill_key, parent: gid,
+                    label: s.skill_key + (s.levels.length ? " " + s.levels.join("/") : "") },
+            position: { x: bx + k * 116, y: 120 + dep * ROW_H },
+          });
+        });
+      });
+      const ids = new Set(els.map((e) => e.data.id));
+      (d.prereqs || []).forEach((p, i) => {
+        if (ids.has(p.from) && ids.has(p.to)) els.push({ data: { id: "e" + i, source: p.from, target: p.to } });
+      });
+      skcy.batch(() => { skcy.elements().remove(); skcy.add(els); });
+      skcy.fit(undefined, 40);
+    }
+    $("skBack").onclick = () => $("skView").classList.remove("on");
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("skView").classList.remove("on"); });
+
+    /* ---------- 启动 ---------- */
+    // 图谱接口需 Authorization: MAC，必须先完成 UC 登录再发请求
+    (async function boot() {
+      try {
+        if (!window.VocedApi) throw new Error("api-client.js 未加载");
+        const r = await window.VocedApi.initAuth();
+        if (r && r.redirecting) return;      // 正在跳 UC 登录，别再发请求
+        const u = window.VocedApi.getUser();
+        $("meta").textContent = "已登录 " + (u.name || u.id || "");
+      } catch (e) {
+        $("empty").innerHTML = '<div>需要 UC 登录：' + esc(e.message || String(e)) + "</div>";
+        return;
+      }
+      loadCards();
+    })();
+  </script>
+</body>
+</html>

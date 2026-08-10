@@ -1,0 +1,106 @@
+{
+  "source_system": "BOSS_ZHIPIN",
+  "api": "https://www.zhipin.com/wapi/zpCommon/data/industry.json",
+  "fetched_at": "2026-08-06T10:11:40+00:00",
+  "dry_run": false,
+  "api_code": 0,
+  "api_message": "Success",
+  "nodes_parsed": 149,
+  "edges_parsed": 134,
+  "sample": [
+    {
+      "name": "互联网/AI",
+      "code": "100000",
+      "level": 1
+    },
+    {
+      "name": "互联网",
+      "code": "100020",
+      "level": 2
+    },
+    {
+      "name": "电子商务",
+      "code": "100001",
+      "level": 2
+    },
+    {
+      "name": "计算机软件",
+      "code": "100021",
+      "level": 2
+    },
+    {
+      "name": "生活服务(O2O)",
+      "code": "100007",
+      "level": 2
+    },
+    {
+      "name": "企业服务",
+      "code": "100015",
+      "level": 2
+    },
+    {
+      "name": "医疗健康",
+      "code": "100006",
+      "level": 2
+    },
+    {
+      "name": "游戏",
+      "code": "100002",
+      "level": 2
+    },
+    {
+      "name": "社交网络与媒体",
+      "code": "100003",
+      "level": 2
+    },
+    {
+      "name": "人工智能",
+      "code": "100028",
+      "level": 2
+    },
+    {
+      "name": "云计算",
+      "code": "100029",
+      "level": 2
+    },
+    {
+      "name": "在线教育",
+      "code": "100012",
+      "level": 2
+    }
+  ],
+  "nodes_upserted": 149,
+  "edges_upserted": 134,
+  "db_stats": {
+    "nodes": 36173,
+    "edges": 134325,
+    "nodes_by_type": {
+      "course": 16790,
+      "credential": 470,
+      "industry": 149,
+      "major": 2281,
+      "occupation": 2905,
+      "skill_level": 13578
+    },
+    "nodes_by_region": {
+      "CN": 30248,
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "ai_inferred": 16162,
+      "derived": 1643,
+      "official": 116520
+    },
+    "nodes_by_source": {
+      "BOSS_ZHIPIN": 149,
+      "ESCO": 4503,
+      "MOE_CN": 18241,
+      "MOHRSS_CN": 10558,
+      "ONET": 1422,
+      "ONE_PLUS_X": 470,
+      "SEARCH_LANDING_CN": 800,
+      "SMART_EDU_VOC": 30
+    }
+  }
+}

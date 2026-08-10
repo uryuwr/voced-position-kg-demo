@@ -1,0 +1,472 @@
+{
+  "title": "CN 知识来源目录（本期：行业·专业·岗位·技能）",
+  "updated": "2026-08-06",
+  "region": "CN",
+  "phase_note": "本期主路径四维：industry / major / occupation / skill_level；课程与认证后置",
+  "policy": {
+    "prefer": "官方公开文件 / 公开 API",
+    "rules": [
+      "遵守 robots 与服务条款；不绕过登录/验证码/付费墙",
+      "每条入库须 source_system / source_url / license / fetched_at / confidence",
+      "新增来源：先改本文件 schemas/cn_knowledge_sources.json，再改 sources.yaml 合规状态，再写 pipeline",
+      "AI/规则边必须标 ai_inferred 或 derived，并保留 evidence",
+      "招聘站：公开接口优先；验证码/登录用 Playwright 人机协同"
+    ],
+    "related_docs": [
+      "schemas/sources.yaml",
+      "docs/CN五维数据获取计划.md",
+      "docs/HITL待办.md",
+      "docs/课程资源定义.md"
+    ]
+  },
+  "dimensions": [
+    {
+      "id": "industry",
+      "name": "行业 industry",
+      "zh": "行业",
+      "node_type": "industry",
+      "approx_count": 149,
+      "sources": [
+        {
+          "id": "BOSS_INDUSTRY_TREE",
+          "title": "BOSS直聘 · 公开行业分类树",
+          "publisher": "BOSS直聘",
+          "home": "https://www.zhipin.com/",
+          "urls": [
+            "https://www.zhipin.com/wapi/zpCommon/data/industry.json",
+            "https://www.zhipin.com/"
+          ],
+          "local_path": "data/raw/CN/industry/boss_industry.json",
+          "pipeline": "python -m crawlers.cn.ingest_boss_industry ; 失败时 python -m crawlers.cn.harvest_boss_industry_playwright --headed --wait-login",
+          "source_system": "BOSS_ZHIPIN",
+          "method": "公开 JSON 接口（15 大门类 + 子行业）；无需登录；失败则 Playwright 人机协同",
+          "license": "平台公开筛选数据；注明 zhipin.com；≠ 国民经济行业分类国标",
+          "status": "in_use",
+          "confidence": "official",
+          "notes": "2026-08-06 已入库 149 节点 + parent_of 层级边；岗位挂接见 edges.belongs_to"
+        },
+        {
+          "id": "ZHAOPIN_INDUSTRY_TBD",
+          "title": "智联招聘 · 行业/职位筛选项（待人机协同）",
+          "publisher": "智联招聘",
+          "home": "https://www.zhaopin.com/",
+          "urls": ["https://www.zhaopin.com/"],
+          "local_path": "data/raw/CN/industry/（待采集）",
+          "pipeline": "Playwright 过安全验证后采筛选项",
+          "source_system": "ZHAOPIN",
+          "method": "常遇安全验证，需 headed 人机协同",
+          "license": "平台公开页；注明出处",
+          "status": "planned",
+          "confidence": "official",
+          "notes": "当前智联首页易触发验证；有需要时再开采集会话"
+        }
+      ]
+    },
+    {
+      "id": "major",
+      "name": "专业 major",
+      "zh": "专业",
+      "node_type": "major",
+      "approx_count": 2281,
+      "sources": [
+        {
+          "id": "MOE_VOC_MAJORS",
+          "title": "职业教育专业目录（中职 / 高职专科 / 职业本科）及增补清单",
+          "publisher": "教育部",
+          "home": "http://www.moe.gov.cn/",
+          "urls": [
+            "http://www.moe.gov.cn/"
+          ],
+          "local_path": "data/raw/CN/moe/",
+          "pipeline": "python -m crawlers.cn.ingest_majors",
+          "source_system": "MOE_CN",
+          "method": "官方 PDF/DOC/TXT 人工或批下载 → 本地解析",
+          "license": "教育部公开目录；使用注明出处",
+          "status": "in_use",
+          "confidence": "official",
+          "notes": "主键 level:code；education_type=vocational"
+        },
+        {
+          "id": "MOE_UG_MAJORS_2026",
+          "title": "普通高等学校本科专业目录（2026）",
+          "publisher": "教育部",
+          "home": "http://www.moe.gov.cn/",
+          "urls": [],
+          "local_path": "data/raw/CN/moe/",
+          "pipeline": "python -m crawlers.cn.ingest_majors",
+          "source_system": "MOE_CN",
+          "method": "官方 PDF 解析",
+          "license": "教育部公开目录；使用注明出处",
+          "status": "in_use",
+          "confidence": "official",
+          "notes": "education_type=general；与职教目录并列收录"
+        }
+      ]
+    },
+    {
+      "id": "occupation",
+      "name": "岗位 occupation",
+      "zh": "岗位",
+      "node_type": "occupation",
+      "approx_count": 1639,
+      "sources": [
+        {
+          "id": "MOHRSS_DIC_2022",
+          "title": "中华人民共和国职业分类大典（2022）公示稿 · 分类体系表",
+          "publisher": "人力资源社会保障部等",
+          "home": "http://www.mohrss.gov.cn/",
+          "urls": [],
+          "local_path": "data/raw/CN/mohrss/",
+          "pipeline": "python -m crawlers.cn.ingest_occupations",
+          "source_system": "MOHRSS_CN",
+          "method": "官方 PDF 解析细类代码 N-NN-NN-NN",
+          "license": "人社部公开公示材料；使用注明出处",
+          "status": "in_use",
+          "confidence": "official",
+          "notes": "recommend_tier 由 tag_cn_scope 规则标注（非大典字段）"
+        }
+      ]
+    },
+    {
+      "id": "skill_level",
+      "name": "技能等级 skill_level",
+      "zh": "技能",
+      "node_type": "skill_level",
+      "approx_count": 8919,
+      "sources": [
+        {
+          "id": "OSTA_SKILL_STANDARD_CATALOG",
+          "title": "国家职业标准查询系统（目录 + PDF）",
+          "publisher": "中国就业培训技术指导中心 / 人社部职业能力建设司指导",
+          "home": "https://www.osta.org.cn/skillStandard",
+          "urls": [
+            "https://www.osta.org.cn/skillStandard",
+            "https://www.osta.org.cn/api/public/skillStandardList",
+            "https://www.osta.org.cn/api/sys/downloadFile/decrypt"
+          ],
+          "local_path": "data/raw/CN/skill_standards/osta_catalog.json ; data/raw/CN/skill_standards/osta_pdfs/",
+          "pipeline": "python -m crawlers.cn.harvest_osta_skill_api ; python -m crawlers.cn.batch_download_osta_catalog_pdfs ; python -m crawlers.cn.ingest_skill_standards",
+          "source_system": "MOHRSS_CN",
+          "method": "公开 API 拉 702 条目录；decrypt 下 PDF；解析权重表/工作要求",
+          "license": "国家职业技能标准公开文本；查询/使用遵守 osta 声明",
+          "status": "in_use",
+          "confidence": "official",
+          "notes": "2026-08-06 已批下 702 PDF；遇滑块再 HITL。部分 PDF 解析 0 节点待改进解析器"
+        },
+        {
+          "id": "MOHRSS_SKILL_PDF_SCATTER",
+          "title": "人社部/地方转载的公开技能标准 PDF（散链）",
+          "publisher": "人社部 / 工信部 / 地方人社等",
+          "home": "https://zsgx.mohrss.gov.cn/",
+          "urls": [
+            "https://zsgx.mohrss.gov.cn/",
+            "http://www.mohrss.gov.cn/"
+          ],
+          "local_path": "data/raw/CN/skill_standards/",
+          "pipeline": "python -m crawlers.cn.batch_download_skill_standards ; python -m crawlers.cn.ingest_skill_standards",
+          "source_system": "MOHRSS_CN",
+          "method": "公开直链列表下载",
+          "license": "公开标准文本；注明出处",
+          "status": "in_use",
+          "confidence": "official",
+          "notes": "工程技术人员系列等；作 osta 批下前的补充源"
+        }
+      ]
+    },
+    {
+      "id": "course",
+      "name": "课程 course",
+      "zh": "课程",
+      "node_type": "course",
+      "approx_count": 16790,
+      "sources": [
+        {
+          "id": "MOE_TEACHING_STANDARDS_2025",
+          "title": "职业教育专业教学标准（2025 修/制订）课目标",
+          "publisher": "教育部",
+          "home": "http://www.moe.gov.cn/s78/A07/zcs_ztzl/2017_zt06/17zt06_bznr/bznr_zyjyzyjxbz/",
+          "urls": [
+            "http://www.moe.gov.cn/s78/A07/zcs_ztzl/2017_zt06/17zt06_bznr/bznr_zyjyzyjxbz/"
+          ],
+          "local_path": "data/raw/CN/course/ ; data/raw/CN/course/moe_2025/pdfs/",
+          "pipeline": "python -m crawlers.cn.batch_download_moe_standards ; python -m crawlers.cn.ingest_courses",
+          "source_system": "MOE_CN",
+          "method": "公开 PDF 批下 → 解析课程设置与职业面向",
+          "license": "教育部公开课标；注明出处",
+          "status": "in_use",
+          "confidence": "official",
+          "notes": "attrs.role=curriculum_catalog，playable=false；约 736 PDF"
+        },
+        {
+          "id": "SMARTEDU_VOC_INDEX",
+          "title": "国家职业教育智慧教育平台 · 首页公开 getData 精选资源",
+          "publisher": "国家智慧教育公共服务平台",
+          "home": "https://vocational.smartedu.cn/",
+          "urls": [
+            "https://vocational.smartedu.cn/",
+            "https://vocational.smartedu.cn/gjzyjy/index/getData"
+          ],
+          "local_path": "（接口实时拉取）",
+          "pipeline": "python -m crawlers.cn.ingest_open_courses",
+          "source_system": "SMART_EDU_VOC",
+          "method": "公开 POST getData → learnable_resource",
+          "license": "平台公开资源；注明 vocational.smartedu.cn",
+          "status": "in_use",
+          "confidence": "official",
+          "notes": "仅首页精选约数十条；全量列表见 HITL H3"
+        },
+        {
+          "id": "SEARCH_LANDING",
+          "title": "课名公开检索落地页（智慧教育 / 大学 MOOC 搜索）",
+          "publisher": "项目派生（非单课官方详情）",
+          "home": "https://vocational.smartedu.cn/",
+          "urls": [
+            "https://vocational.smartedu.cn/",
+            "https://www.icourse163.org/"
+          ],
+          "local_path": "—",
+          "pipeline": "python -m crawlers.cn.seed_learnable_search",
+          "source_system": "SEARCH_LANDING_CN",
+          "method": "由课目标课名生成可点击搜索 URL",
+          "license": "公开检索入口；非课程全文",
+          "status": "in_use",
+          "confidence": "derived",
+          "notes": "用于补「可学」入口；质量弱于精品课详情"
+        }
+      ]
+    },
+    {
+      "id": "credential",
+      "name": "认证 credential",
+      "zh": "认证",
+      "node_type": "credential",
+      "approx_count": 470,
+      "sources": [
+        {
+          "id": "ONE_PLUS_X_LISTS",
+          "title": "1+X 证书制度试点批次名单（公开）",
+          "publisher": "教育部等",
+          "home": "http://www.moe.gov.cn/",
+          "urls": [],
+          "local_path": "data/raw/CN/credential/",
+          "pipeline": "python -m crawlers.cn.ingest_credentials",
+          "source_system": "ONE_PLUS_X",
+          "method": "官方名单文件解析",
+          "license": "官方公开名单；注明出处",
+          "status": "in_use",
+          "confidence": "official",
+          "notes": "节点齐；对口专业/岗位边多为关键词，非官方对照表"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "parent_of",
+      "name": "行业层级 parent_of",
+      "zh": "行业父子",
+      "rel_type": "parent_of",
+      "approx_count": 134,
+      "coverage_note": "BOSS 行业树 门类→子行业",
+      "sources": [
+        {
+          "id": "PO_BOSS_TREE",
+          "title": "BOSS industry.json 树结构",
+          "pipeline": "python -m crawlers.cn.ingest_boss_industry",
+          "source_system": "BOSS_ZHIPIN",
+          "confidence": "official",
+          "method": "subLevelModelList",
+          "status": "in_use",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "belongs_to",
+      "name": "岗 → 行业 belongs_to",
+      "zh": "归属行业",
+      "rel_type": "belongs_to",
+      "approx_count": 1159,
+      "coverage_note": "叶子行业关键词对齐大典岗位",
+      "sources": [
+        {
+          "id": "BT_IND_OCC_KW",
+          "title": "行业名 ↔ 岗位名关键词",
+          "pipeline": "python -m crawlers.cn.link_industry_occupations",
+          "source_system": "LINK_CN_AI",
+          "confidence": "ai_inferred",
+          "method": "规则词典 + 名称重叠；pending 抽检",
+          "status": "in_use",
+          "notes": "噪声样本需收紧规则"
+        }
+      ]
+    },
+    {
+      "id": "prepares_for",
+      "name": "专 → 岗 prepares_for",
+      "zh": "培养对口",
+      "rel_type": "prepares_for",
+      "approx_count": 6939,
+      "coverage_note": "约 59.6% 专业有出边；职教约 74%",
+      "sources": [
+        {
+          "id": "PF_TEACHING_STANDARD",
+          "title": "专业教学标准「职业面向 / 主要职业类别（代码）」",
+          "evidence_type": "official_text",
+          "pipeline": "python -m crawlers.cn.ingest_courses",
+          "source_system": "MOE_CN",
+          "confidence": "official",
+          "method": "课标 PDF 抽大典代码 → occupation 精确/前缀匹配",
+          "status": "in_use",
+          "notes": "主力官方边"
+        },
+        {
+          "id": "PF_PILOT_SEED",
+          "title": "IT 领域人工种子对照表",
+          "evidence_type": "manual_seed",
+          "pipeline": "python -m crawlers.cn.link_prepares_for",
+          "local_path": "data/staging/CN/prepares_for_pilot_it.json",
+          "source_system": "（种子）",
+          "confidence": "derived",
+          "method": "人工维护 JSON",
+          "status": "in_use",
+          "notes": "小规模试点"
+        },
+        {
+          "id": "PF_KEYWORD_AI",
+          "title": "专业名 ↔ 岗位名关键词/规则推断",
+          "evidence_type": "heuristic",
+          "pipeline": "python -m crawlers.cn.link_prepares_for_llm",
+          "source_system": "LINK_CN_AI",
+          "confidence": "ai_inferred",
+          "method": "关键词表 + soft 名称重叠；review_status=pending",
+          "status": "in_use",
+          "notes": "需 HITL 抽检（H4）"
+        }
+      ]
+    },
+    {
+      "id": "requires",
+      "name": "岗 → 技 requires",
+      "zh": "岗位要求",
+      "rel_type": "requires",
+      "approx_count": 9938,
+      "coverage_note": "约 29.8% 岗位有出边（489/1639）",
+      "sources": [
+        {
+          "id": "REQ_SKILL_STANDARD",
+          "title": "国家职业技能标准 · 职业功能 × 等级",
+          "evidence_type": "official_standard",
+          "pipeline": "python -m crawlers.cn.ingest_skill_standards",
+          "source_system": "MOHRSS_CN",
+          "confidence": "official",
+          "method": "PDF 权重表/工作要求 → skill_level + requires",
+          "status": "in_use",
+          "notes": "与大典岗位码/名对齐；未命中列入 edge_occupation_miss"
+        },
+        {
+          "id": "REQ_NAME_PROPAGATE",
+          "title": "同名近义岗位 requires 传播",
+          "evidence_type": "heuristic",
+          "pipeline": "python -m crawlers.cn.link_requires_propagate",
+          "source_system": "LINK_CN_AI",
+          "confidence": "ai_inferred",
+          "method": "已有标准岗的技能边按名称传播到近名岗",
+          "status": "in_use",
+          "notes": "需抽检；降权"
+        }
+      ]
+    },
+    {
+      "id": "related_to",
+      "name": "related_to（多义弱相关）",
+      "zh": "相关",
+      "rel_type": "related_to",
+      "approx_count": 29233,
+      "coverage_note": "含专→课、课→技、专/岗→证、课目→检索课等",
+      "sources": [
+        {
+          "id": "REL_MAJOR_COURSE_CURRICULUM",
+          "title": "课标课程设置 → 专业-related_to-课目标",
+          "pipeline": "python -m crawlers.cn.ingest_courses",
+          "source_system": "MOE_CN",
+          "confidence": "official",
+          "method": "课标解析课程表",
+          "status": "in_use",
+          "notes": "主量 official related_to"
+        },
+        {
+          "id": "REL_COURSE_SKILL",
+          "title": "课目标名 ↔ 技能名关键词",
+          "pipeline": "python -m crawlers.cn.link_course_skills",
+          "source_system": "LINK_CN_AI",
+          "confidence": "ai_inferred",
+          "method": "名称重叠",
+          "status": "in_use",
+          "notes": "attrs.link_role=covers"
+        },
+        {
+          "id": "REL_CREDENTIAL_KEYWORD",
+          "title": "1+X 证书名 ↔ 专业/岗位关键词",
+          "pipeline": "python -m crawlers.cn.link_credentials",
+          "source_system": "LINK_CN_AI",
+          "confidence": "ai_inferred",
+          "method": "证书名分词匹配",
+          "status": "in_use",
+          "notes": "无官方对口表时的过渡"
+        },
+        {
+          "id": "REL_LEARNABLE_MAJOR",
+          "title": "可学资源按专业大类/关键词挂专业",
+          "pipeline": "python -m crawlers.cn.link_course_resources",
+          "source_system": "LINK_CN_AI",
+          "confidence": "ai_inferred",
+          "method": "大类映射表",
+          "status": "in_use",
+          "notes": ""
+        },
+        {
+          "id": "REL_SEARCH_LANDING",
+          "title": "课目标 → 检索可学入口",
+          "pipeline": "python -m crawlers.cn.seed_learnable_search",
+          "source_system": "SEARCH_LANDING_CN",
+          "confidence": "derived",
+          "method": "同课名搜索 URL",
+          "status": "in_use",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "taught_by",
+      "name": "技 → 可学课 taught_by",
+      "zh": "技能由课教授",
+      "rel_type": "taught_by",
+      "approx_count": 33,
+      "coverage_note": "仍很稀疏",
+      "sources": [
+        {
+          "id": "TB_SKILL_LEARNABLE",
+          "title": "技能名 ↔ 可学资源名关键词",
+          "pipeline": "python -m crawlers.cn.link_course_resources",
+          "source_system": "LINK_CN_AI",
+          "confidence": "ai_inferred",
+          "method": "关键词",
+          "status": "in_use",
+          "notes": "依赖可学资源体量；H3 扩课后可增"
+        }
+      ]
+    }
+  ],
+  "maintenance": {
+    "how_to_add_source": [
+      "1. 在本文件 dimensions[] 或 edges[].sources[] 增加一条（含 title/urls/pipeline/source_system/confidence/status）",
+      "2. 若新 source_system：同步 schemas/sources.yaml 合规条目",
+      "3. 实现或更新 pipelines/cn/* 并写入 data/raw 路径说明",
+      "4. 刷新本页 updated 日期与 approx_count（可对照 reports/*覆盖率*）",
+      "5. 打开 /cn-sources 目视检查"
+    ],
+    "html_page": "/cn-sources",
+    "data_file": "schemas/cn_knowledge_sources.json"
+  }
+}

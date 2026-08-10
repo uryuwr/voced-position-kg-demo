@@ -1,0 +1,87 @@
+{
+  "candidates": 400,
+  "nodes": 800,
+  "edges": 1600,
+  "sample": [
+    {
+      "major": "中兽医",
+      "course": "中兽医诊疗技术"
+    },
+    {
+      "major": "中兽医",
+      "course": "中兽医常见病辨证论治"
+    },
+    {
+      "major": "中兽医",
+      "course": "中兽医温病防治"
+    },
+    {
+      "major": "中医",
+      "course": "中医药适宜技术"
+    },
+    {
+      "major": "中医",
+      "course": "中药与方剂在中医辨证论治指"
+    },
+    {
+      "major": "中医",
+      "course": "中医内儿科学内儿科常见疾病"
+    },
+    {
+      "major": "中医养生保健",
+      "course": "保健按摩技术运用保健按摩手法，对全身各部"
+    },
+    {
+      "major": "中医养生保健",
+      "course": "保健按摩技术"
+    },
+    {
+      "major": "中医养生保健",
+      "course": "推拿技术运用推拿基本手法、推拿介质等，"
+    },
+    {
+      "major": "中医养生保健",
+      "course": "中医基础理论"
+    },
+    {
+      "major": "中医养生保健",
+      "course": "中医情志养生"
+    },
+    {
+      "major": "中医养生保健",
+      "course": "中医饮食保健"
+    }
+  ],
+  "nodes_upserted": 800,
+  "edges_upserted": 1600,
+  "db_stats": {
+    "nodes": 27355,
+    "edges": 123416,
+    "nodes_by_type": {
+      "course": 16790,
+      "credential": 470,
+      "major": 2281,
+      "occupation": 2905,
+      "skill_level": 4909
+    },
+    "nodes_by_region": {
+      "CN": 21430,
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "ai_inferred": 13959,
+      "derived": 1643,
+      "official": 107814
+    },
+    "nodes_by_source": {
+      "ESCO": 4503,
+      "MOE_CN": 18241,
+      "MOHRSS_CN": 1889,
+      "ONET": 1422,
+      "ONE_PLUS_X": 470,
+      "SEARCH_LANDING_CN": 800,
+      "SMART_EDU_VOC": 30
+    }
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "created": 1570,
+  "skipped_has_edge": 0,
+  "unmatched": 711,
+  "dry_run": false,
+  "samples": [
+    {
+      "major": "专门矫治教育",
+      "category": "\t公安与司法大类\t法律执行类\t高职专科\t",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100300"
+    },
+    {
+      "major": "业财融合管理",
+      "category": "\t\t\t职业本科\t",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100015"
+    },
+    {
+      "major": "丝绸工艺",
+      "category": "6804纺织服装类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:101003"
+    },
+    {
+      "major": "丝绸技术",
+      "category": "4804纺织服装类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:101003"
+    },
+    {
+      "major": "丝绸设计与工程",
+      "category": "0816 纺织类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100100"
+    },
+    {
+      "major": "中兽医学",
+      "category": "0904 动物医学类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100006"
+    },
+    {
+      "major": "中医儿科学",
+      "category": "1005 中医学类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100006"
+    },
+    {
+      "major": "中医养生保健",
+      "category": "7204中医药类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:101114"
+    },
+    {
+      "major": "中医养生保健",
+      "category": "5204中医药类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:101114"
+    },
+    {
+      "major": "中医养生学",
+      "category": "1005 中医学类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100006"
+    },
+    {
+      "major": "中医学",
+      "category": "5204中医药类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100006"
+    },
+    {
+      "major": "中医学",
+      "category": "1005 中医学类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100006"
+    },
+    {
+      "major": "中医康复学",
+      "category": "1005 中医学类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100006"
+    },
+    {
+      "major": "中医护理",
+      "category": "7204中医药类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100006"
+    },
+    {
+      "major": "中医骨伤科学",
+      "category": "1005 中医学类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100006"
+    },
+    {
+      "major": "中国少数民族语言文化",
+      "category": "5503民族文化艺术类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100100"
+    },
+    {
+      "major": "中小企业创业与经营",
+      "category": "5306工商管理类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100015"
+    },
+    {
+      "major": "中文国际教育",
+      "category": "3702语言类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100300"
+    },
+    {
+      "major": "中草药栽培与鉴定",
+      "category": "1008 中药学类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100400"
+    },
+    {
+      "major": "中药制药",
+      "category": "3204中医药类",
+      "industry_id": "CN:industry:BOSS_ZHIPIN:boss:100400"
+    }
+  ]
+}

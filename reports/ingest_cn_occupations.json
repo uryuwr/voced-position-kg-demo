@@ -1,0 +1,112 @@
+{
+  "source_system": "MOHRSS_CN",
+  "fetched_at": "2026-08-05T13:01:41+00:00",
+  "dry_run": false,
+  "source_home": "https://www.mohrss.gov.cn/",
+  "nodes_parsed": 1639,
+  "parse": {
+    "source_file": "大典2022_公示稿_分类体系表.pdf",
+    "source_path": "D:\\workspace\\职业教育知识图谱\\data\\raw\\CN\\mohrss\\大典2022_公示稿_分类体系表.pdf",
+    "joined_lines": 2176,
+    "fine_occupations": 1639,
+    "unique_codes": 1639,
+    "green_count": 133,
+    "digital_count": 92,
+    "by_major_code": {
+      "1": 25,
+      "2": 492,
+      "3": 36,
+      "4": 356,
+      "5": 54,
+      "6": 671,
+      "7": 4,
+      "8": 1
+    },
+    "skipped_lines": 0,
+    "skipped_sample": [],
+    "edition": "2022",
+    "catalog": "中华人民共和国职业分类大典（2022年版）· 公示稿分类体系表"
+  },
+  "sample": [
+    {
+      "id": "CN:occupation:MOHRSS_CN:1-01-00-01",
+      "name": "中国共产党机关负责人",
+      "source_id": "1-01-00-01",
+      "flags": [],
+      "minor_name": "中国共产党机关和基层组织负责人"
+    },
+    {
+      "id": "CN:occupation:MOHRSS_CN:1-01-00-02",
+      "name": "中国共产党基层组织负责人",
+      "source_id": "1-01-00-02",
+      "flags": [],
+      "minor_name": "中国共产党机关和基层组织负责人"
+    },
+    {
+      "id": "CN:occupation:MOHRSS_CN:1-02-01-00",
+      "name": "国家权力机关负责人",
+      "source_id": "1-02-01-00",
+      "flags": [],
+      "minor_name": "国家权力机关负责人"
+    },
+    {
+      "id": "CN:occupation:MOHRSS_CN:1-02-02-00",
+      "name": "国家行政机关负责人",
+      "source_id": "1-02-02-00",
+      "flags": [],
+      "minor_name": "国家行政机关负责人"
+    },
+    {
+      "id": "CN:occupation:MOHRSS_CN:1-02-03-00",
+      "name": "人民政协机关负责人",
+      "source_id": "1-02-03-00",
+      "flags": [],
+      "minor_name": "人民政协机关负责人"
+    },
+    {
+      "id": "CN:occupation:MOHRSS_CN:1-02-04-00",
+      "name": "监察机关负责人",
+      "source_id": "1-02-04-00",
+      "flags": [],
+      "minor_name": "监察机关负责人"
+    },
+    {
+      "id": "CN:occupation:MOHRSS_CN:1-02-05-01",
+      "name": "人民法院负责人",
+      "source_id": "1-02-05-01",
+      "flags": [],
+      "minor_name": "人民法院和人民检察院负责人"
+    },
+    {
+      "id": "CN:occupation:MOHRSS_CN:1-02-05-02",
+      "name": "人民检察院负责人",
+      "source_id": "1-02-05-02",
+      "flags": [],
+      "minor_name": "人民法院和人民检察院负责人"
+    }
+  ],
+  "nodes_upserted": 1639,
+  "db_stats": {
+    "nodes": 9845,
+    "edges": 86889,
+    "nodes_by_type": {
+      "major": 2281,
+      "occupation": 2905,
+      "skill_level": 4659
+    },
+    "nodes_by_region": {
+      "CN": 3920,
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "official": 86889
+    },
+    "nodes_by_source": {
+      "ESCO": 4503,
+      "MOE_CN": 2281,
+      "MOHRSS_CN": 1639,
+      "ONET": 1422
+    }
+  }
+}

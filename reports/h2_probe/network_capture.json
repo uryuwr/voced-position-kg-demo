@@ -1,0 +1,36 @@
+[
+  {
+    "url": "https://www.osta.org.cn/skillStandard",
+    "status": 200,
+    "ct": "text/html"
+  },
+  {
+    "url": "https://www.osta.org.cn/pdf.properties",
+    "status": 200,
+    "ct": "application/octet-stream"
+  },
+  {
+    "url": "https://www.osta.org.cn/api/public/skillStandardList?pageSize=10&pageNum=1&total=0&nameCode=&status=1",
+    "status": 200,
+    "ct": "application/json",
+    "type": "dict",
+    "keys": [
+      "code",
+      "msg",
+      "body"
+    ],
+    "raw_head": "{\"code\": 200, \"msg\": \"OK\", \"body\": {\"total\": 702, \"list\": [{\"id\": 1034, \"name\": \"起重装卸机械操作工（高空作业机械操作工）\", \"code\": \"6-30-05-01-014\", \"issueTime\": \"2026-06-10 17:24:28\", \"issueNumber\": \"人社厅发〔2026〕27号\", \"status\": 1, \"standardInfo\": \"4eNsZIOv3WFNDfbnldJHeA/2026/7/6/dc19ce5903704dbfb3917b3da0a66fcc.pdf\", \"standardInfoName\": \"6-30-05-01起重装卸机械操作工(高空作业机械操作工)(2026年版).pdf\", \"del\": null}, {\"id\": 1033, \"name\": \"电气设备安装工\", \"code\": \"6-29-03-02\", \"issueTime\": \"2026-06-10 17:24:06\", \"issueNumber\": \"人社厅发〔2026〕27号\","
+  },
+  {
+    "url": "https://www.osta.org.cn/api/public/skillStandardList?pageSize=10&pageNum=2&total=702&nameCode=&status=1",
+    "status": 200,
+    "ct": "application/json",
+    "type": "dict",
+    "keys": [
+      "code",
+      "msg",
+      "body"
+    ],
+    "raw_head": "{\"code\": 200, \"msg\": \"OK\", \"body\": {\"total\": 702, \"list\": [{\"id\": 1023, \"name\": \"水土保持员\", \"code\": \"4-09-03-00\", \"issueTime\": \"2026-04-17 16:44:12\", \"issueNumber\": \"人社厅发〔2026〕19号\", \"status\": 1, \"standardInfo\": \"4eNsZIOv3WFNDfbnldJHeA/2026/5/9/63a807b3483c475abadc15239056b9af.pdf\", \"standardInfoName\": \"4-09-03-00水土保持员L(2026年版)-260508.pdf\", \"del\": null}, {\"id\": 1030, \"name\": \"消防设施操作员\", \"code\": \"4-07-05-03\", \"issueTime\": \"2026-04-16 16:50:50\", \"issueNumber\": \"人社厅发〔2026〕23号\", \"status\": 1, \"standardInf"
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "source_system": "ESCO",
+  "api": "https://ec.europa.eu/esco/api",
+  "download_portal": "https://esco.ec.europa.eu/en/use-esco/download",
+  "license": "ESCO open data — see esco.ec.europa.eu terms; attribution required",
+  "language": "en",
+  "fetched_at": "2026-08-05T04:42:19+00:00",
+  "counts": {
+    "occupations": 80,
+    "skills": 120
+  },
+  "note": "Sample via official API keyword search. Full dump: official Download portal CSV."
+}

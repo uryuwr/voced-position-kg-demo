@@ -1,0 +1,111 @@
+{
+  "list_url": "https://www.osta.org.cn/skillStandard",
+  "catalog_count": 10,
+  "detail_probe": [
+    {
+      "index": 0,
+      "ok": false,
+      "error": "Timeout 5000ms exceeded while waiting for event \"popup\"\n=========================== logs ===========================\nwaiting for event \"popup\"\n============================================================ | Locator.click: Timeout 2000ms exceeded.\nCall log:\n  - waiting for locator(\"text=点击查看\").first\n    - locator resolved to <a data-v-e8851582=\"\" class=\"arco-link arco-link-status-normal\">…</a>\n  - attempting click action\n    - waiting for element to be visible, enabled and stable\n    - element is visible, enabled and stable\n    - scrolling into view if needed\n    - done scrolling\n    - <div id=\"viewer\" class=\"pdfViewer\" data-v-0d167ef6=\"\">…</div> from <div class=\"arco-modal-container\">…</div> subtree intercepts pointer events\n  - retrying click action\n    - waiting for element to be visible, enabled and stable\n"
+    },
+    {
+      "index": 1,
+      "ok": false,
+      "error": "Locator.click: Timeout 3000ms exceeded.\nCall log:\n  - waiting for locator(\"text=点击查看\").nth(1)\n    - locator resolved to <a data-v-e8851582=\"\" class=\"arco-link arco-link-status-normal\">…</a>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div id=\"viewer\" class=\"pdfViewer\" data-v-0d167ef6=\"\">…</div> from <div class=\"arco-modal-container\">…</div> subtree intercepts pointer events\n    - retrying click action\n    - waiting 20ms\n    - waiting for element to be visible, enabled and stable\n | Locator.click: Timeout 2000ms exceeded.\nCall log:\n  - waiting for locator(\"text=点击查看\").nth(1)\n    - locator resolved to <a data-v-e8851582=\"\" class=\"arco-link arco-link-status-normal\">…</a>\n  - attempting click action\n    - waiting for element to be visible, enabled and stable\n    - element is visible, enabled and stable\n    - scrolling into view if needed\n    - done scrolling\n    - <div id=\"viewer\" class=\"pdfViewer\" data-v-0d167ef6=\"\">…</div> from <div class=\"arco-modal-container\">…</div> subtree intercepts pointer events\n  - retrying click action\n    - waiting for element to be visible, enabled and stable\n"
+    }
+  ],
+  "login_required_for_list": false,
+  "login_required_for_detail": false,
+  "catalog_sample": [
+    {
+      "seq": "1",
+      "name": "起重装卸机械操作工（高空作业机械操作工）",
+      "occupation_code": "6-30-05-01-014",
+      "published_at": "2026-06-10",
+      "doc_no": "人社厅发〔2026〕27号",
+      "action": "点击查看",
+      "page": 1
+    },
+    {
+      "seq": "2",
+      "name": "电气设备安装工",
+      "occupation_code": "6-29-03-02",
+      "published_at": "2026-06-10",
+      "doc_no": "人社厅发〔2026〕27号",
+      "action": "点击查看",
+      "page": 1
+    },
+    {
+      "seq": "3",
+      "name": "花艺环境设计师",
+      "occupation_code": "4-08-08-01",
+      "published_at": "2026-06-10",
+      "doc_no": "人社厅发〔2026〕27号",
+      "action": "点击查看",
+      "page": 1
+    },
+    {
+      "seq": "4",
+      "name": "停车管理员",
+      "occupation_code": "4-06-01-03",
+      "published_at": "2026-06-10",
+      "doc_no": "人社厅发〔2026〕27号",
+      "action": "点击查看",
+      "page": 1
+    },
+    {
+      "seq": "5",
+      "name": "研学旅游指导师",
+      "occupation_code": "4-13-04-04",
+      "published_at": "2026-04-21",
+      "doc_no": "人社厅发〔2026〕21号",
+      "action": "点击查看",
+      "page": 1
+    },
+    {
+      "seq": "6",
+      "name": "景区运营管理师",
+      "occupation_code": "4-07-04-07",
+      "published_at": "2026-04-21",
+      "doc_no": "人社厅发〔2026〕21号",
+      "action": "点击查看",
+      "page": 1
+    },
+    {
+      "seq": "7",
+      "name": "村镇供水员",
+      "occupation_code": "4-11-03-02",
+      "published_at": "2026-04-17",
+      "doc_no": "人社厅发〔2026〕19号",
+      "action": "点击查看",
+      "page": 1
+    },
+    {
+      "seq": "8",
+      "name": "灌区管理工（灌排泵站运行工）",
+      "occupation_code": "4-09-04-00",
+      "published_at": "2026-04-17",
+      "doc_no": "人社厅发〔2026〕19号",
+      "action": "点击查看",
+      "page": 1
+    },
+    {
+      "seq": "9",
+      "name": "灌区管理工（灌区供水工）",
+      "occupation_code": "4-09-04-00",
+      "published_at": "2026-04-17",
+      "doc_no": "人社厅发〔2026〕19号",
+      "action": "点击查看",
+      "page": 1
+    },
+    {
+      "seq": "10",
+      "name": "灌区管理工（渠道维护工 灌排工程工）",
+      "occupation_code": "4-09-04-00",
+      "published_at": "2026-04-17",
+      "doc_no": "人社厅发〔2026〕19号",
+      "action": "点击查看",
+      "page": 1
+    }
+  ],
+  "catalog_path": "D:\\workspace\\职业教育知识图谱\\data\\raw\\CN\\skill_standards\\osta_catalog.json"
+}

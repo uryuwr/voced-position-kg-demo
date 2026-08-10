@@ -1,0 +1,13 @@
+{
+  "majors_updated": 0,
+  "occupations_updated": 0,
+  "major_education_type_general": 875,
+  "major_education_type_vocational": 1406,
+  "occupation_by_tier": {
+    "primary": 1598,
+    "secondary": 3,
+    "low": 38
+  },
+  "occupation_demoted_by_lexicon": 26,
+  "scope_doc": "docs/职业教育数据范围.md"
+}

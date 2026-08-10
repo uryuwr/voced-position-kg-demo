@@ -1,0 +1,217 @@
+# 五维知识图谱 · 统一本体（CN / EU / US 共用）
+# 版本: 0.1.0
+# 原则: 每条节点/边必须可溯源（source_* + confidence）
+
+version: "0.2.0"
+updated: "2026-08-06"
+
+regions:
+  - CN
+  - EU
+  - US
+
+# ---------- 节点类型 ----------
+# 本期主路径四维：industry → major / occupation → skill_level
+# course / credential 保留本体，优先级后置
+node_types:
+  industry:
+    label_zh: 行业
+    description: >
+      行业分类节点（招聘平台行业树 / 国民经济行业分类等）。
+      用于「行业→岗位/专业」路径；须带 source_* 溯源。
+  major:
+    label_zh: 专业
+    description: 学历教育专业目录节点（中职/高职/本科/研究生或 CIP 等）
+  occupation:
+    label_zh: 岗位
+    description: 职业/岗位分类节点（O*NET / ESCO / 人社部等）
+  skill_level:
+    label_zh: 技能等级
+    description: 技能 + 等级的组合节点（非裸技能名）
+  course:
+    label_zh: 课程（学习资源）
+    description: >
+      可点开学习的资源节点（视频课/慕课页/公开讲义 PDF 等）。
+      主路径 course 必须有可访问 source_url（外链即可）。
+      课标中的「课目名称」仅作培养方案目录（attrs.role=curriculum_catalog），
+      不能单独冒充可学资源；应用 related_to 挂到可学资源或仅作专业侧目录。
+  credential:
+    label_zh: 认证
+    description: 证书/资格/1+X 等
+
+# ---------- 关系类型 ----------
+relation_types:
+  prepares_for:
+    label_zh: 培养/对口
+    domain: major
+    range: occupation
+  requires:
+    label_zh: 要求
+    domain: occupation
+    range: skill_level
+  covers:
+    label_zh: 覆盖
+    domain: major
+    range: skill_level
+  belongs_to:
+    label_zh: 归属行业
+    domain: "*"   # occupation | major 等
+    range: industry
+  parent_of:
+    label_zh: 行业层级（父→子）
+    domain: industry
+    range: industry
+  taught_by:
+    label_zh: 由...习得
+    domain: skill_level
+    range: course
+  leads_to:
+    label_zh: 通向
+    domain: course
+    range: credential
+  recognized_by:
+    label_zh: 岗位认可
+    domain: occupation
+    range: credential
+  articulates_to:
+    label_zh: 专业衔接认证
+    domain: major
+    range: credential
+  related_to:
+    label_zh: 相关（弱关联/跨库）
+    domain: "*"
+    range: "*"
+  same_as:
+    label_zh: 跨库等价
+    domain: "*"
+    range: "*"
+  offers_course:
+    label_zh: 专业开设课程
+    domain: major
+    range: course
+  advances_to:
+    label_zh: 岗位晋升（同专业/岗位族内按 level 递进，1:1 有向）
+    domain: occupation
+    range: occupation
+
+# ---------- 边结构层（前端分层渲染 / 默认折叠）----------
+# 每条边打 structure_layer：tree(归属树,1:N) | net(关联网,N:M) | chain(进阶链,1:1)
+edge_structure_layers:
+  tree:
+    - contain
+    - parent_of
+  net:
+    - prepares_for
+    - requires
+    - covers
+    - taught_by
+    - recognized_by
+    - articulates_to
+    - offers_course
+    - related_to
+  chain:
+    - advances_to
+    - skill_progress
+
+# ---------- 能力全景字段（kg_node 扩展）----------
+capability_node_fields:
+  level: "occupation 岗位层级(1..N，用于晋升递进排序)；skill_level 可复用为 L 序"
+  category: "skill 技能大类：运营策略/数据能力/内容创作/商业分析/技术工程/通用素养 等"
+
+# ---------- 置信度 ----------
+confidence:
+  official: 官方数据源中已有的映射
+  derived: 由官方字段规则推导（非 LLM）
+  ai_inferred: LLM/模型推断，必须带 evidence，需抽检
+  manual_seed: 人工种子/样例（如 HTML demo）
+
+# ---------- 技能等级约定 ----------
+skill_level_scales:
+  onet_level:
+    description: O*NET Level scale 0-7（官方）
+    min: 0
+    max: 7
+  onet_importance:
+    description: O*NET Importance scale 1-5（官方）
+    min: 1
+    max: 5
+  l1_l4:
+    description: 项目自建四级（国内 MVP / IT·AI，历史）
+    levels:
+      L1: 了解/入门
+      L2: 能独立完成常规任务
+      L3: 能设计方案并解决复杂问题
+      L4: 能制定标准/带队/创新
+  l1_l5:
+    description: 产品统一五级（了解/掌握/熟练/精通/专家）；国标五级制映射见 docs/实现方案-关联计数与技能聚合.md
+    levels:
+      L1: 了解
+      L2: 掌握
+      L3: 熟练
+      L4: 精通
+      L5: 专家
+  mohrss_5:
+    description: 国家职业技能标准五级（一级/高级技师 … 五级/初级工）
+    levels:
+      "1": 一级/高级技师
+      "5": 五级/初级工
+
+# ---------- 公共 provenance 字段 ----------
+provenance_fields:
+  - source_system   # ONET | ESCO | MOE_CN | MOHRSS_CN | MANUAL | ...
+  - source_id       # 源系统主键
+  - source_url      # 可点击溯源
+  - license         # 许可证简述
+  - fetched_at      # ISO8601
+  - confidence      # 见上
+
+# ---------- 节点必填 ----------
+node_required:
+  - id              # 全局唯一，建议 {region}:{type}:{source_system}:{source_id}
+  - region
+  - type
+  - name
+  - source_system
+  - source_id
+  - source_url
+  - license
+  - fetched_at
+  - confidence
+
+node_optional:
+  - name_en
+  - name_zh
+  - aliases         # list
+  - description
+  - attrs           # object，类型相关扩展
+
+# skill_level 扩展 attrs 建议（一 L 一节点；读路径按 skill_key 聚合）
+skill_level_attrs:
+  skill_name: string
+  skill_key: string       # 聚合主键，缺省回落 skill_name
+  scale: onet_level | onet_importance | l1_l4 | l1_l5 | mohrss_5 | cn_skill_grade
+  level_code: string      # e.g. L2
+  level_int: int          # 1–5
+  level_zh: string
+  level_label: string
+  level_descriptions: object  # 可选 {L1: text, …L5}；聚合读时 merge
+  skill_source_id: string # 裸技能在源库中的 id
+  occupation_code: string
+
+# ---------- 边必填 ----------
+edge_required:
+  - id
+  - src_id
+  - dst_id
+  - rel_type
+  - region
+  - source_system
+  - source_url
+  - license
+  - fetched_at
+  - confidence
+
+edge_optional:
+  - weight
+  - evidence
+  - attrs

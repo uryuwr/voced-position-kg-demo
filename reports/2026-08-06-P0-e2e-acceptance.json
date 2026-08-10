@@ -1,0 +1,83 @@
+{
+  "date": "2026-08-06",
+  "passed": 10,
+  "total": 10,
+  "all_ok": true,
+  "results": [
+    {
+      "name": "health",
+      "ok": true,
+      "detail": "{'enabled': False, 'base_url': None, 'model': None, 'has_token': False}"
+    },
+    {
+      "name": "student industries counts",
+      "ok": true,
+      "detail": "{'major': 0, 'occupation': 0, 'skill': 0, 'industry': 0, 'course': 0, 'level': 0}"
+    },
+    {
+      "name": "student professions counts",
+      "ok": true,
+      "detail": "{'major': 0, 'occupation': 3, 'skill': 9, 'industry': 0, 'course': 0, 'level': 0}"
+    },
+    {
+      "name": "student skills bundle",
+      "ok": true,
+      "detail": "total=2039"
+    },
+    {
+      "name": "student positions",
+      "ok": true,
+      "detail": "汽车代驾员"
+    },
+    {
+      "name": "skill-composition",
+      "ok": true,
+      "detail": "{'skill_count': 0, 'weight_sum': 0.0}"
+    },
+    {
+      "name": "admin skills create pending",
+      "ok": true,
+      "detail": "21"
+    },
+    {
+      "name": "approve expand levels",
+      "ok": true,
+      "detail": "['L1', 'L2']"
+    },
+    {
+      "name": "prereq add",
+      "ok": true,
+      "detail": "{\"skill_key\":\"__e2e_skill_160024\",\"prereq_skill_key\":\"通用职业素养\",\"region\":\"CN\",\"evi"
+    },
+    {
+      "name": "diagnosis resume",
+      "ok": [
+        {
+          "skill_name": "直播",
+          "level": 2,
+          "score": 40,
+          "evidence": "规则命中：直播|带货|话术"
+        },
+        {
+          "skill_name": "投放",
+          "level": 2,
+          "score": 40,
+          "evidence": "规则命中：投放|ROI|千川|广告"
+        },
+        {
+          "skill_name": "数据",
+          "level": 2,
+          "score": 40,
+          "evidence": "规则命中：数据分析|SQL|看板|指标"
+        },
+        {
+          "skill_name": "开发",
+          "level": 2,
+          "score": 40,
+          "evidence": "规则命中：python|java|开发|编程|C#"
+        }
+      ],
+      "detail": "rule"
+    }
+  ]
+}

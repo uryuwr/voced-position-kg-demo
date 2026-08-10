@@ -1,0 +1,96 @@
+{
+  "courses": 15960,
+  "edges": 7348,
+  "sample": [
+    {
+      "course": "物联网工程导论",
+      "links": 3
+    },
+    {
+      "course": "计算机网络技术应用",
+      "links": 3
+    },
+    {
+      "course": "程序设计基础",
+      "links": 3
+    },
+    {
+      "course": "数据库技术及应用",
+      "links": 3
+    },
+    {
+      "course": "物联网信息安全",
+      "links": 3
+    },
+    {
+      "course": "物联网工程识图与制图",
+      "links": 3
+    },
+    {
+      "course": "物联网云平台技术应用",
+      "links": 3
+    },
+    {
+      "course": "物联网操作系统应用开发",
+      "links": 3
+    },
+    {
+      "course": "边缘计算智能应用开发",
+      "links": 3
+    },
+    {
+      "course": "大数据可视化技术",
+      "links": 3
+    },
+    {
+      "course": "云计算技术应用",
+      "links": 3
+    },
+    {
+      "course": "智能穿戴技术应用",
+      "links": 3
+    },
+    {
+      "course": "物联网嵌入式技术",
+      "links": 3
+    },
+    {
+      "course": "物联网设备装调与维护",
+      "links": 3
+    },
+    {
+      "course": "物联网系统部署与运维",
+      "links": 3
+    }
+  ],
+  "edges_upserted": 7348,
+  "db_stats": {
+    "nodes": 26555,
+    "edges": 121731,
+    "nodes_by_type": {
+      "course": 15990,
+      "credential": 470,
+      "major": 2281,
+      "occupation": 2905,
+      "skill_level": 4909
+    },
+    "nodes_by_region": {
+      "CN": 20630,
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "ai_inferred": 13874,
+      "derived": 43,
+      "official": 107814
+    },
+    "nodes_by_source": {
+      "ESCO": 4503,
+      "MOE_CN": 18241,
+      "MOHRSS_CN": 1889,
+      "ONET": 1422,
+      "ONE_PLUS_X": 470,
+      "SMART_EDU_VOC": 30
+    }
+  }
+}

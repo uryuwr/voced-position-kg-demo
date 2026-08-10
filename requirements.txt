@@ -1,0 +1,13 @@
+# 五维知识图谱 · 数据采集与入库
+pyyaml>=6.0
+requests>=2.31.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+tqdm>=4.66.0
+
+# Neo4j + API
+neo4j>=5.26.0
+python-dotenv>=1.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.0.0

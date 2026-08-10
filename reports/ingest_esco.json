@@ -1,0 +1,30 @@
+{
+  "source_system": "ESCO",
+  "base_dir": "D:\\workspace\\职业教育知识图谱\\data\\raw\\EU\\esco\\api_harvest",
+  "nodes_upserted": 4503,
+  "edges_upserted": 11625,
+  "occupations": 250,
+  "skills": 4253,
+  "relations": 11625,
+  "db_stats": {
+    "nodes": 5925,
+    "edges": 86889,
+    "nodes_by_type": {
+      "occupation": 1266,
+      "skill_level": 4659
+    },
+    "nodes_by_region": {
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "official": 86889
+    },
+    "nodes_by_source": {
+      "ESCO": 4503,
+      "ONET": 1422
+    }
+  },
+  "fetched_at": "2026-08-05T11:40:34+00:00",
+  "confidence": "official"
+}

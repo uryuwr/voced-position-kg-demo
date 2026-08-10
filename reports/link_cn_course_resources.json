@@ -1,0 +1,111 @@
+{
+  "resources": 30,
+  "edges": 128,
+  "sample": [
+    {
+      "resource": "自动生产线安装与调试数字仿真实训",
+      "major_links": 5,
+      "skill_links": 3
+    },
+    {
+      "resource": "A320甚高频天线拆装数字仿真实训",
+      "major_links": 5,
+      "skill_links": 0
+    },
+    {
+      "resource": "数控编程与加工技术数字仿真实训",
+      "major_links": 5,
+      "skill_links": 3
+    },
+    {
+      "resource": "抽水蓄能电站蜗壳焊接制造—装配数字仿真实训",
+      "major_links": 5,
+      "skill_links": 3
+    },
+    {
+      "resource": "超高速切削加工数字仿真实训",
+      "major_links": 5,
+      "skill_links": 3
+    },
+    {
+      "resource": "单片机应用技术（C语言版）第4版",
+      "major_links": 5,
+      "skill_links": 3
+    },
+    {
+      "resource": "机械工程材料及成形工艺（第四版）",
+      "major_links": 5,
+      "skill_links": 3
+    },
+    {
+      "resource": "工程岩土（第3版）",
+      "major_links": 5,
+      "skill_links": 0
+    },
+    {
+      "resource": "外贸单证操作（第五版）",
+      "major_links": 5,
+      "skill_links": 0
+    },
+    {
+      "resource": "园艺植物组织培养",
+      "major_links": 5,
+      "skill_links": 0
+    },
+    {
+      "resource": "电子测量与检验技术",
+      "major_links": 5,
+      "skill_links": 3
+    },
+    {
+      "resource": "食品感官检验技术",
+      "major_links": 5,
+      "skill_links": 0
+    },
+    {
+      "resource": "电气设备运行与维护",
+      "major_links": 5,
+      "skill_links": 3
+    },
+    {
+      "resource": "计算机网络技术",
+      "major_links": 5,
+      "skill_links": 3
+    },
+    {
+      "resource": "现代农业经济管理",
+      "major_links": 5,
+      "skill_links": 0
+    }
+  ],
+  "edges_upserted": 128,
+  "db_stats": {
+    "nodes": 26555,
+    "edges": 120703,
+    "nodes_by_type": {
+      "course": 15990,
+      "credential": 470,
+      "major": 2281,
+      "occupation": 2905,
+      "skill_level": 4909
+    },
+    "nodes_by_region": {
+      "CN": 20630,
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "ai_inferred": 12846,
+      "derived": 43,
+      "official": 107814
+    },
+    "nodes_by_source": {
+      "ESCO": 4503,
+      "MOE_CN": 18241,
+      "MOHRSS_CN": 1889,
+      "ONET": 1422,
+      "ONE_PLUS_X": 470,
+      "SMART_EDU_VOC": 30
+    }
+  }
+}

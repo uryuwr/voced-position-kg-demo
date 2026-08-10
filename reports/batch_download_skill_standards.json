@@ -1,0 +1,15 @@
+{
+  "ok": 3,
+  "skip": 14,
+  "fail": 2,
+  "fails": [
+    [
+      "呼叫中心服务员_国家职业技能标准.pdf",
+      "HTTP Error 567: Unknown Status"
+    ],
+    [
+      "密码技术应用员_国家职业技能标准_2022.pdf",
+      "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)>"
+    ]
+  ]
+}

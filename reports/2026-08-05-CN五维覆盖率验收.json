@@ -1,0 +1,51 @@
+{
+  "date": "2026-08-05",
+  "region": "CN",
+  "nodes": {
+    "major": 2281,
+    "occupation": 1639,
+    "skill_level": 217,
+    "course": 15990,
+    "credential": 470,
+    "course_by_role": {
+      "curriculum_catalog": 15960,
+      "learnable_resource": 30
+    },
+    "learnable_with_url": 30
+  },
+  "edges": {
+    "prepares_for": 6939,
+    "requires": 217,
+    "related_to": 26605,
+    "taught_by": 30,
+    "majors_with_prepares_for": 1359,
+    "majors_with_related_to": 952
+  },
+  "raw": {
+    "moe_teaching_standard_pdfs": 736,
+    "skill_standard_pdfs": 14
+  },
+  "neo4j": {
+    "entities": 20597,
+    "rels": 33791
+  },
+  "acceptance_checks": {
+    "major_gt_2000": true,
+    "occupation_gt_1000": true,
+    "credential_gt_100": true,
+    "course_gt_100": true,
+    "skill_level_gt_20": true,
+    "prepares_for_gt_500": true,
+    "requires_gt_20": true,
+    "majors_pf_coverage_gt_30pct": true,
+    "learnable_with_url_gt_0": true,
+    "credential_linked_gt_0": true,
+    "occ_requires_gt_5": true,
+    "moe_pdf_gt_500": true,
+    "neo4j_synced": true
+  },
+  "acceptance_score": "13/13",
+  "acceptance_pass": true,
+  "credentials_with_edge": 465,
+  "occupations_with_requires": 13
+}

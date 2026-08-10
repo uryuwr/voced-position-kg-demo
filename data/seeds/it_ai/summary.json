@@ -1,0 +1,23 @@
+{
+  "nodes": 42,
+  "edges": 101,
+  "db_stats": {
+    "nodes": 42,
+    "edges": 101,
+    "nodes_by_type": {
+      "course": 10,
+      "major": 6,
+      "occupation": 10,
+      "skill_level": 16
+    },
+    "nodes_by_region": {
+      "CN": 42
+    },
+    "edges_by_confidence": {
+      "manual_seed": 101
+    }
+  },
+  "seed_dir": "D:\\workspace\\职业教育知识图谱\\data\\seeds\\it_ai",
+  "confidence": "manual_seed",
+  "fetched_at": "2026-08-05T04:37:46+00:00"
+}

@@ -1,0 +1,121 @@
+{
+  "source_system": "SMART_EDU_VOC",
+  "fetched_at": "2026-08-06T05:55:07+00:00",
+  "dry_run": false,
+  "api": "https://vocational.smartedu.cn/gjzyjy/index/getData",
+  "resources_parsed": 30,
+  "sample": [
+    {
+      "name": "自动生产线安装与调试数字仿真实训",
+      "url": "http://yq.keming365.com:8181/webclient/?appliId=1135961249524219904&appliType",
+      "type": "virtual_sim",
+      "platform": "虚拟仿真实训中心"
+    },
+    {
+      "name": "A320甚高频天线拆装数字仿真实训",
+      "url": "https://2025smartedu.qiyukeji.cn/Antenna/",
+      "type": "virtual_sim",
+      "platform": "虚拟仿真实训中心"
+    },
+    {
+      "name": "数控编程与加工技术数字仿真实训",
+      "url": "https://www.keming365.com/sign/yq/open?id=ZBZYMPRab290f3f-8242-404e-a0b0-a86ad9bede74",
+      "type": "virtual_sim",
+      "platform": "虚拟仿真实训中心"
+    },
+    {
+      "name": "抽水蓄能电站蜗壳焊接制造—装配数字仿真实训",
+      "url": "http://119.3.195.60:1191/page3d.html?role=STUDENT&appendix=%7B%22content%22%3A%7B%22xbTaskId%22%3A3453%7D%2C%22type%22%3A%22VR_LIB_TASK%22%2C%22uuid%22%3A%2228b0f02cc3da49d9b1b27f59d950d8cd%22%7D&accessKey=IAGF38SR7UTAAJou&signature=VVafefOp1B3wcUdYP%2Ba4CnrgtX4qlNuLzgOCQEGw1HY%3D&serverAddress=https%3A%2F%2Fscetc.walkclass.com&id=23cab59765e643e3b8424ade90f0382f&userName=%E7%AE%A1%E7%90%86%E5%91%98&userId=adc43f5dbc1644568016859e640eac1d&content=%7B%22xbTaskId%22%3A3230%7D×tamp=1746860910869",
+      "type": "virtual_sim",
+      "platform": "虚拟仿真实训中心"
+    },
+    {
+      "name": "超高速切削加工数字仿真实训",
+      "url": "http://58.56.66.170:8181/webclient/?appliId=1044575898767982592",
+      "type": "virtual_sim",
+      "platform": "虚拟仿真实训中心"
+    },
+    {
+      "name": "互联网+教育背景下职业院校信息化建设的新使命",
+      "url": "https://core.teacher.vocational.smartedu.cn/p/course/skill/detail_572553304968331264?pageOrigin=1",
+      "type": "video_course",
+      "platform": "中国教育干部网络学院"
+    },
+    {
+      "name": "校企协同走出去 服务“一带一路”战略",
+      "url": "https://core.teacher.vocational.smartedu.cn/p/course/skill/detail_572553306415366144?pageOrigin=1",
+      "type": "video_course",
+      "platform": "中国教育干部网络学院"
+    },
+    {
+      "name": "“课程思政”教学改革探索与实践",
+      "url": "https://core.teacher.vocational.smartedu.cn/p/course/skill/detail_572553299545096192?pageOrigin=1",
+      "type": "video_course",
+      "platform": "中国教育干部网络学院"
+    },
+    {
+      "name": "新时期职教德育工作的理论与实践——从强化理想教育入手",
+      "url": "https://core.teacher.vocational.smartedu.cn/p/course/skill/detail_572553304683118592?pageOrigin=1",
+      "type": "video_course",
+      "platform": "中国教育干部网络学院"
+    },
+    {
+      "name": "工程机械液压系统诊断与检修",
+      "url": "https://core.teacher.vocational.smartedu.cn/p/course/skill/detail_577005686280609792?pageOrigin=1",
+      "type": "video_course",
+      "platform": "教师能力提升中心"
+    },
+    {
+      "name": "【领导致辞】张家菁-江西应用技术职业学院",
+      "url": "https://strs.icve.com.cn/bluenewsList?biaoji=2&id=2eedaede9fd0420ea455f065fa59209a1003",
+      "type": "video_course",
+      "platform": "智慧职教"
+    },
+    {
+      "name": "【集体备课】郭玉珍-黄河水利职业技术大学",
+      "url": "https://strs.icve.com.cn/bluenewsList?biaoji=2&id=2eedaede9fd0420ea455f065fa59209a1004",
+      "type": "video_course",
+      "platform": "智慧职教"
+    }
+  ],
+  "by_resource_type": {
+    "virtual_sim": 5,
+    "video_course": 10,
+    "textbook_page": 5,
+    "mooc": 5,
+    "resource_library": 5
+  },
+  "curriculum_tagged": 0,
+  "nodes_upserted": 30,
+  "course_learnable": 30,
+  "course_catalog": 15960,
+  "db_stats": {
+    "nodes": 26555,
+    "edges": 120700,
+    "nodes_by_type": {
+      "course": 15990,
+      "credential": 470,
+      "major": 2281,
+      "occupation": 2905,
+      "skill_level": 4909
+    },
+    "nodes_by_region": {
+      "CN": 20630,
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "ai_inferred": 12843,
+      "derived": 25,
+      "official": 107832
+    },
+    "nodes_by_source": {
+      "ESCO": 4503,
+      "MOE_CN": 18241,
+      "MOHRSS_CN": 1889,
+      "ONET": 1422,
+      "ONE_PLUS_X": 470,
+      "SMART_EDU_VOC": 30
+    }
+  }
+}

@@ -1,0 +1,13 @@
+1: """鉴权：UC MAC Token 为主；开发旁路 AUTH_BYPASS=1（.env 配置）。"""
+18: AUTH_BYPASS = settings.AUTH_BYPASS
+84: if AUTH_BYPASS or AUTH_DEBUG:
+94: detail="未认证：需要 Authorization MAC Token（或开发旁路 AUTH_BYPASS=1）",
+113: async def dispatch(self, request: Request, call_next):
+120: if AUTH_BYPASS or AUTH_DEBUG:
+129: return await call_next(request)
+133: if AUTH_BYPASS or AUTH_DEBUG:
+145: return await call_next(request)
+149: "error": "missing_authorization",
+184: if AUTH_BYPASS or AUTH_DEBUG:
+196: return await call_next(request)
+202: return await call_next(request)

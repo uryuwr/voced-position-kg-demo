@@ -1,0 +1,90 @@
+{
+  "region": "CN",
+  "nodes_published": 9084,
+  "edges_published": 0,
+  "before": [
+    {
+      "type": "course",
+      "st": "published",
+      "c": 16790
+    },
+    {
+      "type": "credential",
+      "st": "published",
+      "c": 470
+    },
+    {
+      "type": "industry",
+      "st": "published",
+      "c": 149
+    },
+    {
+      "type": "major",
+      "st": "draft",
+      "c": 2282
+    },
+    {
+      "type": "occupation",
+      "st": "draft",
+      "c": 1641
+    },
+    {
+      "type": "skill_level",
+      "st": "draft",
+      "c": 5870
+    },
+    {
+      "type": "skill_level",
+      "st": "published",
+      "c": 3049
+    }
+  ],
+  "after": [
+    {
+      "type": "course",
+      "st": "published",
+      "c": 16790
+    },
+    {
+      "type": "credential",
+      "st": "published",
+      "c": 470
+    },
+    {
+      "type": "industry",
+      "st": "published",
+      "c": 149
+    },
+    {
+      "type": "major",
+      "st": "draft",
+      "c": 346
+    },
+    {
+      "type": "major",
+      "st": "published",
+      "c": 1936
+    },
+    {
+      "type": "occupation",
+      "st": "draft",
+      "c": 312
+    },
+    {
+      "type": "occupation",
+      "st": "published",
+      "c": 1329
+    },
+    {
+      "type": "skill_level",
+      "st": "draft",
+      "c": 51
+    },
+    {
+      "type": "skill_level",
+      "st": "published",
+      "c": 8868
+    }
+  ],
+  "published_majors": 1936
+}

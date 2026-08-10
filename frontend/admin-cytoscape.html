@@ -1,0 +1,2086 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>图谱后台 · Cytoscape.js</title>
+  <script src="/js/api-client.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* 设计系统：ui-ux-pro-max —— slate 板岩 + Fira 字体，浅色高密度 data-tool。
+       布局：左栏过滤 + 大画布 + 右下详情浮层（Neo4j Bloom 范式） */
+    :root {
+      --bg: #f1f5f9; --panel: #ffffff;
+      --line: #e2e8f0; --line-strong: #cbd5e1;
+      --text: #0f172a; --muted: #64748b;
+      --primary: #2563eb; --ink: #1e293b; --accent: #16a34a; --danger: #ef4444;
+      --sb-w: 276px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "Fira Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text); background: var(--bg);
+      display: flex; flex-direction: row; -webkit-font-smoothing: antialiased;
+    }
+    .mono { font-family: "Fira Code", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+    /* ============ 左侧栏 ============ */
+    .sidebar {
+      width: var(--sb-w); flex-shrink: 0; background: var(--panel);
+      border-right: 1px solid var(--line); display: flex; flex-direction: column;
+      gap: 14px; padding: 14px; overflow: auto;
+    }
+    .sb-brand { display: flex; align-items: center; gap: 8px; }
+    .sb-brand .logo { font-weight: 700; font-size: 15px; color: var(--ink); }
+    .sb-brand .badge {
+      font-size: 11px; font-weight: 600; color: #0369a1;
+      background: #e0f2fe; border: 1px solid #bae6fd; padding: 2px 7px; border-radius: 999px;
+    }
+    .sb-home { font-size: 12px; color: var(--primary); text-decoration: none; margin-top: -6px; }
+    .sb-home:hover { text-decoration: underline; }
+
+    .verswitch { display: flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+    .verswitch a {
+      flex: 1; text-align: center; font-size: 12px; padding: 7px 6px; text-decoration: none;
+      color: var(--muted); border-right: 1px solid var(--line); background: #fff;
+    }
+    .verswitch a:last-child { border-right: 0; }
+    .verswitch a.on { background: var(--ink); color: #fff; font-weight: 600; }
+    .verswitch a:not(.on):hover { color: var(--primary); background: #f8fafc; }
+
+    .sb-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+
+    /* 搜索 + 联想（左侧放大镜，主流 search field 样式） */
+    .search-wrap { position: relative; }
+    .search-wrap::before {
+      content: "";
+      position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+      width: 16px; height: 16px; z-index: 2; pointer-events: none;
+      background: no-repeat center / 16px 16px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath stroke-linecap='round' d='M20 20l-3.5-3.5'/%3E%3C/svg%3E");
+      opacity: .9;
+    }
+    .search-wrap:focus-within::before {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%232563eb' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath stroke-linecap='round' d='M20 20l-3.5-3.5'/%3E%3C/svg%3E");
+    }
+    .search-wrap input {
+      width: 100%; border: 1px solid var(--line-strong); border-radius: 9px;
+      padding: 10px 12px 10px 36px; font-size: 14px; outline: none; font-family: inherit; color: var(--text);
+      background: #f8fafc;
+      transition: border-color .15s, box-shadow .15s, background .15s;
+    }
+    .search-wrap input::placeholder { color: #94a3b8; }
+    .search-wrap input:hover { border-color: #94a3b8; background: #fff; }
+    .search-wrap input:focus {
+      border-color: var(--primary); box-shadow: 0 0 0 3px #dbeafe; background: #fff;
+    }
+    .suggest {
+      position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+      background: #fff; border: 1px solid var(--line-strong); border-radius: 10px;
+      box-shadow: 0 14px 34px rgba(15,23,42,.16); z-index: 80;
+      max-height: 300px; overflow: auto; display: none;
+    }
+    .suggest.on { display: block; }
+    .sg-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; cursor: pointer; font-size: 13px; }
+    .sg-item .sg-dot { margin-top: 5px; }
+    .sg-body { flex: 1; min-width: 0; }
+    .sg-sub { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sg-item:hover, .sg-item.active { background: #eff6ff; }
+    .sg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .sg-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sg-meta { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+    .sg-empty { padding: 10px; font-size: 12px; color: var(--muted); }
+
+    .sb-filters { display: flex; flex-direction: column; gap: 12px; }
+    .sb-view-panel { display: flex; flex-direction: column; gap: 14px; }
+    .sb-view-panel[hidden] { display: none; }
+    .sb-tip { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 2px 0; }
+    .fld { display: flex; flex-direction: column; gap: 5px; }
+    .fld > span { font-size: 12px; color: var(--muted); }
+    .fld select {
+      width: 100%; border: 1px solid var(--line-strong); border-radius: 8px;
+      padding: 8px 10px; font-size: 13px; background: #fff; cursor: pointer; color: var(--text); font-family: inherit;
+    }
+    .fld select:hover { border-color: var(--primary); }
+
+    /* 维度多选 chips */
+    .dims { display: flex; flex-wrap: wrap; gap: 6px; }
+    .dim-chip {
+      display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px;
+      border: 1px solid var(--line-strong); border-radius: 999px; font-size: 12px;
+      cursor: pointer; background: #fff; user-select: none; transition: all .12s;
+    }
+    .dim-chip input { display: none; }
+    #tableRootDims .dim-chip.on { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+    .dim-chip i { width: 9px; height: 9px; border-radius: 50%; }
+    .dim-chip.on { border-color: var(--primary); background: #eff6ff; color: #1e40af; font-weight: 600; }
+    .dim-hint { font-size: 11px; color: var(--muted); }
+
+    .sb-actions { display: flex; gap: 8px; }
+    .sb-actions button {
+      flex: 1; border: 1px solid var(--line-strong); border-radius: 8px; padding: 9px 10px;
+      font-size: 13px; background: #fff; cursor: pointer; color: var(--text); font-family: inherit;
+      transition: border-color .15s, background .15s;
+    }
+    .sb-actions button:hover { border-color: var(--primary); }
+    .sb-actions button.primary { background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 600; }
+    .sb-actions button.primary:hover { background: #0f172a; }
+    .sb-actions button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .sb-divider { height: 1px; background: var(--line); margin: 2px 0; }
+
+    /* 图例（左栏常驻，唯一一份） */
+    .legend { display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
+    .legend .row2 { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+    .legend .rel-chip { display: inline-block; padding: 2px 7px; border-radius: 6px; background: #eef2f7; font-size: 11px; font-weight: 600; color: #374151; border: 1px solid var(--line); }
+    .legend .rel-chip b { color: var(--primary); font-weight: 700; margin-right: 3px; }
+
+    /* ============ 主内容 ============ */
+    .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .toolbar { display: flex; align-items: center; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+    .tabs { display: flex; align-items: center; }
+    .tab {
+      border: 0; background: transparent; padding: 11px 16px; font-size: 13px; font-weight: 600;
+      color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-family: inherit;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.on { color: var(--primary); border-bottom-color: var(--primary); }
+    .toolbar .spacer { flex: 1; }
+    .btn-fs {
+      border: 1px solid var(--line-strong); background: #fff; border-radius: 8px; padding: 6px 12px;
+      font-size: 12px; font-weight: 600; cursor: pointer; margin: 4px 0 4px 8px; color: var(--text); font-family: inherit;
+    }
+    .btn-fs:hover { border-color: var(--primary); color: var(--primary); }
+
+    .err-bar { display: none; padding: 8px 14px; background: #fef2f2; color: #991b1b; border-bottom: 1px solid #fecaca; font-size: 13px; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .err-bar.on { display: flex; }
+    .err-bar button { border: 1px solid #fca5a5; background: #fff; color: #991b1b; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+
+    .views { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .view { flex: 1; min-height: 0; display: none; }
+    .view.on { display: flex; flex-direction: column; }
+
+    #graphBox { flex: 1; min-height: 0; width: 100%;
+      background: radial-gradient(circle at 1px 1px, #e2e8f0 1px, transparent 0) 0 0 / 22px 22px, #fafcff; }
+
+    /* 全屏 */
+    #view-graph:fullscreen, #view-graph.fs-fallback { background: #fafcff; display: flex !important; flex-direction: column; width: 100%; height: 100%; }
+    #view-graph:fullscreen .graph-stage, #view-graph.fs-fallback .graph-stage { flex: 1; min-height: 0; }
+    #view-graph:fullscreen { position: relative; }
+    #view-graph.fs-fallback { position: fixed; inset: 0; z-index: 9999; }
+    .fs-exit-bar { display: none; padding: 8px 12px; background: rgba(15,23,42,.92); color: #fff; font-size: 13px; align-items: center; justify-content: space-between; gap: 10px; flex-shrink: 0; }
+    #view-graph:fullscreen .fs-exit-bar, #view-graph.fs-fallback .fs-exit-bar { display: flex; }
+    .fs-exit-bar button { border: 0; border-radius: 8px; padding: 6px 12px; background: #fff; color: #0f172a; font-weight: 600; cursor: pointer; }
+
+    .graph-stage { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+    .graph-loading { display: none; position: absolute; inset: 0; z-index: 30; background: rgba(250,252,255,.72); align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #334155; }
+    .graph-loading.on { display: flex; }
+    .graph-loading .spin { width: 18px; height: 18px; margin-right: 10px; border: 2px solid #cbd5e1; border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .graph-loading .spin { animation: none; } }
+
+    .cy-tip { position: fixed; z-index: 60; display: none; pointer-events: none; background: rgba(15,23,42,.94); color: #fff; font-size: 12px; line-height: 1.5; padding: 6px 9px; border-radius: 8px; max-width: 260px; box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+    .cy-tip b { font-weight: 600; } .cy-tip .t2 { color: #cbd5e1; }
+
+    /* table */
+    .table-wrap { flex: 1; overflow: auto; padding: 12px 14px; }
+    .path-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 4px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    .path-row:hover { background: #f8fafc; }
+    .path-row .idx { width: 28px; color: var(--muted); font-size: 12px; flex-shrink: 0; }
+    .pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #e7e5e4; color: #1c1917; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pill.major { background: #dbeafe; color: #1e40af; }
+    .pill.occupation { background: #fecaca; color: #991b1b; }
+    .pill.skill_level { background: #bbf7d0; color: #166534; }
+    .pill.industry { background: #e0e7ff; color: #3730a3; }
+    .pill.course { background: #ede9fe; color: #5b21b6; }
+    .pill.credential { background: #fde68a; color: #92400e; }
+    .rel { display: inline-block; padding: 3px 8px; border-radius: 6px; background: #eef2f7; color: #374151; font-size: 11px; font-weight: 700; }
+    .arrow { color: #9ca3af; font-size: 12px; }
+
+    /* Table 检索 + 树形 */
+    .tsearch { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    .tsearch input { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; font-family: inherit; color: var(--text); }
+    .tsearch input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px #dbeafe; }
+    .tree { padding: 6px 4px; }
+    .trow { display: flex; align-items: flex-start; gap: 8px; padding: 9px 8px; border-bottom: 1px solid #f1f5f9; font-size: 13px; cursor: pointer; border-radius: 6px; }
+    .trow:hover { background: #f8fafc; }
+    .trow.tmuted { color: #94a3b8; cursor: default; }
+    .trow.tmuted:hover { background: transparent; }
+    .tw { width: 14px; color: #94a3b8; font-size: 10px; flex-shrink: 0; text-align: center; margin-top: 4px; }
+    .tdot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+    .tbody { flex: 1; min-width: 0; }
+    .tname { word-break: break-word; line-height: 1.35; font-weight: 600; color: var(--text); }
+    .tmeta { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
+    .tchip {
+      display: inline-flex; align-items: center; font-size: 11px; font-weight: 500;
+      color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0;
+      border-radius: 999px; padding: 1px 7px; max-width: 100%;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .tchip.lv { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; font-weight: 600; }
+    .tchip.code { font-family: "Fira Code", ui-monospace, monospace; font-size: 10px; }
+    .tchip.src { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+    .ttype { font-size: 11px; color: var(--muted); flex-shrink: 0; margin-top: 3px; }
+    .tcount { font-size: 11px; color: #475569; background: #eef2f7; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; flex-shrink: 0; margin-top: 2px; }
+    .tpager { display: flex; align-items: center; gap: 8px; padding: 10px 8px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--panel); }
+    .tpager button { border: 1px solid var(--line-strong); background: #fff; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+    .tpager button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+    .tpager button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .raw-wrap { flex: 1; overflow: auto; padding: 12px; background: #0f172a; color: #e2e8f0; position: relative; }
+    .raw-wrap pre { margin: 0; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .raw-copy { position: absolute; top: 10px; right: 12px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+    .raw-copy:hover { border-color: #64748b; }
+
+    .empty { margin: 40px auto; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.7; }
+    .hint { font-size: 12px; color: var(--muted); }
+
+    /* 详情浮层 */
+    /* 共享技能侧栏：高频技能提到这里，图上不画线（消除星形汇聚） */
+    .shared-panel { position: absolute; left: 12px; top: 12px; width: 232px; max-height: calc(100% - 24px);
+      display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line);
+      border-radius: 10px; box-shadow: 0 6px 20px rgba(15,23,42,.10); z-index: 20; font-size: 12px; }
+    .shared-panel .sp-h { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    .shared-panel .sp-h b { font-size: 13px; color: var(--ink); }
+    .shared-panel .sp-sub { color: var(--muted); flex: 1; font-size: 11px; }
+    .shared-panel .sp-h button { border: 1px solid var(--line); background: #f8fafc; border-radius: 6px;
+      width: 20px; height: 20px; cursor: pointer; line-height: 1; color: var(--muted); }
+    .shared-panel .sp-body { overflow: auto; padding: 6px 8px; }
+    .shared-panel.collapsed .sp-body { display: none; }
+    .sp-item { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+    .sp-item:hover { background: #f1f5f9; }
+    .sp-item.on { background: #dcfce7; }
+    .sp-item .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sp-item .ct { font-weight: 700; color: #166534; }
+    .drawer { position: absolute; right: 12px; bottom: 12px; width: min(380px, calc(100% - 24px)); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 40px rgba(15,23,42,.16); padding: 14px 16px; display: none; z-index: 40; max-height: min(62%, 520px); overflow: auto; }
+    #view-graph:fullscreen .drawer, #view-graph.fs-fallback .drawer { z-index: 50; bottom: 16px; right: 16px; }
+    .drawer.show { display: block; }
+    .drawer h3 { margin: 0 0 6px; font-size: 15px; padding-right: 24px; line-height: 1.35; }
+    .drawer .sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .drawer .sec { font-size: 11px; font-weight: 700; color: #64748b; margin: 10px 0 4px; letter-spacing: .03em; text-transform: uppercase; }
+    .drawer .drow { font-size: 12px; margin: 4px 0; display: flex; gap: 8px; line-height: 1.4; }
+    .drawer .lab { width: 72px; color: var(--muted); flex-shrink: 0; }
+    .drawer .val { flex: 1; min-width: 0; word-break: break-all; color: var(--text); }
+    .drawer .val a { color: var(--primary); font-weight: 600; }
+    .drawer .close { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; cursor: pointer; color: var(--muted); font-size: 16px; }
+
+    /* 底部状态栏 */
+    .statusbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 7px 14px; background: #f8fafc; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: middle; }
+    .ok { background: var(--accent); } .bad { background: var(--danger); } .warn { background: #f59e0b; }
+
+    /* 窄屏 */
+    @media (max-width: 960px) {
+      body { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 10px; overflow: visible; }
+      .search-wrap { flex: 1 1 200px; }
+      .sb-filters { flex-direction: row; flex-wrap: wrap; gap: 10px; }
+      .sb-view-panel { flex-direction: row; flex-wrap: wrap; align-items: flex-end; }
+      .legend { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <!-- ============ 左侧栏 ============ -->
+  <aside class="sidebar">
+    <div class="sb-brand"><span class="logo">图谱后台</span><span class="badge">Cytoscape.js</span></div>
+    <a class="sb-home" href="/admin">← 管理控制台</a>
+    <a class="sb-home" href="/cn-sources">知识来源目录</a>
+
+    <!-- 全局：地区（Graph / Table 都按此取数） -->
+    <label class="fld"><span>地区（数据来源）</span>
+      <select id="region" aria-label="地区">
+        <option value="CN" selected>国内 CN</option>
+        <option value="">全部地区</option>
+        <option value="EU">欧盟 EU</option>
+        <option value="US">美国 US</option>
+      </select>
+    </label>
+
+    <!-- Graph 视图专属（默认隐藏：主页 Table） -->
+    <div class="sb-view-panel" id="sb-graph" hidden>
+      <div class="search-wrap">
+        <input id="q" type="search" autocomplete="off" placeholder="搜专业看关系，如 软件技术 / 护理" value="" aria-label="搜索节点名称" />
+        <div class="suggest" id="suggest" role="listbox"></div>
+      </div>
+      <div class="sb-filters">
+        <div class="fld">
+          <span>展示维度（勾选要看的层）</span>
+          <div class="dims" id="dims" role="group" aria-label="展示维度">
+            <label class="dim-chip on"><input type="checkbox" value="industry" checked /><i style="background:#6366f1"></i>行业</label>
+            <label class="dim-chip on"><input type="checkbox" value="major" checked /><i style="background:#3b82f6"></i>专业</label>
+            <label class="dim-chip on"><input type="checkbox" value="occupation" checked /><i style="background:#ef4444"></i>岗位</label>
+            <label class="dim-chip"><input type="checkbox" value="skill_level" /><i style="background:#22c55e"></i>技能</label>
+            <label class="dim-chip"><input type="checkbox" value="course" /><i style="background:#a855f7"></i>课程</label>
+            <label class="dim-chip"><input type="checkbox" value="credential" /><i style="background:#f59e0b"></i>认证</label>
+          </div>
+          <span class="dim-hint">默认只看 行业→专业→岗位 三层；技能悬停岗位即可临时展开，勾「技能」才常驻。全量目录请用 Table。</span>
+        </div>
+        <label class="fld"><span>布局</span>
+          <select id="layout" aria-label="图布局">
+            <option value="force" selected>力导向 cose（默认）</option>
+            <option value="grid">网格 grid</option>
+            <option value="layered">分层 breadthfirst</option>
+          </select>
+        </label>
+        <label class="fld"><span>Expand 邻居上限 limit</span>
+          <input id="expandLimit" type="number" min="1" max="200" step="5" value="25"
+            title="双击 1 跳 expand（服务端上限 200）"
+            style="width:100%;border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit" />
+        </label>
+        <label class="fld"><span>Explore depth（0=仅种子）</span>
+          <input id="exploreDepth" type="number" min="0" max="5" step="1" value="0"
+            title="服务端 BFS 跳数，上限 5；试邻域可填 2～3"
+            style="width:100%;border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit" />
+        </label>
+        <label class="fld"><span>Explore max_nodes</span>
+          <input id="exploreMaxNodes" type="number" min="10" max="2000" step="50" value="300"
+            title="子图节点上限，服务端最大 2000；建议先 300～500"
+            style="width:100%;border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit" />
+        </label>
+        <span class="dim-hint">手填受服务端限制：depth≤5，max_nodes≤2000，expand≤200。</span>
+      </div>
+      <div class="sb-actions">
+        <button type="button" id="btnAllMajors" title="打开 Table 目录">目录 Table</button>
+        <button class="primary" type="button" id="btn">查询</button>
+      </div>
+      <div class="sb-divider"></div>
+      <div class="sb-label">图例</div>
+      <div class="legend" id="legend">
+        <div class="row2">
+          <span><i style="background:#6366f1"></i>行业</span>
+          <span><i style="background:#3b82f6"></i>专业</span>
+          <span><i style="background:#ef4444"></i>岗位</span>
+          <span><i style="background:#22c55e"></i>技能等级</span>
+          <span><i style="background:#a855f7"></i>课程</span>
+          <span><i style="background:#f59e0b"></i>认证</span>
+        </div>
+        <div class="row2">
+          <span class="rel-chip"><b>行业层级</b>门类→子行业</span>
+          <span class="rel-chip"><b>归属行业</b>岗位→行业</span>
+          <span class="rel-chip"><b>培养对口</b>专业→岗位</span>
+          <span class="rel-chip"><b>岗位要求</b>岗位→技能</span>
+          <span class="rel-chip"><b>相关推荐</b>弱相关</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table 视图专属 -->
+    <div class="sb-view-panel" id="sb-table">
+      <div class="fld">
+        <span>根维度（目录按此类型列出）</span>
+        <div class="dims" id="tableRootDims" role="radiogroup" aria-label="Table 根维度">
+          <label class="dim-chip"><input type="radio" name="tableRoot" value="industry" /><i style="background:#6366f1"></i>行业</label>
+          <label class="dim-chip on"><input type="radio" name="tableRoot" value="major" checked /><i style="background:#3b82f6"></i>专业</label>
+          <label class="dim-chip"><input type="radio" name="tableRoot" value="occupation" /><i style="background:#ef4444"></i>岗位</label>
+          <label class="dim-chip"><input type="radio" name="tableRoot" value="skill_level" /><i style="background:#22c55e"></i>技能</label>
+          <label class="dim-chip"><input type="radio" name="tableRoot" value="course" /><i style="background:#a855f7"></i>课程</label>
+          <label class="dim-chip"><input type="radio" name="tableRoot" value="credential" /><i style="background:#f59e0b"></i>认证</label>
+        </div>
+        <span class="dim-hint">切换根维度会重载目录；▶ 展开下级 · 点名称进图</span>
+      </div>
+      <div class="search-wrap">
+        <input id="tq" type="search" autocomplete="off" placeholder="在当前根维度中检索…" aria-label="目录检索" />
+      </div>
+      <label class="dim-chip" id="showLowOccWrap" style="margin-top:8px;display:none;width:100%;box-sizing:border-box">
+        <input type="checkbox" id="showLowOcc" />
+        显示低优先岗位（安保/保洁/机关/军队等）
+      </label>
+      <p class="sb-tip">默认全国 · 专业。岗位默认隐藏低优先（recommend_tier=low）。点名称 → Graph。</p>
+    </div>
+
+    <!-- Raw 视图专属 -->
+    <div class="sb-view-panel" id="sb-raw" hidden>
+      <p class="sb-tip">右侧为当前 Graph 查询返回的原始 JSON，可点右上角「复制」。</p>
+    </div>
+  </aside>
+
+  <!-- ============ 主内容 ============ -->
+  <main class="content">
+    <div class="toolbar">
+      <div class="tabs">
+        <button type="button" class="tab" data-v="graph">Graph</button>
+        <button type="button" class="tab on" data-v="table">Table</button>
+        <button type="button" class="tab" data-v="raw">Raw</button>
+      </div>
+      <span class="spacer"></span>
+      <button type="button" class="btn-fs" id="btnResetView" title="复位缩放与平移 (cy.fit)">复位视图</button>
+      <button type="button" class="btn-fs" id="btnFullscreen" title="图区域全屏">全屏展示</button>
+    </div>
+
+    <div class="err-bar" id="errBar" role="alert">
+      <span id="errText">查询失败</span>
+      <button type="button" id="errRetry">重试</button>
+      <button type="button" id="errDismiss">关闭</button>
+    </div>
+
+    <div class="views">
+      <div class="view" id="view-graph">
+        <div class="fs-exit-bar">
+          <span>图谱全屏 · 滚轮缩放 · 拖拽平移 · Esc 或点右侧退出</span>
+          <button type="button" id="btnExitFs">退出全屏</button>
+        </div>
+        <div class="graph-stage">
+          <div id="graphBox"></div>
+          <div class="graph-loading" id="graphLoading" aria-live="polite"><span class="spin" aria-hidden="true"></span><span>查询中…</span></div>
+          <div class="shared-panel" id="sharedPanel" hidden>
+            <div class="sp-h">
+              <b>共享技能</b>
+              <span class="sp-sub" id="spSub"></span>
+              <button type="button" id="spToggle" aria-label="折叠共享技能">−</button>
+            </div>
+            <div class="sp-body" id="spBody"></div>
+          </div>
+          <div class="drawer" id="drawer">
+            <button type="button" class="close" id="drawerClose" aria-label="关闭详情">×</button>
+            <h3 id="dTitle">节点</h3>
+            <div class="sub" id="dSub"></div>
+            <div id="dBody"></div>
+          </div>
+        </div>
+      </div>
+      <div class="view on" id="view-table">
+        <div class="table-wrap" id="tableBox"><div class="empty">加载目录…</div></div>
+      </div>
+      <div class="view" id="view-raw">
+        <div class="raw-wrap">
+          <button type="button" class="raw-copy" id="rawCopy">复制</button>
+          <pre id="rawBox" class="mono">// 查询后显示 JSON</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="statusbar">
+      <span id="apiSt"><span class="dot warn"></span>检测中…</span>
+      <span id="info">默认 Table · 全国 · 专业目录</span>
+      <span class="hint">Table：▶ 展开 · 点名称进图 · Graph：点节点锁定</span>
+    </div>
+  </main>
+
+  <div class="cy-tip" id="cyTip"></div>
+
+  <script>
+    // 本期主路径：行业→专业/岗位→技能；课/证后置可选
+    const DIMS = ["industry", "major", "occupation", "skill_level", "course", "credential"];
+    const TYPE_ZH = { industry: "行业", major: "专业", occupation: "岗位", skill_level: "技能等级", course: "课程", credential: "认证" };
+    const TYPE_ZH_SHORT = { industry: "行业", major: "专业", occupation: "岗位", skill_level: "技能", course: "课程", credential: "认证" };
+    const TYPE_COLOR = { industry: "#6366f1", major: "#3b82f6", occupation: "#ef4444", skill_level: "#22c55e", course: "#a855f7", credential: "#f59e0b" };
+    const REL_ZH = {
+      prepares_for: "培养对口", PREPARES_FOR: "培养对口", requires: "岗位要求", REQUIRES: "岗位要求",
+      covers: "专业覆盖", COVERS: "专业覆盖", taught_by: "课程覆盖", TAUGHT_BY: "课程覆盖",
+      related_to: "相关推荐", RELATED_TO: "相关推荐", leads_to: "通向认证", LEADS_TO: "通向认证",
+      recognized_by: "岗位认证书", RECOGNIZED_BY: "岗位认证书", articulates_to: "专业衔接证", ARTICULATES_TO: "专业衔接证",
+      same_as: "跨库等同", SAME_AS: "跨库等同",
+      advances_to: "岗位晋升", ADVANCES_TO: "岗位晋升",
+      belongs_to: "归属行业", BELONGS_TO: "归属行业",
+      parent_of: "行业层级", PARENT_OF: "行业层级",
+      offers_course: "开设课程", OFFERS_COURSE: "开设课程",
+      contain: "包含", CONTAIN: "包含",
+      skill_progress: "技能进阶", SKILL_PROGRESS: "技能进阶",
+    };
+    /** 归属树层：焦点过滤沿这些边下钻整棵子树 */
+    const TREE_RELS = new Set(["contain", "parent_of", "belongs_to", "prepares_for", "requires"]);
+    function relZh(t) { if (!t) return "关联"; return REL_ZH[t] || REL_ZH[String(t).toLowerCase()] || t; }
+
+    const NODE_FONT = '"Fira Sans","PingFang SC","Microsoft YaHei",sans-serif';
+    let cy = null, lastData = null, lastRaw = null, pinnedFocusId = null;
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+    function setApi(ok, t) { $("apiSt").innerHTML = `<span class="dot ${ok ? "ok" : "bad"}"></span>${esc(t)}`; }
+    // 与服务端 Query 校验对齐，手填超出则钳制
+    const LIMITS = { expand: 200, depth: 5, maxNodes: 2000 };
+    /** expand 1 跳 limit：侧栏 #expandLimit */
+    function getExpandLimit() {
+      const el = $("expandLimit");
+      let n = el ? Number(el.value) : 25;
+      if (!Number.isFinite(n)) n = 25;
+      return Math.max(1, Math.min(LIMITS.expand, Math.round(n)));
+    }
+    /** explore BFS depth：0=仅种子 */
+    function getExploreDepth() {
+      const el = $("exploreDepth");
+      let n = el ? Number(el.value) : 0;
+      if (!Number.isFinite(n)) n = 0;
+      return Math.max(0, Math.min(LIMITS.depth, Math.round(n)));
+    }
+    function getExploreMaxNodes() {
+      const el = $("exploreMaxNodes");
+      let n = el ? Number(el.value) : 300;
+      if (!Number.isFinite(n)) n = 300;
+      return Math.max(10, Math.min(LIMITS.maxNodes, Math.round(n)));
+    }
+
+    /* UC MAC 鉴权：复用 VocedApi（与管理控制台一致） */
+    async function apiFetch(url, opts) {
+      try {
+        const data = await window.VocedApi.apiFetch(url, opts || {});
+        return { ok: true, status: 200, json: async () => data };
+      } catch (e) {
+        return {
+          ok: false,
+          status: e.status || 500,
+          json: async () => e.data || { detail: e.message || String(e) },
+        };
+      }
+    }
+    function setLoading(on) { $("graphLoading")?.classList.toggle("on", !!on); }
+    function showError(msg) { $("errText").textContent = msg || "查询失败"; $("errBar").classList.add("on"); }
+    function clearError() { $("errBar")?.classList.remove("on"); }
+
+    /* ---------- 维度多选 ---------- */
+    function getSelDims() { return DIMS.filter((d) => document.querySelector(`#dims input[value="${d}"]`)?.checked); }
+    function syncChips() {
+      document.querySelectorAll("#dims .dim-chip").forEach((c) => c.classList.toggle("on", !!c.querySelector("input")?.checked));
+    }
+    function dimSpan() { const idx = getSelDims().map((d) => DIMS.indexOf(d)); return idx.length ? Math.max(...idx) - Math.min(...idx) : 0; }
+
+    /* ---------- 展示：库内字段全量可读 ---------- */
+    const LEVEL_SHORT = { ug_bachelor: "本", voc_bachelor: "职本", voc_associate: "高专", voc_secondary: "中职" };
+    const FIELD_LAB = {
+      id: "ID", name: "名称", display_name: "展示名", type: "类型", region: "地区",
+      name_zh: "中文名", name_en: "英文名", description: "简介",
+      order: "同层序 order", child_count: "可展开数 child_count",
+      source_system: "来源系统", source_id: "来源ID", source_url: "来源链接",
+      confidence: "置信度", license: "许可证", fetched_at: "采集时间",
+      // attrs 常见键
+      code: "专业代码", level: "层次代码", level_zh: "办学层次", category: "门类/类",
+      catalog: "所属目录", discipline: "学科门类", source_file: "原始文件",
+      table_index: "表序号", is_supplement: "是否增补", skill_name: "技能名",
+      scale: "等级标尺", level_code: "等级码", uri: "URI", skillType: "技能类型",
+      from_relation: "来自关系", className: "类名",
+    };
+    function parseAttrs(n) {
+      let a = n?.attrs;
+      if (typeof a === "string") { try { a = JSON.parse(a); } catch (_) { a = {}; } }
+      return a && typeof a === "object" && !Array.isArray(a) ? a : {};
+    }
+    function majorLevelShort(n) {
+      const a = parseAttrs(n);
+      if (a.level && LEVEL_SHORT[a.level]) return LEVEL_SHORT[a.level];
+      const zh = a.level_zh || "";
+      if (zh.includes("普通本科")) return "本";
+      if (zh.includes("职业本科") || zh.includes("高职本科")) return "职本";
+      if (zh.includes("专科")) return "高专";
+      if (zh.includes("中等")) return "中职";
+      return "";
+    }
+    function majorCode(n) {
+      const a = parseAttrs(n);
+      if (a.code) return String(a.code);
+      const sid = n.source_id || "";
+      if (String(sid).includes(":")) return String(sid).split(":").pop();
+      return "";
+    }
+    /** 完整展示名：优先 API display_name */
+    function displayName(n) {
+      if (!n) return "";
+      if (n.display_name) return n.display_name;
+      if (n.type === "major") {
+        const lv = majorLevelShort(n), code = majorCode(n), name = n.name || "";
+        return [lv, name, code].filter(Boolean).join(" · ");
+      }
+      // 课程：同名多专业时列表需带专业/角色，避免看起来像重复脏数据
+      if (n.type === "course") {
+        const a = parseAttrs(n);
+        const name = n.name || "";
+        if (a.role === "learnable_resource") {
+          const plat = a.platform ? String(a.platform).slice(0, 14) : "可学资源";
+          return `${name} · ${plat}`;
+        }
+        const maj = a.major_name || a.major_code || "";
+        const kind = a.course_kind_zh || ({ foundation: "基础", core: "核心", elective: "拓展" }[a.course_kind] || "");
+        if (maj || kind) return [name, maj, kind].filter(Boolean).join(" · ");
+        return name;
+      }
+      return n.name || n.id || "";
+    }
+    function shortLabel(name, maxLen) { const s = String(name || ""); return s.length <= maxLen ? s : s.slice(0, maxLen) + "…"; }
+    function skillLabel(name) {
+      const s = String(name || "");
+      const m = s.match(/^(.*?)(?:\s*·\s*)(L\d|IM\d|required)\s*$/i);
+      if (m) { let head = m[1].trim(); const lv = m[2].toUpperCase(); if (head.length > 8) head = head.slice(0, 7) + "…"; return `${head}·${lv}`; }
+      return shortLabel(s, 10);
+    }
+    function skillKeyOf(n) {
+      const a = parseAttrs(n);
+      if (a.skill_key) return a.skill_key;
+      if (a.skill_name) return a.skill_name;
+      if (n.skill_key) return n.skill_key;
+      const s = String(n.name || "");
+      const m = s.match(/^(.*?)\s*·\s*/);
+      return (m ? m[1] : s).trim() || s;
+    }
+    /** 图探索邻域：同 skill_key 的多 L 折叠为一行展示用节点 */
+    function aggregateSkillNodes(nodes) {
+      const out = [];
+      const skillBuckets = new Map();
+      const order = [];
+      for (const n of nodes || []) {
+        if (n.type !== "skill_level") {
+          out.push(n);
+          continue;
+        }
+        const key = skillKeyOf(n);
+        if (!skillBuckets.has(key)) {
+          skillBuckets.set(key, []);
+          order.push(key);
+        }
+        skillBuckets.get(key).push(n);
+      }
+      for (const key of order) {
+        const arr = skillBuckets.get(key);
+        if (arr.length === 1 && !parseAttrs(arr[0]).aggregated) {
+          out.push(arr[0]);
+          continue;
+        }
+        const levels = [];
+        arr.forEach((n) => {
+          const a = parseAttrs(n);
+          const code = a.level_code || (String(n.name || "").match(/·\s*(L\d)/i) || [])[1];
+          if (code && !levels.includes(String(code).toUpperCase())) levels.push(String(code).toUpperCase());
+        });
+        levels.sort();
+        out.push({
+          id: `bundle:CN:${key}`,
+          type: "skill_level",
+          name: key,
+          display_name: key,
+          skill_key: key,
+          available_levels: levels,
+          counts: { level: arr.length },
+          attrs: { skill_key: key, skill_name: key, available_levels: levels, aggregated: true, node_ids: arr.map((x) => x.id) },
+          region: arr[0].region,
+          source_system: arr[0].source_system,
+        });
+      }
+      return out;
+    }
+    /** 图上短标签：本·中医康复 / 高专·中医康复 */
+    function labelFor(n, nCount) {
+      if (n.type === "skill_level") return skillLabel(n.name);
+      if (n.type === "major") {
+        const lv = majorLevelShort(n);
+        const name = shortLabel(n.name, nCount > 80 ? 5 : 8);
+        return lv ? `${lv}·${name}` : name;
+      }
+      return shortLabel(n.name, nCount > 80 ? 5 : nCount > 40 ? 6 : 8);
+    }
+    /** Table / 联想 副行 meta chips */
+    function metaChipsHtml(n) {
+      const a = parseAttrs(n);
+      const c = (n.counts && typeof n.counts === "object") ? n.counts : {};
+      const chips = [];
+      if (n.type === "industry") {
+        if (c.major != null) chips.push({ cls: "lv", t: `专业 ${c.major}` });
+        if (c.occupation != null) chips.push({ cls: "lv", t: `岗位 ${c.occupation}` });
+      } else if (n.type === "major") {
+        if (a.level_zh || majorLevelShort(n)) chips.push({ cls: "lv", t: a.level_zh || majorLevelShort(n) });
+        if (majorCode(n)) chips.push({ cls: "code", t: majorCode(n) });
+        if (c.occupation != null) chips.push({ cls: "lv", t: `岗位 ${c.occupation}` });
+        if (c.skill != null) chips.push({ cls: "lv", t: `技能 ${c.skill}` });
+        if (a.category) chips.push({ cls: "", t: String(a.category).slice(0, 18) });
+        if (a.catalog) chips.push({ cls: "", t: String(a.catalog).slice(0, 16) });
+      } else if (n.type === "occupation") {
+        const ind = n.industry_name || (Array.isArray(n.industries) && n.industries[0]?.name);
+        if (ind) chips.push({ cls: "lv", t: String(ind).slice(0, 14) });
+        if (c.skill != null) chips.push({ cls: "lv", t: `技能 ${c.skill}` });
+        if (c.major != null) chips.push({ cls: "", t: `专业 ${c.major}` });
+      } else if (n.type === "skill_level") {
+        if (a.aggregated || n.skill_key) {
+          const av = n.available_levels || a.available_levels || [];
+          if (av.length) chips.push({ cls: "lv", t: av.join("/") });
+          else chips.push({ cls: "lv", t: "聚合技能" });
+          if (c.occupation != null) chips.push({ cls: "", t: `岗位 ${c.occupation}` });
+          if (c.level != null) chips.push({ cls: "", t: `${c.level} 档` });
+        } else {
+          if (a.level_code) chips.push({ cls: "lv", t: a.level_code });
+          if (a.scale) chips.push({ cls: "", t: a.scale });
+        }
+      } else if (n.type === "course") {
+        if (a.role === "learnable_resource") {
+          chips.push({ cls: "lv", t: "可学资源" });
+          if (a.resource_type) chips.push({ cls: "", t: String(a.resource_type) });
+          if (a.platform) chips.push({ cls: "src", t: String(a.platform).slice(0, 16) });
+          if (a.major_category) chips.push({ cls: "", t: String(a.major_category).slice(0, 16) });
+        } else {
+          chips.push({ cls: "lv", t: a.role === "curriculum_catalog" ? "课目标" : "课程" });
+          if (a.major_name) chips.push({ cls: "", t: String(a.major_name).slice(0, 16) });
+          if (a.major_code) chips.push({ cls: "code", t: a.major_code });
+          if (a.course_kind_zh || a.course_kind) {
+            chips.push({
+              cls: "",
+              t: a.course_kind_zh || ({ foundation: "专业基础", core: "专业核心", elective: "专业拓展" }[a.course_kind] || a.course_kind),
+            });
+          }
+        }
+      }
+      if (n.source_system && n.source_system !== "aggregated") chips.push({ cls: "src", t: n.source_system });
+      if (n.confidence) chips.push({ cls: "", t: n.confidence });
+      if (n.region) chips.push({ cls: "", t: n.region });
+      return chips.map((c0) => `<span class="tchip ${c0.cls}">${esc(c0.t)}</span>`).join("");
+    }
+    /** 抽屉：扁平化顶层字段 + attrs 全量 */
+    function nodeFieldRows(n) {
+      const a = parseAttrs(n);
+      const topKeys = [
+        "name", "display_name", "type", "region", "name_zh", "name_en", "description",
+        "order", "child_count",
+        "source_system", "source_id", "source_url", "confidence", "license", "fetched_at", "id",
+      ];
+      const rows = [];
+      const seen = new Set();
+      // 专业优先展示关键字段
+      if (n.type === "major") {
+        [["办学层次", a.level_zh || majorLevelShort(n)], ["专业代码", a.code || majorCode(n)], ["门类/类", a.category], ["所属目录", a.catalog], ["学科门类", a.discipline]].forEach(([k, v]) => {
+          if (v != null && v !== "") { rows.push([k, String(v)]); seen.add(k); }
+        });
+      }
+      topKeys.forEach((k) => {
+        let v = n[k];
+        if (k === "display_name" && !v) v = displayName(n);
+        if (k === "type" && v) v = `${TYPE_ZH[v] || v} (${v})`;
+        if (v == null || v === "") return;
+        if (typeof v === "object") v = JSON.stringify(v);
+        rows.push([FIELD_LAB[k] || k, String(v)]);
+      });
+      // attrs 其余键
+      Object.keys(a).sort().forEach((k) => {
+        if (["code", "level", "level_zh", "category", "catalog", "discipline"].includes(k) && n.type === "major") return;
+        let v = a[k];
+        if (v == null || v === "") return;
+        if (typeof v === "object") v = JSON.stringify(v);
+        rows.push([FIELD_LAB[k] || k, String(v)]);
+      });
+      // labels 数组
+      if (Array.isArray(n.labels) && n.labels.length) rows.push(["图谱标签", n.labels.join(", ")]);
+      return rows;
+    }
+
+    /* ---------- Cytoscape ---------- */
+    function baseStyle() {
+      const sizeByType = { industry: 42, major: 46, occupation: 34, skill_level: 26, course: 26, credential: 26 };
+      const styles = [{
+        selector: "node",
+        style: {
+          "background-color": "data(color)", "label": "data(label)", "width": 28, "height": 28,
+          "border-width": 1.5, "border-color": "#ffffff", "font-family": NODE_FONT, "font-size": 10, "color": "#334155",
+          "text-valign": "bottom", "text-halign": "center", "text-margin-y": 3, "text-wrap": "wrap", "text-max-width": 90,
+          "text-background-color": "#ffffff", "text-background-opacity": 0.86, "text-background-padding": 2,
+          "text-background-shape": "roundrectangle", "min-zoomed-font-size": 7, "z-index": 10,
+        },
+      }];
+      Object.entries(sizeByType).forEach(([t, s]) => styles.push({ selector: `node.${t}`, style: { width: s, height: s, "font-size": t === "major" ? 12 : 10 } }));
+      styles.push(
+        { selector: "edge", style: { "width": 1.2, "line-color": "#cbd5e1", "curve-style": "bezier", "target-arrow-shape": "vee", "target-arrow-color": "#cbd5e1", "arrow-scale": 0.8, "opacity": 0.7, "z-index": 1 } },
+        { selector: "node.focus", style: { "border-width": 3, "border-color": "#0f172a", "z-index": 30 } },
+        { selector: ".dim", style: { "opacity": 0.12, "text-opacity": 0.08 } },
+        { selector: "edge.dim", style: { "opacity": 0.05 } },
+        { selector: "edge.hl", style: { "line-color": "#64748b", "target-arrow-color": "#64748b", "width": 1.8, "opacity": 0.95 } },
+        // 晋升链：默认视图的主线之一，加粗着色以区别于普通关联边
+        { selector: "edge.rel-advances_to", style: { "line-color": "#7c3aed", "target-arrow-color": "#7c3aed", "target-arrow-shape": "triangle", "width": 2.4, "opacity": 0.95, "z-index": 15 } },
+        // 悬停临时展开的技能：虚线 + 略透明，与常驻元素区分
+        { selector: "node.ephemeral", style: { "border-width": 2, "border-color": "#22c55e", "border-style": "dashed", "opacity": 0.95, "z-index": 25 } },
+        { selector: "edge.ephemeral", style: { "line-color": "#22c55e", "target-arrow-color": "#22c55e", "line-style": "dashed", "width": 1.6, "opacity": 0.9, "z-index": 20 } }
+      );
+      return styles;
+    }
+
+    /* ---------- 悬停展开岗位技能（渐进式二级信息） ---------- */
+    const OCC_SKILL_CACHE = new Map();   // occId -> 技能 bundle 数组
+    let hoverTimer = null, hoverOccId = null;
+
+    function clearEphemeral() {
+      hoverOccId = null;
+      if (!cy) return;
+      const eph = cy.elements(".ephemeral");
+      if (eph.length) cy.remove(eph);
+    }
+
+    /** 把技能 bundle 作为临时节点挂到岗位上；mouseout 即整批移除 */
+    function paintEphemeralSkills(occId, list) {
+      if (!cy || hoverOccId !== occId) return;         // 鼠标已移走，丢弃这批结果
+      const occ = cy.getElementById(occId);
+      if (!occ || occ.length === 0) return;
+      const add = [];
+      (list || []).slice(0, 24).forEach((s, i) => {
+        const key = s.skill_key || s.name || ("sk" + i);
+        const nid = "eph:" + occId + ":" + key;
+        if (cy.getElementById(nid).length) return;
+        add.push({ group: "nodes", data: {
+          id: nid, label: skillLabel(key), color: TYPE_COLOR.skill_level,
+          raw: { id: nid, type: "skill_level", name: key, display_name: key, attrs: s.attrs || {} },
+        }, classes: "skill_level ephemeral" });
+        add.push({ group: "edges", data: {
+          id: "ephe:" + occId + ":" + key, source: occId, target: nid, label: "岗位要求",
+        }, classes: "ephemeral" });
+      });
+      if (!add.length) return;
+      cy.batch(() => {
+        const added = cy.add(add);
+        // 就近环绕岗位摆放，不跑整图布局（避免悬停时全图抖动）
+        const p = occ.position();
+        const nodes = added.nodes();
+        const R = 90 + Math.min(nodes.length, 24) * 3;
+        nodes.forEach((n, i) => {
+          const a = (2 * Math.PI * i) / Math.max(nodes.length, 1);
+          n.position({ x: p.x + R * Math.cos(a), y: p.y + R * Math.sin(a) });
+        });
+      });
+    }
+
+    async function hoverExpandSkills(node) {
+      const raw = node.data("raw") || {};
+      if (raw.type !== "occupation") return;
+      const occId = node.id();
+      if (String(occId).startsWith("eph:")) return;
+      hoverOccId = occId;
+      // 技能维度已常驻勾选时不重复展开
+      if (getSelDims().includes("skill_level")) return;
+      const cached = OCC_SKILL_CACHE.get(occId);
+      if (cached) { paintEphemeralSkills(occId, cached); return; }
+      try {
+        const r = await apiFetch("/v1/occupations/skills?aggregate=true&limit=50&occupation_id=" + encodeURIComponent(occId));
+        if (!r.ok) return;
+        const list = await r.json();
+        const arr = Array.isArray(list) ? list : [];
+        OCC_SKILL_CACHE.set(occId, arr);
+        paintEphemeralSkills(occId, arr);
+      } catch (_) { /* 悬停失败静默，不打断浏览 */ }
+    }
+    function initCy() {
+      cy = cytoscape({
+        container: $("graphBox"), elements: [], style: baseStyle(), layout: { name: "preset" },
+        wheelSensitivity: 0.2, minZoom: 0.15, maxZoom: 4, boxSelectionEnabled: false, autounselectify: true,
+        pixelRatio: window.devicePixelRatio > 1 ? 2 : 1,
+      });
+      // E2E / 调试
+      try { window.__kgCy = cy; window.__kgGetLast = () => ({ lastRaw, lastData, lastRenderHints }); } catch (_) {}
+      cy.on("tap", "node", (evt) => pinGraphFocus(evt.target));
+      cy.on("dbltap", "node", (evt) => {
+        evt.originalEvent?.preventDefault?.();
+        expandNodeAsRoot(evt.target);
+      });
+      cy.on("tap", (evt) => { if (evt.target === cy && pinnedFocusId) { clearGraphFocus(); $("drawer").classList.remove("show"); } });
+      const tip = $("cyTip");
+      cy.on("mouseover", "node", (evt) => {
+        const r = evt.target.data("raw") || {}; if (!r.name && !r.id) return;
+        const a = parseAttrs(r);
+        const noEdge = cy.edges().length === 0;
+        const pinTxt = pinnedFocusId === evt.target.id()
+          ? '<span class="t2">已选中 · 再点取消</span>'
+          : (noEdge
+            ? '<span class="t2">点击查看详情 · 双击展开关系</span>'
+            : '<span class="t2">点击查看详情并高亮邻接</span>');
+        const bits = [
+          TYPE_ZH[r.type] || r.type,
+          r.region,
+          r.type === "major" ? (a.level_zh || majorLevelShort(r)) : "",
+          r.type === "major" ? majorCode(r) : "",
+          r.type === "course" ? (a.role === "learnable_resource" ? "可学资源" : a.role === "curriculum_catalog" ? "课目目录" : "") : "",
+          r.source_system,
+          r.confidence,
+        ].filter(Boolean);
+        const skillTxt = (r.type === "occupation" && !getSelDims().includes("skill_level"))
+          ? '<br/><span class="t2">悬停展开技能…</span>' : "";
+        tip.innerHTML = `<b>${esc(displayName(r))}</b><br/><span class="t2">${esc(bits.join(" · "))}</span><br/>${pinTxt}${skillTxt}`;
+        tip.style.display = "block";
+        // 悬停 250ms 才拉技能：快速划过不触发请求
+        clearTimeout(hoverTimer);
+        if (r.type === "occupation") {
+          const target = evt.target;
+          hoverTimer = setTimeout(() => hoverExpandSkills(target), 250);
+        }
+      });
+      cy.on("mousemove", "node", (evt) => { const oe = evt.originalEvent; if (!oe) return; tip.style.left = Math.min(oe.clientX + 14, window.innerWidth - 270) + "px"; tip.style.top = (oe.clientY + 14) + "px"; });
+      cy.on("mouseout", "node", (evt) => {
+        tip.style.display = "none";
+        clearTimeout(hoverTimer);
+        // 移到自己展开出来的技能上时不收起，避免闪烁
+        const raw = evt.target.data("raw") || {};
+        if (String(raw.id || "").startsWith("eph:")) return;
+        clearEphemeral();
+      });
+      $("graphBox").addEventListener("mouseleave", () => { tip.style.display = "none"; clearTimeout(hoverTimer); clearEphemeral(); });
+    }
+
+    const CONC_ORDER = { industry: 6, major: 5, occupation: 4, skill_level: 3, course: 2, credential: 1 };
+    /** 无边 + 节点过多：同心圆/力导向都会「一坨看不清」→ 网格 + 少标 */
+    function isDenseCatalog(nCount, eCount) {
+      return eCount === 0 && nCount > 36;
+    }
+    function layoutOptions(mode, nCount, eCount) {
+      // 严格尊重下拉选择：不再因「无边+节点多」偷偷改成 grid
+      if (mode === "grid") {
+        return {
+          name: "grid",
+          fit: true,
+          padding: 40,
+          avoidOverlap: true,
+          animate: false,
+          cols: nCount > 100 ? 14 : nCount > 48 ? 10 : 6,
+          condense: true,
+        };
+      }
+      if (mode === "layered") {
+        const roots = cy.nodes(".major").length ? ".major" : cy.nodes(".occupation").length ? ".occupation" : undefined;
+        return { name: "breadthfirst", directed: true, fit: true, padding: 34, spacingFactor: 1.05, roots, animate: false };
+      }
+      // force / 默认：始终 cose（无边时也会按连通分量散开，不会变网格）
+      const e = eCount ?? cy.edges().length;
+      return {
+        name: "cose",
+        fit: true,
+        padding: 36,
+        animate: true,
+        animationDuration: e === 0 ? 400 : 550,
+        randomize: true,
+        componentSpacing: e === 0 ? 60 : 100,
+        nodeRepulsion: nCount > 80 ? 12000 : e === 0 ? 9000 : 7000,
+        idealEdgeLength: e === 0 ? 60 : nCount > 80 ? 80 : 110,
+        edgeElasticity: 100,
+        gravity: e === 0 ? 0.35 : 0.25,
+        numIter: nCount > 100 ? 900 : 1200,
+        nodeOverlap: 12,
+      };
+    }
+    function runLayout(nCount, eCount) {
+      const n = nCount ?? cy.nodes().length;
+      const e = eCount ?? cy.edges().length;
+      const mode = $("layout")?.value || "force";
+      cy.layout(layoutOptions(mode, n, e)).run();
+    }
+
+    function renderGraph(data) {
+      let nodes = data.nodes || [], edges = data.edges || [];
+      // 技能 L 平铺 → 按 skill_key 折叠（图上不刷 5 个同名点）
+      const beforeSkill = nodes.filter((n) => n.type === "skill_level").length;
+      nodes = aggregateSkillNodes(nodes);
+      const afterSkill = nodes.filter((n) => n.type === "skill_level").length;
+      // 边端点若被折进 bundle，改指 bundle id
+      const idMap = new Map();
+      nodes.forEach((n) => {
+        const a = parseAttrs(n);
+        if (a.aggregated && Array.isArray(a.node_ids)) {
+          a.node_ids.forEach((oid) => idMap.set(String(oid), String(n.id)));
+        }
+      });
+      if (idMap.size) {
+        edges = edges.map((e) => {
+          const s0 = String(e.src_id ?? e.source ?? "");
+          const t0 = String(e.dst_id ?? e.target ?? "");
+          return {
+            ...e,
+            src_id: idMap.get(s0) || s0,
+            dst_id: idMap.get(t0) || t0,
+            source: idMap.get(s0) || s0,
+            target: idMap.get(t0) || t0,
+          };
+        });
+      }
+      const metaDepth = data.meta?.depth;
+      const isCatalog = metaDepth === 0 || (edges.length === 0 && nodes.length > 36);
+      // Graph 不适合堆 500 孤立专业：清单截断 + 提示去 Table
+      const CATALOG_CAP = 48;
+      let truncatedCatalog = false;
+      if (isCatalog && nodes.length > CATALOG_CAP) {
+        nodes = nodes.slice(0, CATALOG_CAP);
+        truncatedCatalog = true;
+        data = { ...data, nodes, edges: [], meta: { ...(data.meta || {}), node_count: nodes.length, catalog_truncated: true, catalog_cap: CATALOG_CAP } };
+      }
+      const nCount = nodes.length;
+      const eCount = edges.length;
+      const dense = isDenseCatalog(nCount, eCount);
+      const hideLabels = dense || (nCount > 60 && eCount < nCount * 0.15);
+      const idset = new Set(nodes.map((n) => String(n.id)));
+      const els = [];
+      nodes.forEach((n) => {
+        const lab = hideLabels ? "" : labelFor(n, nCount);
+        els.push({
+          data: { id: String(n.id), label: lab, type: n.type, color: TYPE_COLOR[n.type] || "#94a3b8", raw: n },
+          classes: (n.type || "") + (hideLabels ? " no-label" : ""),
+        });
+      });
+      const edgeSeen = new Set();
+      edges.forEach((e, i) => {
+        const s = String(e.src_id ?? e.source ?? ""), t = String(e.dst_id ?? e.target ?? "");
+        if (!s || !t || !idset.has(s) || !idset.has(t) || s === t) return;
+        const ek = s + ">" + t + ">" + (e.rel_type || "");
+        if (edgeSeen.has(ek)) return;
+        edgeSeen.add(ek);
+        const rt = String(e.neo4j_type || e.rel_type || "").toLowerCase();
+        // relType 保留英文原值：焦点过滤按边类型分层下钻、晋升链单独着色都要用
+        els.push({ data: { id: "e" + i, source: s, target: t, rel: relZh(rt), relType: rt }, classes: rt ? "rel-" + rt : "" });
+      });
+      if (beforeSkill > afterSkill && data.meta) {
+        data = { ...data, meta: { ...data.meta, skill_aggregated: true, skill_before: beforeSkill, skill_after: afterSkill } };
+      }
+      pinnedFocusId = null;
+      hoverOccId = null;
+      cy.batch(() => { cy.elements().remove(); cy.add(els); });
+      if (hideLabels) {
+        cy.style().selector("node.no-label").style({ label: "", "font-size": 1, width: 14, height: 14 }).update();
+      }
+      runLayout(nCount, eCount);
+      if (truncatedCatalog) {
+        data._catalogHint = `清单过密已显示前 ${CATALOG_CAP} 个点（无标签网格）。请用「目录 Table」浏览全量，或搜索具体专业名展开关系。`;
+      } else if (dense) {
+        data._catalogHint = "当前多为无边种子（search 结果）。请双击节点 expand 拉邻居；仅当布局选「网格」时才用网格。";
+      }
+      lastRenderHints = data._catalogHint || "";
+    }
+    let lastRenderHints = "";
+
+    /* ---------- 按勾选维度过滤 ---------- */
+    function filterByDims(data) {
+      const keep = new Set(getSelDims());
+      const nodes = (data.nodes || []).filter((n) => keep.has(n.type));
+      const idset = new Set(nodes.map((n) => String(n.id)));
+      const edges = (data.edges || []).filter((e) => idset.has(String(e.src_id ?? e.source)) && idset.has(String(e.dst_id ?? e.target)));
+      const paths = (data.paths || []).filter((p) => (p.steps || []).filter((s) => s.kind === "node").every((s) => keep.has(s.type)));
+      const meta = { ...(data.meta || {}), node_count: nodes.length, edge_count: edges.length, path_count: paths.length };
+      return { ...data, nodes, edges, paths, meta };
+    }
+
+    /* 维度只管显隐：用当前已加载数据重新过滤 + 渲染，不重新请求后端 */
+    function applyDimFilter(ctx) {
+      if (!lastRaw) return;
+      const view = filterByDims(lastRaw); lastData = view;
+      renderGraph(view); renderTable(view); renderRaw(lastRaw); renderSharedPanel();
+      const sel = getSelDims(); const m = view.meta || {};
+      const dimTxt = sel.map((x) => TYPE_ZH_SHORT[x]).join("+") || "（未勾选）";
+      const present = new Set((lastRaw.nodes || []).map((n) => n.type));
+      const emptySel = sel.filter((d) => !present.has(d));
+      const isCatalog = (lastRaw.meta?.depth ?? 0) === 0;
+      const rawN = (lastRaw.nodes || []).length;
+      let extraNote = "";
+      if (rawN > 0 && (m.node_count || 0) === 0) {
+        // 后端有数据、勾选维度与结果类型错位 → 空画布（最常见「数据全没了」误报）
+        const miss = [...present].map((t) => TYPE_ZH_SHORT[t] || t).join("/");
+        extraNote = ` · 后端返回 ${rawN} 个节点（${miss}），当前勾选维度无交集：请勾选「${miss}」或点「浏览全部」`;
+      } else if (emptySel.length) {
+        extraNote = isCatalog
+          ? " · 清单模式：点任一节点或搜索它，展开其关系"
+          : ` · 该数据无「${emptySel.map((x) => TYPE_ZH_SHORT[x]).join("/")}」`;
+      }
+      const hint = lastRenderHints ? " · " + lastRenderHints : "";
+      $("info").textContent = (ctx?.note || "") + `维度 ${dimTxt} · 节点 ${m.node_count ?? 0} · 边 ${m.edge_count ?? 0}` + (ctx?.srcNote || "") + extraNote + hint + layoutNoteText() + " · " + (regionDefaults().tip || "");
+    }
+
+    /* ---------- 共享技能侧栏 ---------- */
+    let sharedSel = null;
+
+    /** 从后端原始数据（未经维度过滤）统计：被 >=2 个岗位 requires 的技能 */
+    function computeSharedSkills(raw) {
+      if (!raw) return [];
+      const byId = new Map((raw.nodes || []).map((n) => [String(n.id), n]));
+      const map = new Map();
+      (raw.edges || []).forEach((e) => {
+        if (String(e.rel_type || e.neo4j_type || "").toLowerCase() !== "requires") return;
+        const s = String(e.src_id ?? e.source ?? ""), t = String(e.dst_id ?? e.target ?? "");
+        const sn = byId.get(s), tn = byId.get(t);
+        if (!sn || !tn || sn.type !== "occupation" || tn.type !== "skill_level") return;
+        const key = skillKeyOf(tn);
+        if (!map.has(key)) map.set(key, new Set());
+        map.get(key).add(s);
+      });
+      return [...map.entries()]
+        .filter(([, v]) => v.size >= 2)
+        .map(([k, v]) => ({ skill_key: k, occ_count: v.size, occupation_ids: [...v] }))
+        .sort((a, b) => b.occ_count - a.occ_count || String(a.skill_key).localeCompare(b.skill_key));
+    }
+
+    /** 只高亮引用该技能的岗位，不建边——这是消除星形汇聚的关键 */
+    function highlightOccs(ids) {
+      if (!cy) return;
+      let sel = cy.collection();
+      (ids || []).forEach((id) => {
+        const n = cy.getElementById(String(id));
+        if (n && n.length) sel = sel.union(n);
+      });
+      if (!sel.length) { $("info").textContent = "该技能对应的岗位不在当前画布（可能已被维度过滤）"; return; }
+      cy.batch(() => {
+        cy.elements().addClass("dim").removeClass("focus hl");
+        sel.removeClass("dim").addClass("focus");
+      });
+      $("info").textContent = `共享技能高亮 ${sel.length} 个岗位 · 不画连线 · 再点一次取消`;
+    }
+
+    function renderSharedPanel() {
+      const panel = $("sharedPanel");
+      if (!panel) return;
+      const list = computeSharedSkills(lastRaw);
+      if (!list.length) { panel.hidden = true; sharedSel = null; return; }
+      panel.hidden = false;
+      $("spSub").textContent = `${list.length} 项`;
+      $("spBody").innerHTML = list.slice(0, 40).map((s, i) =>
+        `<div class="sp-item${sharedSel === s.skill_key ? " on" : ""}" data-sp="${i}" title="${esc(s.skill_key)}">`
+        + `<span class="nm">${esc(s.skill_key)}</span><span class="ct">×${s.occ_count}</span></div>`).join("");
+      $("spBody").querySelectorAll("[data-sp]").forEach((el) => {
+        el.onclick = () => {
+          const s = list[Number(el.dataset.sp)];
+          if (sharedSel === s.skill_key) { sharedSel = null; clearGraphFocus(); }
+          else { sharedSel = s.skill_key; highlightOccs(s.occupation_ids); }
+          renderSharedPanel();
+        };
+      });
+    }
+
+    /* ---------- 焦点过滤：沿归属树取整棵子树 ---------- */
+    // 下行树边：从当前节点顺着箭头走
+    const TREE_DOWN = new Set(["contain", "parent_of", "prepares_for", "requires", "offers_course"]);
+    // 反向树边：X -belongs_to-> 行业，从行业看下级要往来源侧走
+    const TREE_UP_REV = new Set(["belongs_to"]);
+    const relOf = (e) => String(e.data("relType") || "").toLowerCase();
+
+    /** 从 node 出发沿归属树逐层下钻，返回含自身的整棵子树（深度上限 12 防环） */
+    function collectSubtree(node) {
+      let acc = node, frontier = node;
+      for (let g = 0; g < 12 && frontier.length; g++) {
+        const down = frontier.outgoers("edge").filter((e) => TREE_DOWN.has(relOf(e))).targets();
+        const up = frontier.incomers("edge").filter((e) => TREE_UP_REV.has(relOf(e))).sources();
+        const next = down.union(up).difference(acc);
+        if (!next.length) break;
+        acc = acc.union(next);
+        frontier = next;
+      }
+      // 子树只有自己（如点到叶子/无树边）→ 退回 1 跳邻域，避免「点了没反应」
+      return acc.length > 1 ? acc : node.closedNeighborhood();
+    }
+
+    /* ---------- 点选锁定邻接高亮 ---------- */
+    function pinGraphFocus(node) {
+      const raw0 = node.data("raw");
+      const id = node.id();
+      // 再点同一节点：取消锁定并关抽屉
+      if (pinnedFocusId === id) {
+        clearGraphFocus();
+        $("drawer").classList.remove("show");
+        return;
+      }
+      pinnedFocusId = id;
+      // 始终先展示详情（含课程 source_url）；无连线时绝不自动 explore 跳转
+      showDrawer(raw0);
+      if (cy.edges().length === 0) {
+        cy.batch(() => {
+          cy.elements().addClass("dim").removeClass("focus hl");
+          node.removeClass("dim").addClass("focus");
+        });
+        const name = raw0?.name || id;
+        $("info").textContent =
+          `已选中：「${name}」· 当前图无关系边 · 见右侧详情` +
+          (raw0?.source_url ? " · 可打开链接" : "") +
+          " · 双击节点可尝试展开关系";
+        return;
+      }
+      // 焦点过滤：沿归属树下钻整棵子树（不是固定 N 跳），再并上子树内部的关联边
+      const keep = collectSubtree(node);
+      cy.batch(() => {
+        cy.elements().addClass("dim").removeClass("focus hl");
+        keep.removeClass("dim");
+        keep.edgesWith(keep).addClass("hl");
+        node.addClass("focus");
+      });
+      const name = raw0?.name || id;
+      const sn = keep.nodes().length - 1;
+      $("info").textContent = sn > 0
+        ? `已聚焦：「${name}」子树 ${sn} 个下级节点 · 其余淡出 · 再点同一节点或空白处恢复`
+        : `已锁定：「${name}」（无下级节点）· 再点同一节点或空白处恢复`;
+    }
+    /** 合并 expand 结果到当前图（去重） */
+    function mergeExpandIntoLast(partial) {
+      const base = lastRaw || { roots: [], nodes: [], edges: [], paths: [], meta: {} };
+      const byId = new Map((base.nodes || []).map((n) => [String(n.id), n]));
+      (partial.nodes || []).forEach((n) => byId.set(String(n.id), n));
+      const eSeen = new Set(
+        (base.edges || []).map(
+          (e) =>
+            String(e.id || "") +
+            "|" +
+            String(e.src_id || e.source) +
+            ">" +
+            String(e.dst_id || e.target) +
+            ">" +
+            (e.rel_type || "")
+        )
+      );
+      const edges = [...(base.edges || [])];
+      (partial.edges || []).forEach((e) => {
+        const k =
+          String(e.id || "") +
+          "|" +
+          String(e.src_id || e.source) +
+          ">" +
+          String(e.dst_id || e.target) +
+          ">" +
+          (e.rel_type || "");
+        if (!eSeen.has(k)) {
+          eSeen.add(k);
+          edges.push(e);
+        }
+      });
+      const roots = base.roots?.length ? base.roots : partial.roots || [];
+      lastRaw = {
+        ...base,
+        roots,
+        nodes: [...byId.values()],
+        edges,
+        meta: {
+          ...(base.meta || {}),
+          ...(partial.meta || {}),
+          node_count: byId.size,
+          edge_count: edges.length,
+          mode: "search+expand",
+        },
+      };
+      return lastRaw;
+    }
+
+    /** 双击：1 跳 expand 合并到画布（业界常规，非整图 depth=2 重扫） */
+    async function expandNodeAsRoot(node) {
+      const raw = node.data("raw");
+      if (!raw?.id) return;
+      // 确保维度可见
+      if (raw.type) ensureDimChecked(raw.type);
+      ["occupation", "skill_level", "course", "major", "industry"].forEach(ensureDimChecked);
+      $("info").textContent = `展开邻居：${raw.name || raw.id}…`;
+      setLoading(true);
+      try {
+        const lim = getExpandLimit();
+        const r = await apiFetch("/v1/graph/expand", {
+          method: "POST",
+          body: {
+            node_id: raw.id,
+            limit: lim,
+            direction: "both",
+          },
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          $("info").textContent = `展开失败：${err.detail?.message || err.detail || r.status}`;
+          showDrawer(raw);
+          return;
+        }
+        const partial = await r.json();
+        // 若画布为空，先以该节点为种子
+        if (!lastRaw?.nodes?.length) {
+          lastRaw = {
+            roots: [raw],
+            nodes: [raw],
+            edges: [],
+            paths: [],
+            meta: { matched: 1, depth: 0, mode: "search_seeds" },
+          };
+        }
+        mergeExpandIntoLast(partial);
+        applyDimFilter({ note: "expand · ", srcNote: partial.meta?.truncated ? " · 本批已截断，可再双击" : "" });
+        setTimeout(() => {
+          const el = cy?.getElementById(String(raw.id));
+          if (el && el.nonempty()) pinGraphFocus(el);
+          showDrawer(raw);
+        }, 200);
+        const m = lastRaw.meta || {};
+        $("info").textContent =
+          `节点 ${m.node_count} · 边 ${m.edge_count} · 双击继续 expand（1 跳，limit=${lim}）` +
+          (partial.meta?.truncated ? " · 本批截断" : "");
+      } catch (e) {
+        $("info").textContent = "展开失败：" + (e.message || e);
+        showDrawer(raw);
+      } finally {
+        setLoading(false);
+      }
+    }
+    function clearGraphFocus() {
+      pinnedFocusId = null;
+      if (sharedSel !== null) { sharedSel = null; renderSharedPanel(); }
+      cy.batch(() => { cy.elements().removeClass("dim focus hl"); });
+      if (lastData?.meta) { const m = lastData.meta; $("info").textContent = `节点 ${m.node_count} · 边 ${m.edge_count} · 路径 ${m.path_count ?? "—"}` + (m.truncated ? " · 已截断" : "") + " · 点击节点锁定高亮，再点取消"; }
+    }
+    function resetGraphView() {
+      if (!cy) return;
+      clearGraphFocus(); $("drawer")?.classList.remove("show"); cy.stop();
+      cy.animate({ fit: { eles: cy.elements(), padding: 34 } }, { duration: 260 });
+      $("info").textContent = "视图已复位";
+    }
+
+    /* ---------- Table / Raw / Drawer ---------- */
+    /* ---------- Table：独立分页目录（脱离图）+ 逐级懒加载下钻 ---------- */
+    let treeState = {
+      page: 0, pageSize: 20, expanded: new Set(), roots: [], rootType: "major",
+      loadedRegion: undefined, loadedRootType: undefined, kids: new Map(), loadingIds: new Set(),
+    };
+
+    function getTableRootType() {
+      const el = document.querySelector('#tableRootDims input[name="tableRoot"]:checked');
+      return el?.value || "major";
+    }
+    function syncTableRootChips() {
+      document.querySelectorAll("#tableRootDims .dim-chip").forEach((c) => {
+        c.classList.toggle("on", !!c.querySelector("input")?.checked);
+      });
+    }
+
+    /** Graph 维度：从 fromType 起向下勾选全部（含 fromType） */
+    function setGraphDimsFrom(fromType) {
+      const start = Math.max(0, DIMS.indexOf(fromType));
+      document.querySelectorAll("#dims input[type=checkbox]").forEach((cb) => {
+        const i = DIMS.indexOf(cb.value);
+        cb.checked = i >= start;
+      });
+      syncChips();
+    }
+
+    /** 岗位默认隐藏 low 档；客户端词表兜底（与 tag_cn_scope 一致） */
+    const OCC_LOW_NAME_RE = /保安|保洁|安保|门卫|看门|传达室|家政|保姆|废品回收|垃圾清运|公厕|洗衣|熨烫|勤杂|杂务|传菜|洗碗|装卸工|搬运工|护工/;
+    function isLowPriorityOccupation(n) {
+      if (!n || n.type !== "occupation") return false;
+      const a = parseAttrs(n);
+      if (a.recommend_tier === "low") return true;
+      if (a.recommend_tier === "primary" || a.recommend_tier === "secondary") return false;
+      // 无标签时按名称兜底
+      return OCC_LOW_NAME_RE.test(n.name || "");
+    }
+    function occupationListFilter(nodes, q) {
+      const showLow = !!$("showLowOcc")?.checked;
+      // 用户主动搜具体词时不过滤（便于查找安保等）
+      const searching = q && q !== "*";
+      if (showLow || searching) return nodes;
+      return nodes.filter((n) => !isLowPriorityOccupation(n));
+    }
+
+    async function loadTreeRoots(kw) {
+      const region = $("region").value;
+      const type = getTableRootType();
+      const rawQ = ((kw ?? $("tq")?.value ?? "").trim());
+      const q = rawQ && rawQ !== "*" ? rawQ : "";
+      // 岗位根维：显示「低优先」开关
+      const lowWrap = $("showLowOccWrap");
+      if (lowWrap) lowWrap.style.display = type === "occupation" ? "flex" : "none";
+      $("tableBox").innerHTML = `<div class="empty">加载「${TYPE_ZH_SHORT[type] || type}」目录…</div>`;
+      try {
+        // 四维管理列表：GET /v1/kg/nodes 服务端分页（对齐参考 backend 管理 Table）
+        treeState.serverTotal = 0;
+        treeState.serverPage = 1;
+        treeState.useServerPage = true;
+        const page = (treeState.page || 0) + 1;
+        let roots = [];
+        let data = { total: 0, total_pages: 0 };
+        if (type === "skill_level") {
+          // 技能根维：服务端按 skill_key 聚合（非 L 平铺）
+          const params = new URLSearchParams({
+            page: String(page),
+            page_size: String(treeState.pageSize || 20),
+            view: "bundle",
+          });
+          if (region) params.set("region", region);
+          if (q) params.set("q", q);
+          const r = await apiFetch("/v1/student/skills?" + params);
+          if (!r.ok) {
+            $("tableBox").innerHTML = `<div class="empty">技能聚合列表加载失败（HTTP ${r.status}）</div>`;
+            return;
+          }
+          data = await r.json();
+          roots = (data.items || []).map((b) => ({
+            id: b.id || `bundle:${b.skill_key}`,
+            type: "skill_level",
+            name: b.name || b.skill_name || b.skill_key,
+            display_name: b.name || b.skill_name || b.skill_key,
+            skill_key: b.skill_key,
+            available_levels: b.available_levels || [],
+            counts: b.counts || {},
+            attrs: {
+              skill_key: b.skill_key,
+              skill_name: b.skill_name || b.skill_key,
+              available_levels: b.available_levels || [],
+              aggregated: true,
+              node_ids: (b.attrs && b.attrs.node_ids) || b.node_ids || [],
+            },
+            region: b.region || region,
+            source_system: "aggregated",
+          }));
+        } else {
+          const params = new URLSearchParams({
+            type,
+            page: String(page),
+            page_size: String(treeState.pageSize || 20),
+            include_counts: "1",
+          });
+          if (region) params.set("region", region);
+          if (q) params.set("q", q);
+          const r = await apiFetch("/v1/kg/nodes?" + params);
+          if (!r.ok) {
+            $("tableBox").innerHTML = `<div class="empty">目录加载失败（HTTP ${r.status}），请重试</div>`;
+            return;
+          }
+          data = await r.json();
+          roots = data.items || [];
+          if (type === "occupation") roots = occupationListFilter(roots, q || "*");
+        }
+        treeState.roots = roots;
+        treeState.serverTotal = data.total || 0;
+        treeState.serverPages = data.total_pages || 0;
+        treeState.rootType = type;
+        treeState.loadedRegion = region;
+        treeState.loadedRootType = type;
+        treeState.expanded.clear(); treeState.kids.clear(); treeState.loadingIds.clear();
+        if (!treeState.roots.length && !treeState.serverTotal) {
+          $("tableBox").innerHTML = `<div class="empty">${
+            q
+              ? `没有匹配「${esc(q)}」的${TYPE_ZH_SHORT[type] || "目录"}`
+              : `当前地区暂无「${TYPE_ZH_SHORT[type] || type}」数据（或均被低优先过滤）`
+          }</div>`;
+          $("info").textContent = `Table · ${TYPE_ZH_SHORT[type]} · 0 项`;
+          return;
+        }
+        drawTree();
+        const hideNote = type === "occupation" && !$("showLowOcc")?.checked && !q
+          ? " · 已隐藏低优先岗位"
+          : "";
+        const skillNote = type === "skill_level" ? " · 技能已按 skill_key 聚合" : "";
+        const countNote = type !== "skill_level" ? " · 含关联数" : "";
+        $("info").textContent = `Table · ${region || "全部"} · 根=${TYPE_ZH_SHORT[type]} · 共 ${treeState.serverTotal} 项 · 第 ${page}/${Math.max(treeState.serverPages, 1)} 页${hideNote}${skillNote}${countNote}`;
+      } catch (_) { $("tableBox").innerHTML = `<div class="empty">目录加载失败，确认服务可用</div>`; }
+    }
+
+    /** Table 选中节点 → Graph */
+    async function jumpToGraphFromTable(node) {
+      if (!node) return;
+      const tableRoot = getTableRootType();
+      // 行业：走闭包子图（非 BFS）
+      if ((node.type || tableRoot) === "industry" && node.id) {
+        ["industry", "major", "occupation", "skill_level"].forEach(ensureDimChecked);
+        $("layout").value = "layered";
+        $("q").value = node.name || "";
+        switchTab("graph");
+        await loadIndustryClosure(node);
+        return;
+      }
+      setGraphDimsFrom(tableRoot);
+      $("layout").value = "force";
+      $("q").value = node.name || "";
+      switchTab("graph");
+      explore({
+        forceType: node.type || tableRoot,
+        focusNode: node,
+        seedOnly: true,
+      });
+    }
+
+    /** 行业闭包子图 → 画到 Graph */
+    async function loadIndustryClosure(industryNode) {
+      if (!industryNode?.id) return;
+      clearError();
+      setLoading(true);
+      $("info").textContent = `加载行业闭包：${industryNode.name || industryNode.id}…`;
+      const maxNodes = getExploreMaxNodes();
+      const params = new URLSearchParams({
+        industry_id: industryNode.id,
+        max_nodes: String(maxNodes),
+        include_skills: "true",
+        include_direct_occupations: "true",
+      });
+      const region = $("region")?.value;
+      if (region) params.set("region", region);
+      try {
+        const r = await apiFetch("/v1/graph/by-industry?" + params);
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          const msg = err.detail?.message || err.detail || r.status;
+          $("info").textContent = `行业闭包失败：${msg}`;
+          showError(String(msg));
+          // 回退：仅种子
+          lastRaw = {
+            roots: [industryNode],
+            nodes: [industryNode],
+            edges: [],
+            paths: [],
+            meta: { matched: 1, mode: "search_seeds", depth: 0 },
+          };
+          applyDimFilter({ note: "行业种子 · ", srcNote: " · 闭包失败，可双击 expand" });
+          return;
+        }
+        const data = await r.json();
+        setApi(true, "API 在线");
+        lastRaw = data;
+        applyDimFilter({
+          note: "行业闭包 · ",
+          srcNote: data.meta?.truncated
+            ? ` · 已截断（全量 ${data.meta.full_total ?? "?"} 点，上限 ${maxNodes}）`
+            : " · 仅本行业主路径",
+        });
+        const m = data.meta || {};
+        const fc = m.full_counts || {};
+        $("info").textContent =
+          `行业闭包「${m.industry_name || industryNode.name}」· 节点 ${m.node_count ?? 0} · 边 ${m.edge_count ?? 0}` +
+          (fc.major != null
+            ? ` · 全量 专${fc.major}/岗${fc.occupation}/技${fc.skill_level}`
+            : "") +
+          (m.truncated ? " · truncated，可调大 max_nodes" : "");
+        setTimeout(() => {
+          const el = cy?.getElementById(String(industryNode.id));
+          if (el && el.nonempty()) {
+            pinGraphFocus(el);
+            try {
+              cy.animate(
+                { center: { eles: el }, zoom: Math.max(cy.zoom(), 1.0) },
+                { duration: 280 }
+              );
+            } catch (_) {}
+          }
+          showDrawer(data.root || industryNode);
+        }, 350);
+      } catch (e) {
+        $("info").textContent = "行业闭包失败：" + (e.message || e);
+        showError(String(e.message || e));
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function loadChildren(node) {
+      const id = String(node.id), pi = DIMS.indexOf(node.type);
+      try {
+        const r = await apiFetch("/v1/graph/expand", {
+          method: "POST",
+          body: { node_id: id, limit: getExpandLimit(), direction: "both" },
+        });
+        const data = r.ok ? await r.json() : { nodes: [], edges: [] };
+        const byId = new Map((data.nodes || []).map((n) => [String(n.id), n]));
+        const kids = [], seen = new Set();
+        (data.edges || []).forEach((e) => {
+          const a = String(e.src_id ?? e.source), b = String(e.dst_id ?? e.target);
+          const other = a === id ? byId.get(b) : b === id ? byId.get(a) : null;
+          if (other && !seen.has(String(other.id)) && String(other.id) !== id) {
+            seen.add(String(other.id));
+            kids.push(other);
+          }
+        });
+        kids.sort((a, b) => DIMS.indexOf(a.type) - DIMS.indexOf(b.type) || String(a.name).localeCompare(String(b.name), "zh"));
+        return aggregateSkillNodes(kids);
+      } catch (_) { return []; }
+    }
+
+    function findTreeNode(id) {
+      id = String(id);
+      const r = treeState.roots.find((n) => String(n.id) === id); if (r) return r;
+      for (const arr of treeState.kids.values()) { const f = arr.find((n) => String(n.id) === id); if (f) return f; }
+      return null;
+    }
+
+    async function toggleTreeNode(id) {
+      id = String(id);
+      if (treeState.expanded.has(id)) { treeState.expanded.delete(id); drawTree(); return; }
+      treeState.expanded.add(id);
+      const node = findTreeNode(id);
+      if (node && !treeState.kids.has(id)) {
+        treeState.loadingIds.add(id); drawTree();
+        const kids = await loadChildren(node);
+        treeState.kids.set(id, kids); treeState.loadingIds.delete(id);
+      }
+      drawTree();
+    }
+
+    function renderTreeRow(node, depth) {
+      const id = String(node.id), pi = DIMS.indexOf(node.type);
+      const canExpand = pi >= 0 && pi < DIMS.length - 1;
+      const open = treeState.expanded.has(id), loading = treeState.loadingIds.has(id);
+      const kids = treeState.kids.get(id), cls = node.type || "";
+      const arrow = loading ? "…" : (canExpand ? (open ? "▼" : "▶") : "");
+      const title = displayName(node);
+      const chips = metaChipsHtml(node);
+      let html = `<div class="trow" data-id="${esc(id)}" style="padding-left:${depth * 20 + 6}px" title="${esc(title)}">`
+        + `<span class="tw">${arrow}</span>`
+        + `<span class="tdot" style="background:${TYPE_COLOR[cls] || "#94a3b8"}"></span>`
+        + `<div class="tbody">`
+        + `<div class="tname">${esc(title)}</div>`
+        + (chips ? `<div class="tmeta">${chips}</div>` : "")
+        + `</div>`
+        + `<span class="ttype">${TYPE_ZH_SHORT[cls] || cls}</span>`
+        + (open && kids ? `<span class="tcount" title="下级数量">${kids.length}</span>` : "")
+        + `</div>`;
+      if (open) {
+        if (loading) html += `<div class="trow tmuted" style="padding-left:${(depth + 1) * 20 + 6}px">加载中…</div>`;
+        else if (kids && kids.length) kids.forEach((k) => { html += renderTreeRow(k, depth + 1); });
+        else if (kids) html += `<div class="trow tmuted" style="padding-left:${(depth + 1) * 20 + 6}px">（无下级）</div>`;
+      }
+      return html;
+    }
+
+    function drawTree() {
+      const roots = treeState.roots;
+      const total = treeState.useServerPage ? (treeState.serverTotal || 0) : roots.length;
+      const pages = treeState.useServerPage
+        ? (treeState.serverPages || Math.ceil(total / treeState.pageSize) || 1)
+        : Math.max(1, Math.ceil(total / treeState.pageSize));
+      if (!roots.length && !total) {
+        $("tableBox").innerHTML = `<div class="empty">该地区暂无「${TYPE_ZH_SHORT[treeState.rootType] || "顶层"}」目录数据</div>`;
+        return;
+      }
+      treeState.page = Math.max(0, Math.min(treeState.page, Math.max(pages, 1) - 1));
+      const page = treeState.page;
+      // 服务端已分页：roots 即当前页；旧逻辑客户端 slice
+      const slice = treeState.useServerPage
+        ? roots
+        : roots.slice(page * treeState.pageSize, page * treeState.pageSize + treeState.pageSize);
+      let html = `<div class="tree">` + slice.map((r) => renderTreeRow(r, 0)).join("") + `</div>`;
+      html += `<div class="tpager">共 ${total} 项 · 根维 ${TYPE_ZH_SHORT[treeState.rootType] || ""} · 第 ${page + 1}/${Math.max(pages, 1)} 页`
+        + ` <button data-pg="prev" ${page === 0 ? "disabled" : ""}>上一页</button>`
+        + `<button data-pg="next" ${page >= pages - 1 ? "disabled" : ""}>下一页</button>`
+        + `<span style="margin-left:8px;opacity:.85">▶ 展开 · 点名称进图</span></div>`;
+      $("tableBox").innerHTML = html;
+    }
+    // 兼容旧调用：Table 已独立，不再由图数据驱动
+    function renderTable() {}
+    function renderRaw(data) { $("rawBox").textContent = JSON.stringify(data, null, 2); }
+    function showDrawer(n) {
+      if (!n) return;
+      $("drawer").classList.add("show");
+      $("dTitle").textContent = displayName(n) || n.name || "节点";
+      const a0 = parseAttrs(n);
+      const roleHint =
+        n.type === "course"
+          ? a0.role === "learnable_resource"
+            ? "可学资源"
+            : a0.role === "curriculum_catalog"
+              ? "课目标（非视频）"
+              : "课程"
+          : TYPE_ZH[n.type] || n.type || "—";
+      $("dSub").textContent = `${roleHint} · ${n.region || "—"} · ${n.confidence || "—"} · ${n.source_system || "—"}`;
+      let html = "";
+      // 课程/资源：顶部突出可点链接
+      if (n.source_url && /^https?:\/\//i.test(n.source_url)) {
+        const isLearn = n.type === "course" && a0.role === "learnable_resource";
+        const isCatalog = n.type === "course" && a0.role === "curriculum_catalog";
+        html += `<div class="sec">${isLearn ? "学习入口" : isCatalog ? "课标/出处链接" : "链接"}</div>`;
+        html += `<div style="margin:6px 0 10px">
+          <a href="${esc(n.source_url)}" target="_blank" rel="noopener"
+             style="display:inline-block;padding:8px 12px;border-radius:8px;background:${isLearn ? "#5b21b6" : "#0f766e"};color:#fff;font-weight:600;font-size:13px;text-decoration:none">
+            ${isLearn ? "打开学习页 ↗" : "打开链接 ↗"}
+          </a>
+          <div style="margin-top:6px;font-size:11px;color:var(--muted);word-break:break-all">${esc(n.source_url)}</div>
+        </div>`;
+        if (isCatalog) {
+          html += `<div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px;margin-bottom:8px">
+            这是课标里的<strong>课目名称</strong>，不是可播放视频。可学资源请在 Table 根维选「课程」并搜资源名，或看带「可学资源」标记的节点。
+          </div>`;
+        }
+      } else if (n.type === "course") {
+        html += `<div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px;margin-bottom:8px">
+          当前课程节点无可用学习链接（可能是课目标）。
+        </div>`;
+      }
+      const rows = nodeFieldRows(n);
+      html += `<div class="sec">库内字段</div>`;
+      html += rows.map(([k, v]) => {
+        const isUrl = /^https?:\/\//i.test(v);
+        const val = isUrl ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>` : esc(v);
+        return `<div class="drow"><div class="lab">${esc(k)}</div><div class="val">${val}</div></div>`;
+      }).join("");
+      try {
+        const rawDump = { ...n };
+        html += `<div class="sec">原始 JSON</div><pre style="margin:0;font-size:10px;line-height:1.35;max-height:120px;overflow:auto;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:6px;white-space:pre-wrap;word-break:break-all">${esc(JSON.stringify(rawDump, null, 2))}</pre>`;
+      } catch (_) {}
+      $("dBody").innerHTML = html;
+    }
+    $("drawerClose").addEventListener("click", () => $("drawer").classList.remove("show"));
+    $("spToggle").addEventListener("click", () => {
+      const p = $("sharedPanel");
+      const collapsed = p.classList.toggle("collapsed");
+      $("spToggle").textContent = collapsed ? "+" : "−";
+    });
+    // Table：翻页；▶ 展开；点名称/行主体 → 跳 Graph
+    $("tableBox").addEventListener("click", (e) => {
+      const pg = e.target.closest("[data-pg]");
+      if (pg) {
+        treeState.page += pg.dataset.pg === "next" ? 1 : -1;
+        if (treeState.useServerPage) loadTreeRoots();
+        else drawTree();
+        return;
+      }
+      const row = e.target.closest(".trow[data-id]");
+      if (!row || row.classList.contains("tmuted")) return;
+      const id = row.dataset.id;
+      // 点箭头只展开
+      if (e.target.closest(".tw")) {
+        const node = findTreeNode(id);
+        if (node && DIMS.indexOf(node.type) < DIMS.length - 1) toggleTreeNode(id);
+        return;
+      }
+      const node = findTreeNode(id);
+      if (node) jumpToGraphFromTable(node);
+    });
+    let tqTimer = null;
+    $("tq")?.addEventListener("input", () => {
+      if (tqTimer) clearTimeout(tqTimer);
+      tqTimer = setTimeout(() => { treeState.page = 0; loadTreeRoots($("tq").value.trim()); }, 300);
+    });
+    $("tableRootDims")?.addEventListener("change", () => {
+      syncTableRootChips();
+      if ($("tq")) $("tq").value = "";
+      treeState.page = 0;
+      loadTreeRoots();
+    });
+    $("showLowOcc")?.addEventListener("change", () => {
+      if (getTableRootType() === "occupation") loadTreeRoots($("tq")?.value?.trim() || "");
+    });
+    $("rawCopy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("rawBox").textContent || ""); $("rawCopy").textContent = "已复制"; setTimeout(() => ($("rawCopy").textContent = "复制"), 1200); } catch { $("rawCopy").textContent = "复制失败"; } });
+
+    function layoutNoteText() {
+      const mode = $("layout")?.value || "force";
+      const noEdge = !(lastData?.edges?.length);
+      const forceTxt = noEdge
+        ? "力导向 cose（无边时分量散开；双击 expand 出边）"
+        : "力导向 cose";
+      return " · 布局：" + (mode === "force" ? forceTxt : mode === "grid" ? "网格 grid" : "分层 breadthfirst");
+    }
+
+    /* ---------- 地区元信息 ---------- */
+    const REGION_HINT = {
+      CN: { hasMajor: true, defaultType: "major", tip: "国内：教育部专业目录（MOE_CN）" },
+      US: { hasMajor: false, defaultType: "occupation", tip: "美国 O*NET：岗位+技能（无课程/认证/专业）" },
+      EU: { hasMajor: false, defaultType: "occupation", tip: "欧盟 ESCO：岗位+技能（无课程/认证/专业）" },
+      "": { hasMajor: true, defaultType: "major", tip: "全部地区" },
+    };
+    function regionDefaults() { return REGION_HINT[$("region").value] || REGION_HINT[""]; }
+
+    /* 查询与「维度」解耦：维度只管显隐。 */
+    function computeQuery(opts, q, region) {
+      const rd = regionDefaults();
+      const browseCatalog = !!opts.allCatalog;
+      // 有关键字：不限 type（后端优先 major/occupation 作种子）；Table 跳入可 forceType
+      let seedType = browseCatalog ? rd.defaultType : null;
+      let depth = 0; // 常规 search 仅种子；expand 用 POST /v1/graph/expand
+      if (opts.forceType) seedType = opts.forceType;
+      if (opts.forceDepth != null) depth = opts.forceDepth;
+      return { seedType, depth, note: opts.note || "" };
+    }
+
+    /** 浏览/查询前确保 seed 类型在「展示维度」里已勾选，避免过滤后 0 节点 */
+    function ensureDimChecked(type) {
+      if (!type) return;
+      const cb = document.querySelector(`#dims input[type=checkbox][value="${type}"]`);
+      if (cb && !cb.checked) {
+        cb.checked = true;
+        const lab = cb.closest(".dim-chip");
+        if (lab) lab.classList.add("on");
+        syncChips();
+      }
+    }
+
+    /* ---------- 查询：search 种子（depth=0）→ 双击 expand 1 跳 ---------- */
+    async function explore(opts = {}) {
+      const region = $("region").value, rd = regionDefaults();
+      clearError(); hideSuggest();
+      let q = $("q").value.trim();
+      if (opts.allCatalog) { q = ""; $("q").value = ""; }
+      // Table 跳转：已有 focusNode 时只画该点，再等用户双击 expand
+      if (opts.focusNode && opts.seedOnly !== false && !opts.allCatalog) {
+        const n = opts.focusNode;
+        if (n.type) ensureDimChecked(n.type);
+        lastRaw = {
+          roots: [n],
+          nodes: [n],
+          edges: [],
+          paths: [],
+          meta: { matched: 1, depth: 0, node_count: 1, edge_count: 0, mode: "search_seeds" },
+        };
+        applyDimFilter({ note: "种子 · ", srcNote: " · 双击节点 expand 邻居" });
+        setTimeout(() => {
+          const el = cy?.getElementById(String(n.id));
+          if (el && el.nonempty()) {
+            pinGraphFocus(el);
+            try { cy.animate({ center: { eles: el }, zoom: Math.max(cy.zoom(), 1.2) }, { duration: 280 }); } catch (_) {}
+          }
+          showDrawer(n);
+        }, 300);
+        $("info").textContent = `种子：「${n.name || n.id}」· 双击节点展开 1 跳邻居（limit=${getExpandLimit()}）`;
+        return;
+      }
+      if (!q && !opts.allCatalog && !opts.focusNode) {
+        $("info").textContent = "请输入关键字后点「查询」· 结果仅为种子，双击节点再 expand";
+        if (cy) cy.elements().remove();
+        lastRaw = null; lastData = null;
+        return;
+      }
+      const sel = getSelDims();
+      if (!sel.length) { showError("请至少勾选一个展示维度"); return; }
+
+      const { seedType, note } = computeQuery(opts, q, region);
+      if (seedType) ensureDimChecked(seedType);
+      $("btn").disabled = true; $("btnAllMajors").disabled = true;
+      const depth = opts.forceDepth != null ? opts.forceDepth : getExploreDepth();
+      const maxNodes = opts.allCatalog
+        ? Math.min(getExploreMaxNodes(), 200)
+        : getExploreMaxNodes();
+      setLoading(true);
+      $("info").textContent = (note || "") + (depth === 0 ? "搜索种子…" : `explore depth=${depth} max_nodes=${maxNodes}…`);
+
+      // depth=0 仅种子；≥1 服务端 BFS（手填 depth / max_nodes）
+      const params = new URLSearchParams({
+        q: q || "*",
+        depth: String(depth),
+        max_nodes: String(maxNodes),
+      });
+      if (seedType) params.set("type", seedType);
+      if (region) params.set("region", region);
+
+      try {
+        const r = await apiFetch(`/v1/graph/explore?${params}`);
+        if (r.status === 404) {
+          let why = "没有匹配节点。";
+          if ((region === "US" || region === "EU") && seedType === "major") why = "美/欧库中没有「专业」数据，请改 Table 根维为岗位/技能，或换关键字。";
+          else why += " 换个关键字，或点「浏览全部」。";
+          $("info").textContent = (note || "") + why + " " + (rd.tip || "");
+          lastData = null; lastRaw = null;
+          if (cy) cy.elements().remove();
+          $("rawBox").textContent = "// empty";
+          return;
+        }
+        if (!r.ok) throw new Error("api " + r.status);
+        const data = await r.json();
+        setApi(true, "API 在线");
+        data.meta = {
+          ...(data.meta || {}),
+          mode: depth === 0 ? "search_seeds" : "explore_bfs",
+          depth,
+          max_nodes: maxNodes,
+        };
+        lastRaw = data;
+        applyDimFilter({
+          note: note || (depth === 0 ? "search · " : `explore d=${depth} · `),
+          srcNote: depth === 0
+            ? " · 双击节点 expand（1 跳）"
+            : (data.meta?.truncated ? " · 已达 max_nodes 截断" : " · BFS 子图"),
+        });
+        const nc = data.meta?.node_count ?? data.nodes?.length ?? 0;
+        const ec = data.meta?.edge_count ?? data.edges?.length ?? 0;
+        $("info").textContent = depth === 0
+          ? `种子 ${nc} 个 · 双击 expand（limit=${getExpandLimit()}）· 或把 depth 调大一次扫邻域`
+          : `BFS depth=${depth} · 节点 ${nc} · 边 ${ec}` +
+            (data.meta?.truncated ? " · truncated" : "") +
+            ` · max_nodes=${maxNodes}`;
+        if (opts.focusNode && cy) {
+          const fid = String(opts.focusNode.id);
+          setTimeout(() => {
+            const el = cy.getElementById(fid);
+            if (el && el.nonempty()) {
+              pinGraphFocus(el);
+              try { cy.animate({ center: { eles: el }, zoom: Math.max(cy.zoom(), 1.2) }, { duration: 280 }); } catch (_) {}
+            } else {
+              showDrawer(opts.focusNode);
+            }
+          }, 400);
+        }
+      } catch (e) {
+        try {
+          const data = await exploreSeed(q || "*", seedType || rd.defaultType, depth, { listAll: !q || q === "*", region });
+          lastRaw = data; setApi(false, "API 不可用 · 本地种子");
+          applyDimFilter({ srcNote: " · 本地种子 · 双击 expand 需 API" });
+          if (opts.focusNode) setTimeout(() => showDrawer(opts.focusNode), 100);
+        } catch {
+          $("info").textContent = "查询失败：" + (e.message || e);
+          showError("查询失败，请确认服务已启动（" + (e.message || e) + "）");
+        }
+      } finally {
+        setLoading(false);
+        $("btn").disabled = false;
+        $("btnAllMajors").disabled = false;
+      }
+    }
+
+    async function exploreSeed(q, type, depth, opts = {}) {
+      const [nodes, edges] = await Promise.all([fetch("/seed/nodes.json").then((r) => r.json()), fetch("/seed/edges.json").then((r) => r.json())]);
+      if (opts.region === "US" || opts.region === "EU") throw new Error("seed has no US/EU");
+      let seeds;
+      if (opts.listAll || !q || q === "*") seeds = nodes.filter((n) => n.type === (type || "major"));
+      else { const ql = q.toLowerCase(); seeds = nodes.filter((n) => String(n.name).toLowerCase().includes(ql)); if (type) seeds = seeds.filter((n) => n.type === type); seeds = seeds.slice(0, 15); }
+      if (!seeds.length) throw new Error("seed empty");
+      if (depth === 0) return { roots: seeds, nodes: seeds, edges: [], paths: seeds.map((n) => ({ length: 0, steps: [{ kind: "node", id: n.id, name: n.name, type: n.type }] })), meta: { matched: seeds.length, node_count: seeds.length, edge_count: 0, path_count: seeds.length, depth: 0 } };
+      const byId = new Map(nodes.map((n) => [n.id, n])); const ids = new Set(seeds.map((s) => s.id)); let fr = new Set(ids); const usedEdges = [];
+      for (let dd = 0; dd < depth; dd++) { const next = new Set(); edges.forEach((e) => { if (fr.has(e.src_id) || fr.has(e.dst_id)) { usedEdges.push(e); ids.add(e.src_id); ids.add(e.dst_id); next.add(e.src_id); next.add(e.dst_id); } }); fr = next; }
+      const subNodes = [...ids].map((id) => byId.get(id)).filter(Boolean); const paths = [];
+      usedEdges.slice(0, 120).forEach((e) => { const a = byId.get(e.src_id), b = byId.get(e.dst_id); if (!a || !b) return; paths.push({ length: 1, steps: [{ kind: "node", id: a.id, name: a.name, type: a.type }, { kind: "rel", rel_type: (e.rel_type || "").toUpperCase() }, { kind: "node", id: b.id, name: b.name, type: b.type }] }); });
+      return { roots: seeds, nodes: subNodes, edges: usedEdges, paths, meta: { matched: seeds.length, node_count: subNodes.length, edge_count: usedEdges.length, path_count: paths.length, depth } };
+    }
+
+    async function probe() {
+      try {
+        const j = await fetch("/health", { signal: AbortSignal.timeout(2500) }).then((r) => r.json());
+        const pgOk = j.postgresql?.ok || j.status === "ok";
+        setApi(!!pgOk, pgOk ? `API 在线 · PG ${j.postgresql?.nodes ?? "?"} 节点` : "API 降级");
+      } catch { setApi(false, "API 离线"); }
+    }
+
+    /* ---------- 搜索联想 ---------- */
+    const sg = $("suggest");
+    let sgData = [], sgIdx = -1, sgTimer = null;
+    function hideSuggest() { sg.classList.remove("on"); sg.innerHTML = ""; sgData = []; sgIdx = -1; }
+    function renderSuggest(items) {
+      sgData = items || []; sgIdx = -1;
+      if (!sgData.length) { sg.innerHTML = `<div class="sg-empty">无匹配，回车按关键字查询</div>`; sg.classList.add("on"); return; }
+      sg.innerHTML = sgData.map((n, i) => {
+        const title = displayName(n);
+        const a = parseAttrs(n);
+        const sub = [
+          TYPE_ZH_SHORT[n.type] || n.type,
+          n.region,
+          n.type === "major" ? (a.level_zh || majorLevelShort(n)) : "",
+          n.type === "major" ? majorCode(n) : "",
+          n.source_system,
+        ].filter(Boolean).join(" · ");
+        return `<div class="sg-item" data-i="${i}" role="option">`
+          + `<span class="sg-dot" style="background:${TYPE_COLOR[n.type] || "#94a3b8"}"></span>`
+          + `<div class="sg-body"><div class="sg-name">${esc(title)}</div>`
+          + (sub ? `<div class="sg-sub">${esc(sub)}</div>` : "")
+          + `</div></div>`;
+      }).join("");
+      sg.classList.add("on");
+      sg.querySelectorAll(".sg-item").forEach((el) => el.addEventListener("mousedown", (e) => { e.preventDefault(); chooseSuggest(Number(el.dataset.i)); }));
+    }
+    function setActive(idx) {
+      const els = [...sg.querySelectorAll(".sg-item")]; if (!els.length) return;
+      sgIdx = (idx + els.length) % els.length;
+      els.forEach((el, i) => el.classList.toggle("active", i === sgIdx));
+      els[sgIdx].scrollIntoView({ block: "nearest" });
+    }
+    function chooseSuggest(i) {
+      const n = sgData[i]; if (!n) return;
+      // 用官方 name 查询（后端按 name 匹配）；展示消歧靠 display_name
+      $("q").value = n.name || "";
+      if (n.type) { const cb = document.querySelector(`#dims input[value="${n.type}"]`); if (cb && !cb.checked) { cb.checked = true; syncChips(); } }
+      hideSuggest();
+      explore();
+      // 选中后直接打开详情，避免同名时不知道点中了谁
+      setTimeout(() => showDrawer(n), 0);
+    }
+    async function fetchSuggest(q) {
+      const region = $("region").value;
+      const p = new URLSearchParams({ q, limit: "8" }); if (region) p.set("region", region);
+      try { const r = await apiFetch("/v1/search?" + p); if (!r.ok) throw 0; const j = await r.json(); return Array.isArray(j) ? j : []; }
+      catch {
+        try { if (region === "US" || region === "EU") return []; const nodes = await fetch("/seed/nodes.json").then((r) => r.json()); const ql = q.toLowerCase(); return nodes.filter((n) => String(n.name).toLowerCase().includes(ql)).slice(0, 8); }
+        catch { return []; }
+      }
+    }
+    $("q").addEventListener("input", () => {
+      const q = $("q").value.trim();
+      if (sgTimer) clearTimeout(sgTimer);
+      if (q.length < 1) { hideSuggest(); return; }
+      sgTimer = setTimeout(async () => { const items = await fetchSuggest(q); if ($("q").value.trim() === q && document.activeElement === $("q")) renderSuggest(items); }, 200);
+    });
+    $("q").addEventListener("keydown", (e) => {
+      if (sg.classList.contains("on") && sgData.length) {
+        if (e.key === "ArrowDown") { e.preventDefault(); setActive(sgIdx + 1); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); setActive(sgIdx - 1); return; }
+        if (e.key === "Enter" && sgIdx >= 0) { e.preventDefault(); chooseSuggest(sgIdx); return; }
+        if (e.key === "Escape") { hideSuggest(); return; }
+      }
+      if (e.key === "Enter") { hideSuggest(); explore(); }
+    });
+    $("q").addEventListener("blur", () => setTimeout(hideSuggest, 150));
+
+    /* ---------- tabs / 全屏 ---------- */
+    function switchTab(v) {
+      document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x.dataset.v === v));
+      document.querySelectorAll(".view").forEach((x) => x.classList.toggle("on", x.id === "view-" + v));
+      document.querySelectorAll(".sb-view-panel").forEach((p) => { p.hidden = p.id !== "sb-" + v; });
+      if (v !== "graph") $("drawer")?.classList.remove("show");
+      if (v === "graph" && cy) setTimeout(() => { try { cy.resize(); } catch (_) {} }, 50);
+      if (v === "table") {
+        const need =
+          treeState.loadedRegion !== $("region").value ||
+          treeState.loadedRootType !== getTableRootType() ||
+          !treeState.roots.length;
+        if (need) loadTreeRoots($("tq")?.value?.trim() || "");
+      }
+      if (v === "graph" && !lastRaw && !(cy && cy.nodes && cy.nodes().length)) {
+        $("info").textContent = "Graph：输入关键字后点「查询」展开关系；全量目录用 Table";
+      }
+    }
+    document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => switchTab(t.dataset.v)));
+    function isGraphFullscreen() { const fs = document.fullscreenElement || document.webkitFullscreenElement; return fs === $("view-graph") || $("view-graph").classList.contains("fs-fallback"); }
+    function resizeCySoon() { setTimeout(() => { try { cy && cy.resize(); } catch (_) {} }, 90); }
+    async function enterGraphFullscreen() {
+      document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x.dataset.v === "graph"));
+      document.querySelectorAll(".view").forEach((x) => x.classList.toggle("on", x.id === "view-graph"));
+      const el = $("view-graph");
+      try { if (el.requestFullscreen) await el.requestFullscreen(); else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen(); else el.classList.add("fs-fallback"); }
+      catch (_) { el.classList.add("fs-fallback"); }
+      $("btnFullscreen").textContent = "退出全屏"; resizeCySoon();
+    }
+    async function exitGraphFullscreen() {
+      const el = $("view-graph");
+      try { if (document.fullscreenElement || document.webkitFullscreenElement) { if (document.exitFullscreen) await document.exitFullscreen(); else if (document.webkitExitFullscreen) await document.webkitExitFullscreen(); } } catch (_) {}
+      el.classList.remove("fs-fallback"); $("btnFullscreen").textContent = "全屏展示"; resizeCySoon();
+    }
+    async function toggleGraphFullscreen() { isGraphFullscreen() ? await exitGraphFullscreen() : await enterGraphFullscreen(); }
+    document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) { $("view-graph").classList.remove("fs-fallback"); $("btnFullscreen").textContent = "全屏展示"; } else $("btnFullscreen").textContent = "退出全屏"; resizeCySoon(); });
+    window.addEventListener("resize", resizeCySoon);
+
+    /* ---------- 事件绑定 ---------- */
+    let filterDebounceTimer = null;
+    function scheduleExplore(opts) { if (filterDebounceTimer) clearTimeout(filterDebounceTimer); filterDebounceTimer = setTimeout(() => { filterDebounceTimer = null; explore(opts || {}); }, 350); }
+    $("btn").addEventListener("click", () => explore());
+    // 全量目录 → Table（Graph 不适合 2000 孤立专业）
+    $("btnAllMajors").addEventListener("click", () => {
+      switchTab("table");
+      loadTreeRoots($("tq")?.value?.trim() || "");
+      $("info").textContent = "已切换到 Table 目录。点名称可跳入 Graph 展开关系。";
+    });
+    $("btnFullscreen").addEventListener("click", () => toggleGraphFullscreen());
+    $("btnExitFs").addEventListener("click", () => exitGraphFullscreen());
+    $("btnResetView").addEventListener("click", () => resetGraphView());
+    $("errRetry").addEventListener("click", () => {
+      clearError();
+      if ($("q").value.trim()) explore();
+      else $("info").textContent = "请输入关键字后点「查询」";
+    });
+    $("errDismiss").addEventListener("click", () => clearError());
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("view-graph").classList.contains("fs-fallback")) exitGraphFullscreen(); });
+
+    // 地区：Graph/Table 共用；Table 在前台时重载目录
+    $("region").addEventListener("change", () => {
+      treeState.loadedRegion = undefined;
+      treeState.loadedRootType = undefined;
+      if ($("tq")) $("tq").value = "";
+      if ($("view-table").classList.contains("on")) loadTreeRoots();
+      else if ($("view-graph").classList.contains("on") && $("q").value.trim()) {
+        scheduleExplore();
+      }
+    });
+    // Graph 维度勾选：只改显隐
+    $("dims").addEventListener("change", () => {
+      syncChips();
+      if (lastRaw) applyDimFilter();
+    });
+    // 仅切换布局：不重新请求，用当前元素重排
+    $("layout").addEventListener("change", () => {
+      if (!lastData || !cy?.nodes?.().length) return;
+      clearGraphFocus(); $("drawer")?.classList.remove("show"); runLayout();
+    });
+
+    initCy();
+    syncChips();
+    syncTableRootChips();
+    // UC 登录后再拉 Table（图谱接口需 Authorization: MAC）
+    (async function boot() {
+      try {
+        if (!window.VocedApi) throw new Error("api-client.js 未加载");
+        const r = await window.VocedApi.initAuth();
+        if (r && r.redirecting) return;
+        const u = window.VocedApi.getUser();
+        setApi(true, `已登录 ${u.name || u.id}`);
+        await loadTreeRoots();
+      } catch (e) {
+        setApi(false, "登录失败: " + (e.message || e));
+        showError("图谱接口需要 UC 登录：" + (e.message || e));
+      }
+    })();
+  </script>
+</body>
+</html>

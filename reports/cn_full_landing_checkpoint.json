@@ -1,0 +1,19 @@
+{
+  "done": {
+    "batch_download_skill": "2026-08-06T05:54:44Z",
+    "ingest_courses": "2026-08-06T05:55:05Z",
+    "ingest_skill_standards": "2026-08-06T05:55:06Z",
+    "ingest_open_courses": "2026-08-06T05:55:07Z",
+    "link_prepares_for": "2026-08-06T05:55:08Z",
+    "link_prepares_for_llm": "2026-08-06T05:55:09Z",
+    "link_course_resources": "2026-08-06T05:55:09Z",
+    "link_credentials": "2026-08-06T05:55:10Z",
+    "link_course_skills": "2026-08-06T05:55:12Z",
+    "link_requires_propagate": "2026-08-06T05:55:13Z",
+    "seed_learnable_search": "2026-08-06T05:55:14Z",
+    "tag_cn_scope": "2026-08-06T05:55:14Z",
+    "neo4j_migrate": "2026-08-06T05:55:40Z",
+    "coverage_report": "2026-08-06T05:55:41Z"
+  },
+  "failed": {}
+}

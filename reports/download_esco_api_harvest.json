@@ -1,0 +1,21 @@
+{
+  "source_system": "ESCO",
+  "api": "https://ec.europa.eu/esco/api",
+  "download_portal": "https://esco.ec.europa.eu/en/use-esco/download",
+  "license": "ESCO open data — see esco.ec.europa.eu terms; attribution required",
+  "language": "en",
+  "fetched_at": "2026-08-05T11:40:22+00:00",
+  "with_relations": true,
+  "counts": {
+    "occupations": 250,
+    "skills": 4253,
+    "relations": 11625,
+    "skills_from_relations": 4026
+  },
+  "note": "Official ESCO Web API harvest. For full classification dump use Download portal CSV. Relations from hasEssentialSkill / hasOptionalSkill on occupation resource.",
+  "paths": {
+    "occupations": "D:\\workspace\\职业教育知识图谱\\data\\raw\\EU\\esco\\api_harvest\\occupations_en.json",
+    "skills": "D:\\workspace\\职业教育知识图谱\\data\\raw\\EU\\esco\\api_harvest\\skills_en.json",
+    "relations": "D:\\workspace\\职业教育知识图谱\\data\\raw\\EU\\esco\\api_harvest\\relations_en.json"
+  }
+}

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>能力全景 · 演示</title>
+  <style>
+    :root { --line:#e2e8f0; --muted:#64748b; --ink:#1e293b; --primary:#2563eb; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif; color:#0f172a; background:#f1f5f9; }
+    header { display:flex; gap:8px; align-items:center; padding:12px 16px; background:#fff; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+    header .t { font-weight:700; color:var(--ink); margin-right:8px; }
+    header input { flex:1 1 220px; min-width:160px; border:1px solid #cbd5e1; border-radius:8px; padding:8px 12px; font-size:14px; }
+    header button { border:0; background:var(--ink); color:#fff; border-radius:8px; padding:8px 14px; font-weight:600; cursor:pointer; }
+    header .hint { font-size:12px; color:var(--muted); width:100%; }
+    main { max-width:960px; margin:16px auto; padding:0 16px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px 14px; font-size:14px; margin-bottom:12px; }
+    .card b { font-size:15px; }
+    .muted { color:var(--muted); font-size:12px; }
+    .occs { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+    .occ { background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; cursor:pointer; display:flex; align-items:center; gap:10px; }
+    .occ:hover { border-color:var(--primary); }
+    .lv { font-size:12px; font-weight:700; color:#166534; background:#dcfce7; border-radius:999px; padding:2px 8px; flex-shrink:0; }
+    .occ .nm { flex:1; }
+    .occ .sk { font-size:12px; color:var(--muted); }
+    .skills { list-style:none; margin:4px 0 10px 34px; padding:0; display:flex; flex-wrap:wrap; gap:6px; }
+    .skills li, .chip { font-size:12px; background:#eef2f7; border:1px solid var(--line); border-radius:6px; padding:3px 8px; display:inline-block; margin:0 6px 6px 0; }
+    .prog { font-size:13px; color:#334155; }
+    .empty { color:var(--muted); padding:24px; text-align:center; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="t">能力全景</span>
+    <input id="q" placeholder="输入专业名，如 物流设施运行与维护 / 软件技术" value="物流设施运行与维护" />
+    <button onclick="load()">查询</button>
+    <span class="hint">渐进式：默认只展示 行业→专业→岗位 + 晋升链，技能点岗位后按需加载。对接 GET /v1/capability。
+      本页为独立演示页，未走 UC 登录会返回 401 —— 正式入口请用 <a href="/admin">/admin → 图谱 → 能力全景</a>。</span>
+  </header>
+  <main id="panel"><div class="empty">输入专业名后点「查询」</div></main>
+  <script>
+    let DATA = null;
+    const OPEN = {};      // 岗位展开态
+    const SKILLS = {};    // 岗位技能缓存：occId -> "loading" | []
+
+    function HDRS() {
+      const h = { "Accept": "application/json" };
+      const tok = window.__UC_TOKEN__ || localStorage.getItem("UC_TOKEN") || "";
+      if (tok) h["Authorization"] = tok;
+      h["X-Test-Uid"] = localStorage.getItem("X_TEST_UID") || "demo";
+      h["X-Test-Uname"] = localStorage.getItem("X_TEST_UNAME") || "demo";
+      return h;
+    }
+    async function load() {
+      const q = document.getElementById("q").value.trim();
+      if (!q) return;
+      const panel = document.getElementById("panel");
+      panel.innerHTML = '<div class="empty">加载中…</div>';
+      try {
+        const r = await fetch("/v1/capability?major=" + encodeURIComponent(q), { headers: HDRS() });
+        if (r.status === 404) { panel.innerHTML = '<div class="empty">未找到该专业</div>'; return; }
+        if (r.status === 401) { panel.innerHTML = '<div class="empty">401 未登录：本页无 UC MAC Token，请改用 <a href="/admin">/admin → 图谱 → 能力全景</a></div>'; return; }
+        if (!r.ok) { panel.innerHTML = '<div class="empty">请求失败：' + r.status + '</div>'; return; }
+        DATA = await r.json();
+        for (const k in OPEN) delete OPEN[k];
+        for (const k in SKILLS) delete SKILLS[k];
+        render();
+      } catch (e) { panel.innerHTML = '<div class="empty">出错：' + e + '</div>'; }
+    }
+    function esc(s) { return String(s == null ? "" : s).replace(/[&<>]/g, function(m){ return {"&":"&amp;","<":"&lt;",">":"&gt;"}[m]; }); }
+
+    async function loadSkills(occId) {
+      if (SKILLS[occId]) return;
+      SKILLS[occId] = "loading";
+      render();
+      try {
+        const r = await fetch("/v1/occupations/skills?aggregate=true&limit=200&occupation_id=" + encodeURIComponent(occId), { headers: HDRS() });
+        SKILLS[occId] = r.ok ? (await r.json()) : [];
+      } catch (e) { SKILLS[occId] = []; }
+      render();
+    }
+    function tg(i) {
+      const o = (DATA.occupations || [])[i];
+      if (!o) return;
+      OPEN[i] = !OPEN[i];
+      if (OPEN[i] && !SKILLS[o.id]) { loadSkills(o.id); return; }
+      render();
+    }
+
+    function render() {
+      const d = DATA; if (!d) return;
+      const root = d.root || {};
+      const meta = d.meta || {};
+      const inds = (d.industries || []).map(function(i){ return esc(i.name); }).join(" / ") || "（未关联行业）";
+      let h = '<div class="card">专业：<b>' + esc(root.display_name || root.name || "") + '</b>'
+            + '<div class="muted">所属行业：' + inds + ' · 对口岗位 ' + (meta.occupation_count || 0)
+            + ' · 技能合计 ' + (meta.skill_total || 0)
+            + (meta.skills_included ? '' : ' · 技能默认折叠，点岗位展开') + '</div></div>';
+
+      const progs = d.progressions || [];
+      h += '<div class="card"><b>晋升链</b> ';
+      if (progs.length) {
+        h += '<span class="muted">（' + progs.length + ' 条 · 由岗位层级派生）</span><div style="margin-top:6px">'
+           + progs.map(function(p){ return '<div class="prog">L' + p.from_level + ' ' + esc(p.from_name)
+               + ' → L' + p.to_level + ' ' + esc(p.to_name) + '</div>'; }).join("") + '</div>';
+      } else {
+        h += '<div class="muted">暂无。当前岗位来自「职业分类大典」，该数据源不含职级维度，待企业职级表 / 招聘级别数据接入后自动生效。</div>';
+      }
+      h += '</div>';
+
+      const shared = d.shared_skills || [];
+      if (shared.length) {
+        h += '<div class="card"><b>共享技能</b> <span class="muted">（被 &ge;2 个岗位共同要求，共 ' + shared.length + ' 项 · 不画线）</span><div style="margin-top:6px">'
+           + shared.map(function(s){ return '<span class="chip">' + esc(s.skill_key) + ' <b>&times;' + s.occ_count + '</b></span>'; }).join("")
+           + '</div></div>';
+      }
+
+      h += '<ul class="occs">';
+      (d.occupations || []).forEach(function(o, i) {
+        const cnt = (o.skill_count != null) ? o.skill_count : (o.skills || []).length;
+        const cached = SKILLS[o.id];
+        let inner = "";
+        if (OPEN[i]) {
+          if (cached === "loading") inner = '<li class="empty">加载中…</li>';
+          else {
+            const list = Array.isArray(cached) ? cached : (o.skills || []);
+            inner = list.length
+              ? list.map(function(s){ return '<li>' + esc(s.display_name || s.skill_key || s.name) + '</li>'; }).join("")
+              : '<li class="empty">（无技能）</li>';
+          }
+        }
+        h += '<li><div class="occ" onclick="tg(' + i + ')"><span class="lv">L' + (o.level == null ? "-" : o.level) + '</span>'
+           + '<span class="nm">' + esc(o.display_name || o.name) + '</span><span class="sk">技能 ' + cnt + (OPEN[i] ? ' &#9662;' : ' &#9656;') + '</span></div>'
+           + '<ul class="skills" id="sk' + i + '"' + (OPEN[i] ? '' : ' hidden') + '>' + inner + '</ul></li>';
+      });
+      h += '</ul>';
+      document.getElementById("panel").innerHTML = h;
+    }
+    load();
+  </script>
+</body>
+</html>

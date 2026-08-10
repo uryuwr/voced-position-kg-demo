@@ -1,0 +1,137 @@
+{
+  "seed_occs": 431,
+  "edges": 1044,
+  "sample": [
+    {
+      "from": "秘书",
+      "to": "仲裁秘书",
+      "skills": 7
+    },
+    {
+      "from": "消防员",
+      "to": "消防工程技术人员",
+      "skills": 19
+    },
+    {
+      "from": "消防员",
+      "to": "消防指挥员",
+      "skills": 19
+    },
+    {
+      "from": "消防员",
+      "to": "消防装备管理员",
+      "skills": 19
+    },
+    {
+      "from": "消防员",
+      "to": "消防安全管理员",
+      "skills": 19
+    },
+    {
+      "from": "消防员",
+      "to": "消防监督检查员",
+      "skills": 19
+    },
+    {
+      "from": "消防员",
+      "to": "森林消防员",
+      "skills": 19
+    },
+    {
+      "from": "应急救援员",
+      "to": "地震应急救援工程技术人员",
+      "skills": 14
+    },
+    {
+      "from": "易货师",
+      "to": "易货经济专业人员",
+      "skills": 17
+    },
+    {
+      "from": "城市轨道交通服务员",
+      "to": "城市轨道交通检修工",
+      "skills": 12
+    },
+    {
+      "from": "航标工",
+      "to": "无线电航标操作与维护工程技术人员",
+      "skills": 17
+    },
+    {
+      "from": "航标工",
+      "to": "视觉航标工程技术人员",
+      "skills": 17
+    },
+    {
+      "from": "快递员",
+      "to": "快递工程技术人员",
+      "skills": 17
+    },
+    {
+      "from": "信息通信网络运行管理员",
+      "to": "信息通信网络机务员",
+      "skills": 19
+    },
+    {
+      "from": "信息通信网络运行管理员",
+      "to": "信息通信网络线务员",
+      "skills": 19
+    },
+    {
+      "from": "信息通信网络运行管理员",
+      "to": "信息通信网络动力机务员",
+      "skills": 19
+    },
+    {
+      "from": "信息通信网络运行管理员",
+      "to": "信息通信网络测量员",
+      "skills": 19
+    },
+    {
+      "from": "大地测量员",
+      "to": "大地测量工程技术人员",
+      "skills": 18
+    },
+    {
+      "from": "摄影测量员",
+      "to": "摄影测量与遥感工程技术人员",
+      "skills": 27
+    },
+    {
+      "from": "工程测量员",
+      "to": "工程测量工程技术人员",
+      "skills": 21
+    }
+  ],
+  "edges_upserted": 1044,
+  "db_stats": {
+    "nodes": 36024,
+    "edges": 133032,
+    "nodes_by_type": {
+      "course": 16790,
+      "credential": 470,
+      "major": 2281,
+      "occupation": 2905,
+      "skill_level": 13578
+    },
+    "nodes_by_region": {
+      "CN": 30099,
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "ai_inferred": 15003,
+      "derived": 1643,
+      "official": 116386
+    },
+    "nodes_by_source": {
+      "ESCO": 4503,
+      "MOE_CN": 18241,
+      "MOHRSS_CN": 10558,
+      "ONET": 1422,
+      "ONE_PLUS_X": 470,
+      "SEARCH_LANDING_CN": 800,
+      "SMART_EDU_VOC": 30
+    }
+  }
+}

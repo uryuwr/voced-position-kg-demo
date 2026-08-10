@@ -1,0 +1,109 @@
+{
+  "source_system": "MOE_CN",
+  "fetched_at": "2026-08-05T12:29:25+00:00",
+  "nodes_parsed": 2281,
+  "parse": {
+    "files": {
+      "职业教育专业目录（2021年）.docx": {
+        "count_raw": 1349,
+        "sample": [
+          {
+            "code": "610101",
+            "name": "种子生产技术",
+            "level": "voc_secondary"
+          },
+          {
+            "code": "610102",
+            "name": "作物生产技术",
+            "level": "voc_secondary"
+          },
+          {
+            "code": "610103",
+            "name": "循环农业与再生资源利用",
+            "level": "voc_secondary"
+          }
+        ],
+        "overwrites": 0,
+        "path": "D:\\workspace\\职业教育知识图谱\\data\\raw\\CN\\moe\\职业教育专业目录（2021年）.docx"
+      },
+      "职业教育专业目录增补_2025.txt": {
+        "count_raw": 57,
+        "sample": [
+          {
+            "code": "610120",
+            "name": "咖啡生产与工艺",
+            "level": "voc_secondary"
+          },
+          {
+            "code": "410123",
+            "name": "热带作物生产与加工技术",
+            "level": "voc_associate"
+          },
+          {
+            "code": "410124",
+            "name": "智慧农业技术与装备",
+            "level": "voc_associate"
+          }
+        ],
+        "overwrites": 0,
+        "path": "D:\\workspace\\职业教育知识图谱\\data\\raw\\CN\\moe\\职业教育专业目录增补_2025.txt"
+      },
+      "本科专业目录（2026）.pdf": {
+        "count_raw": 875,
+        "sample": [
+          {
+            "code": "010101",
+            "name": "哲学",
+            "level": "ug_bachelor"
+          },
+          {
+            "code": "010102",
+            "name": "逻辑学",
+            "level": "ug_bachelor"
+          },
+          {
+            "code": "010103K",
+            "name": "宗教学",
+            "level": "ug_bachelor"
+          }
+        ],
+        "overwrites": 0,
+        "path": "D:\\workspace\\职业教育知识图谱\\data\\raw\\CN\\moe\\本科专业目录（2026）.pdf"
+      }
+    },
+    "dedupe": {
+      "unique_source_ids": 2281,
+      "strategy": "level:code primary key; later file overwrites same key",
+      "by_level": {
+        "voc_secondary": 361,
+        "voc_associate": 775,
+        "voc_bachelor": 270,
+        "ug_bachelor": 875
+      }
+    }
+  },
+  "dry_run": false,
+  "nodes_upserted": 2281,
+  "db_stats": {
+    "nodes": 8206,
+    "edges": 86889,
+    "nodes_by_type": {
+      "major": 2281,
+      "occupation": 1266,
+      "skill_level": 4659
+    },
+    "nodes_by_region": {
+      "CN": 2281,
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "official": 86889
+    },
+    "nodes_by_source": {
+      "ESCO": 4503,
+      "MOE_CN": 2281,
+      "ONET": 1422
+    }
+  }
+}

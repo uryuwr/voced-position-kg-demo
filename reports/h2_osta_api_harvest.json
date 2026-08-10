@@ -1,0 +1,82 @@
+{
+  "count": 702,
+  "total_api": 702,
+  "catalog_path": "D:\\workspace\\职业教育知识图谱\\data\\raw\\CN\\skill_standards\\osta_catalog.json",
+  "sample_keys": [
+    "id",
+    "name",
+    "code",
+    "issueTime",
+    "issueNumber",
+    "status",
+    "standardInfo",
+    "standardInfoName",
+    "del"
+  ],
+  "sample": [
+    {
+      "id": 1034,
+      "name": "起重装卸机械操作工（高空作业机械操作工）",
+      "code": "6-30-05-01-014",
+      "issueTime": "2026-06-10 17:24:28",
+      "issueNumber": "人社厅发〔2026〕27号",
+      "status": 1,
+      "standardInfo": "4eNsZIOv3WFNDfbnldJHeA/2026/7/6/dc19ce5903704dbfb3917b3da0a66fcc.pdf",
+      "standardInfoName": "6-30-05-01起重装卸机械操作工(高空作业机械操作工)(2026年版).pdf",
+      "del": null
+    },
+    {
+      "id": 1033,
+      "name": "电气设备安装工",
+      "code": "6-29-03-02",
+      "issueTime": "2026-06-10 17:24:06",
+      "issueNumber": "人社厅发〔2026〕27号",
+      "status": 1,
+      "standardInfo": "4eNsZIOv3WFNDfbnldJHeA/2026/7/6/b9ec6f233bb84594b404e405e3ce81cd.pdf",
+      "standardInfoName": "6-29-03-02电气设备安装工(2026年版)-260703更新.pdf",
+      "del": null
+    },
+    {
+      "id": 1032,
+      "name": "花艺环境设计师",
+      "code": "4-08-08-01",
+      "issueTime": "2026-06-10 17:23:40",
+      "issueNumber": "人社厅发〔2026〕27号",
+      "status": 1,
+      "standardInfo": "4eNsZIOv3WFNDfbnldJHeA/2026/7/6/8fd6c4b19f954d5abf96278ce5712659.pdf",
+      "standardInfoName": "4-08-08-01花艺环境设计师(2026年版).pdf",
+      "del": null
+    }
+  ],
+  "detail_probe": {
+    "id": 1034,
+    "tries": [
+      {
+        "url": "https://www.osta.org.cn/api/public/skillStandardDetail?id=1034",
+        "error": "HTTP Error 404: "
+      },
+      {
+        "url": "https://www.osta.org.cn/api/public/skillStandardInfo?id=1034",
+        "error": "HTTP Error 404: "
+      },
+      {
+        "url": "https://www.osta.org.cn/api/public/getSkillStandard?id=1034",
+        "error": "HTTP Error 404: "
+      },
+      {
+        "url": "https://www.osta.org.cn/api/public/skillStandard/1034",
+        "error": "HTTP Error 404: "
+      },
+      {
+        "url": "https://www.osta.org.cn/api/public/skillStandardPdf?id=1034",
+        "error": "HTTP Error 404: "
+      },
+      {
+        "url": "https://www.osta.org.cn/api/public/file/skillStandard?id=1034",
+        "error": "HTTP Error 404: "
+      }
+    ]
+  },
+  "login_required_for_list": false,
+  "note": "列表公开 API 无需登录；PDF 详情若仍无直链需 Playwright 弹层或登录"
+}

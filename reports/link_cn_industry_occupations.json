@@ -1,0 +1,139 @@
+{
+  "industries": 149,
+  "edges": 1159,
+  "sample": [
+    {
+      "industry": "专用设备",
+      "links": 12,
+      "top": "飞机透明件制造胶接装配工"
+    },
+    {
+      "industry": "云计算",
+      "links": 1,
+      "top": "云计算工程技术人员"
+    },
+    {
+      "industry": "互联网",
+      "links": 12,
+      "top": "信息通信网络动力机务员"
+    },
+    {
+      "industry": "互联网金融",
+      "links": 12,
+      "top": "信息通信网络动力机务员"
+    },
+    {
+      "industry": "人力资源服务",
+      "links": 12,
+      "top": "人力资源服务专业人员"
+    },
+    {
+      "industry": "人工智能",
+      "links": 2,
+      "top": "人工智能工程技术人员"
+    },
+    {
+      "industry": "仪器仪表",
+      "links": 3,
+      "top": "仪器仪表制造工"
+    },
+    {
+      "industry": "企业服务",
+      "links": 12,
+      "top": "信息通信网络动力机务员"
+    },
+    {
+      "industry": "休闲/娱乐",
+      "links": 8,
+      "top": "休闲农业服务员"
+    },
+    {
+      "industry": "体育",
+      "links": 12,
+      "top": "广告设计师"
+    },
+    {
+      "industry": "保健/养生",
+      "links": 4,
+      "top": "保健按摩师"
+    },
+    {
+      "industry": "保险",
+      "links": 7,
+      "top": "保险代理人"
+    },
+    {
+      "industry": "信息安全",
+      "links": 3,
+      "top": "信息安全工程技术人员"
+    },
+    {
+      "industry": "信托",
+      "links": 1,
+      "top": "信托业务员"
+    },
+    {
+      "industry": "储能",
+      "links": 12,
+      "top": "光伏发电运维值班员"
+    },
+    {
+      "industry": "光伏",
+      "links": 12,
+      "top": "光伏发电运维值班员"
+    },
+    {
+      "industry": "公路物流",
+      "links": 12,
+      "top": "仓储管理员"
+    },
+    {
+      "industry": "其他制造业",
+      "links": 12,
+      "top": "飞机透明件制造胶接装配工"
+    },
+    {
+      "industry": "其他新能源",
+      "links": 12,
+      "top": "光伏发电运维值班员"
+    },
+    {
+      "industry": "其他金融业",
+      "links": 12,
+      "top": "银行信贷员"
+    }
+  ],
+  "edges_upserted": 1159,
+  "db_stats": {
+    "nodes": 36173,
+    "edges": 134325,
+    "nodes_by_type": {
+      "course": 16790,
+      "credential": 470,
+      "industry": 149,
+      "major": 2281,
+      "occupation": 2905,
+      "skill_level": 13578
+    },
+    "nodes_by_region": {
+      "CN": 30248,
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "ai_inferred": 16162,
+      "derived": 1643,
+      "official": 116520
+    },
+    "nodes_by_source": {
+      "BOSS_ZHIPIN": 149,
+      "ESCO": 4503,
+      "MOE_CN": 18241,
+      "MOHRSS_CN": 10558,
+      "ONET": 1422,
+      "ONE_PLUS_X": 470,
+      "SEARCH_LANDING_CN": 800,
+      "SMART_EDU_VOC": 30
+    }
+  }
+}

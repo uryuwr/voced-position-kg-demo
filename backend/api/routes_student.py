@@ -1,0 +1,491 @@
+"""
+学生端业务 API —— 对齐 Open-Q frontend.html 四大模块：
+  探索 · AI 诊断 · 学习中心 · 我的
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from backend.api.auth_temp import TempUser, require_temp_user
+from backend.api.schemas_biz import (
+    BadgeDefOut,
+    ChatMessageBody,
+    ChatSessionBody,
+    DiagnosisReportOut,
+    GoalOut,
+    GoalPutBody,
+    IndustryListOut,
+    LearningPathOut,
+    MeOut,
+    PathGenerateBody,
+    PositionDetailOut,
+    PositionListOut,
+    ProfessionDetailOut,
+    ProfessionListOut,
+    ProfessionOut,
+    ResourceListOut,
+    ResumeDiagBody,
+    SkillCategory,
+    SkillLevelMeta,
+    SkillListOut,
+    SkillOut,
+)
+from backend.kg.pg_store import biz_store as biz
+
+router = APIRouter(prefix="/v1/student", tags=[])
+
+
+# ── 元数据 ───────────────────────────────────────────────────
+
+
+@router.get(
+    "/meta/skill-levels",
+    tags=["学生端 · 探索"],
+    response_model=list[SkillLevelMeta],
+    summary="技能等级字典 L1–L5",
+    description="对齐原型 SKILL_LEVEL_META：了解/掌握/熟练/精通/专家。",
+)
+def meta_levels(user: TempUser = Depends(require_temp_user)) -> list[SkillLevelMeta]:
+    _ = user
+    return [SkillLevelMeta.model_validate(x) for x in biz.skill_level_meta()]
+
+
+@router.get(
+    "/meta/skill-categories",
+    tags=["学生端 · 探索"],
+    response_model=list[SkillCategory],
+    summary="技能类目字典",
+)
+def meta_cats(user: TempUser = Depends(require_temp_user)) -> list[SkillCategory]:
+    _ = user
+    return [SkillCategory.model_validate(x) for x in biz.skill_categories()]
+
+
+# ── 探索 ─────────────────────────────────────────────────────
+
+
+@router.get(
+    "/industries",
+    tags=["学生端 · 探索"],
+    response_model=IndustryListOut,
+    summary="行业列表（分页）",
+    description="探索筛选项；树形仍可用图检索 `GET /v1/industries/tree`。",
+)
+def student_industries(
+    q: str | None = Query(None, description="名称关键字"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    region: str | None = Query(None, description="默认 CN"),
+    user: TempUser = Depends(require_temp_user),
+) -> IndustryListOut:
+    _ = user
+    return IndustryListOut.model_validate(
+        biz.list_industries_page(q=q, page=page, page_size=page_size, region=region)
+    )
+
+
+@router.get(
+    "/professions",
+    tags=["学生端 · 探索"],
+    response_model=ProfessionListOut,
+    summary="专业列表（探索首页）",
+    description="对应原型「搜索专业 / 专业卡片列表」。底层 type=major。",
+)
+def student_professions(
+    q: str | None = Query(None, description="搜索专业 / 关键词"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    region: str | None = Query(None),
+    user: TempUser = Depends(require_temp_user),
+) -> ProfessionListOut:
+    _ = user
+    return ProfessionListOut.model_validate(
+        biz.list_professions(q=q, page=page, page_size=page_size, region=region)
+    )
+
+
+@router.get(
+    "/professions/{profession_id:path}",
+    tags=["学生端 · 探索"],
+    response_model=ProfessionDetailOut,
+    summary="专业详情 + 岗位 + 成长阶梯",
+    description="对齐 vProfession：专业信息、对口岗位、ladder。",
+)
+def student_profession_detail(
+    profession_id: str,
+    user: TempUser = Depends(require_temp_user),
+) -> ProfessionDetailOut:
+    _ = user
+    p = biz.get_profession(profession_id)
+    if not p:
+        raise HTTPException(404, "profession not found")
+    positions = biz.profession_positions(profession_id)
+    ladder_raw = biz.profession_ladder(profession_id)
+    return ProfessionDetailOut.model_validate(
+        {"profession": p, "positions": positions, "ladder": ladder_raw}
+    )
+
+
+@router.get(
+    "/positions",
+    tags=["学生端 · 探索"],
+    response_model=PositionListOut,
+    summary="岗位列表",
+)
+def student_positions(
+    q: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    region: str | None = Query(None),
+    user: TempUser = Depends(require_temp_user),
+) -> PositionListOut:
+    _ = user
+    return PositionListOut.model_validate(
+        biz.list_positions(q=q, page=page, page_size=page_size, region=region)
+    )
+
+
+@router.get(
+    "/positions/skill-composition",
+    tags=["学生端 · 探索"],
+    summary="岗位技能构成（query id，推荐）",
+    description="逻辑技能 + weight_sum；权重只认 requires 边。id 含冒号时用本接口。",
+)
+def student_position_skill_composition_q(
+    id: str = Query(..., description="岗位节点 id"),
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    _ = user
+    try:
+        from backend.kg.pg_store.skill_aggregate import occupation_skill_composition
+
+        return occupation_skill_composition(id)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@router.get(
+    "/positions/{position_id:path}",
+    tags=["学生端 · 探索"],
+    response_model=PositionDetailOut,
+    summary="岗位详情 + 技能要求",
+    description=(
+        "对齐 vPosition：岗位含 industries / counts；"
+        "skills 默认按 skill_key 聚合为逻辑技能（含 levels / level_descriptions），前端无需再 group。"
+    ),
+)
+def student_position_detail(
+    position_id: str,
+    aggregate: bool = Query(
+        True, description="True=逻辑技能聚合；False=skill_level 扁平行"
+    ),
+    user: TempUser = Depends(require_temp_user),
+) -> PositionDetailOut:
+    _ = user
+    # path 参数若误吞 /skill-composition 后缀则纠正
+    if position_id.endswith("/skill-composition"):
+        position_id = position_id[: -len("/skill-composition")]
+        try:
+            from backend.kg.pg_store.skill_aggregate import occupation_skill_composition
+
+            return occupation_skill_composition(position_id)  # type: ignore[return-value]
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+    p = biz.get_position(position_id)
+    if not p:
+        raise HTTPException(404, "position not found")
+    skills = biz.position_skills(position_id, aggregate=aggregate)
+    return PositionDetailOut.model_validate({"position": p, "skills": skills})
+
+
+@router.get(
+    "/skills",
+    tags=["学生端 · 探索"],
+    response_model=SkillListOut,
+    summary="技能库列表（分页，默认逻辑技能聚合）",
+    description=(
+        "view=bundle（默认）：按 skill_key 聚合，一页一行逻辑技能；"
+        "view=level：原始 skill_level 扁平行。"
+    ),
+)
+def student_skills(
+    q: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    region: str | None = Query(None),
+    view: str = Query("bundle", description="bundle | level"),
+    occupation_id: str | None = Query(None, description="仅该岗位 requires 覆盖的技能"),
+    has_level: str | None = Query(None, description="至少含该档，如 L3"),
+    user: TempUser = Depends(require_temp_user),
+) -> SkillListOut:
+    _ = user
+    return SkillListOut.model_validate(
+        biz.list_skills_page(
+            q=q,
+            page=page,
+            page_size=page_size,
+            region=region,
+            view=view,
+            occupation_id=occupation_id,
+            has_level=has_level,
+        )
+    )
+
+
+@router.get(
+    "/skills/bundles/{skill_key:path}",
+    tags=["学生端 · 探索"],
+    response_model=SkillOut,
+    summary="逻辑技能详情（L1–L5 聚合）",
+    description="skill_key 或 bundle:{region}:{key}；返回 levels / level_descriptions / counts。",
+)
+def student_skill_bundle(
+    skill_key: str,
+    region: str | None = Query(None),
+    user: TempUser = Depends(require_temp_user),
+) -> SkillOut:
+    _ = user
+    s = biz.get_skill_detail(skill_key, region=region)
+    if not s:
+        raise HTTPException(404, "skill bundle not found")
+    return SkillOut.model_validate(s)
+
+
+@router.get(
+    "/goal",
+    tags=["学生端 · 探索"],
+    response_model=GoalOut | None,
+    summary="当前学习目标岗位",
+    description="对齐 state.goal；未设置返回 null。",
+)
+def student_get_goal(user: TempUser = Depends(require_temp_user)) -> GoalOut | None:
+    g = biz.get_goal(user.user_id)
+    return GoalOut.model_validate(g) if g else None
+
+
+@router.put(
+    "/goal",
+    tags=["学生端 · 探索"],
+    response_model=GoalOut,
+    summary="设定学习目标岗位",
+    description="对齐 setGoal：锁定目标并记成就 first_goal。",
+)
+def student_set_goal(
+    body: GoalPutBody,
+    user: TempUser = Depends(require_temp_user),
+) -> GoalOut:
+    try:
+        g = biz.set_goal(
+            user.user_id,
+            user.user_name,
+            occupation_id=body.occupation_id,
+            major_id=body.major_id,
+        )
+        return GoalOut.model_validate(g)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.delete(
+    "/goal",
+    tags=["学生端 · 探索"],
+    summary="清除学习目标",
+    description="对齐 clearGoal。",
+)
+def student_clear_goal(user: TempUser = Depends(require_temp_user)) -> dict[str, str]:
+    biz.clear_goal(user.user_id)
+    return {"status": "cleared"}
+
+
+# ── AI 诊断 ──────────────────────────────────────────────────
+
+
+@router.post(
+    "/diagnosis/resume",
+    tags=["学生端 · 诊断"],
+    summary="简历智能诊断",
+    description="对齐 vDiagResume：粘贴简历 → 规则解析技能 → 可选对标岗位出报告。",
+)
+def diag_resume(
+    body: ResumeDiagBody,
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    occ = body.target_occupation_id
+    if not occ:
+        g = biz.get_goal(user.user_id)
+        occ = (g or {}).get("occupation_id")
+    return biz.create_resume_diagnosis(
+        user.user_id,
+        user.user_name,
+        content_text=body.content_text,
+        target_occupation_id=occ,
+    )
+
+
+@router.post(
+    "/diagnosis/chat/sessions",
+    tags=["学生端 · 诊断"],
+    summary="开启对话测评会话",
+    description="对齐 vDiagChat：创建会话并返回首问。",
+)
+def diag_chat_start(
+    body: ChatSessionBody,
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    occ = body.target_occupation_id
+    if not occ:
+        g = biz.get_goal(user.user_id)
+        occ = (g or {}).get("occupation_id")
+    return biz.create_chat_session(
+        user.user_id, user.user_name, target_occupation_id=occ
+    )
+
+
+@router.post(
+    "/diagnosis/chat/sessions/{session_id}/messages",
+    tags=["学生端 · 诊断"],
+    summary="提交对话回答",
+    description="学员回复后规则打分并结束会话，返回报告。",
+)
+def diag_chat_msg(
+    session_id: int,
+    body: ChatMessageBody,
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    try:
+        return biz.post_chat_message(session_id, user.user_id, body.content)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.get(
+    "/diagnosis/report",
+    tags=["学生端 · 诊断"],
+    response_model=DiagnosisReportOut | None,
+    summary="能力诊断报告",
+    description="对齐 vDiagReport：匹配度、雷达、缺口。可按 session_id 或最近一次。",
+)
+def diag_report(
+    session_id: int | None = Query(None),
+    occupation_id: str | None = Query(None, description="无报告时按画像+岗位现算"),
+    user: TempUser = Depends(require_temp_user),
+) -> DiagnosisReportOut | None:
+    if not occupation_id:
+        g = biz.get_goal(user.user_id)
+        occupation_id = (g or {}).get("occupation_id")
+    rep = biz.get_diagnosis_report(
+        user.user_id, session_id=session_id, occupation_id=occupation_id
+    )
+    return DiagnosisReportOut.model_validate(rep) if rep else None
+
+
+# ── 学习中心 ─────────────────────────────────────────────────
+
+
+@router.get(
+    "/learn/path",
+    tags=["学生端 · 学习"],
+    response_model=LearningPathOut | None,
+    summary="当前学习路径",
+    description="对齐 vLearnPath / vLearnCenter 路径进度。",
+)
+def learn_path_get(user: TempUser = Depends(require_temp_user)) -> LearningPathOut | None:
+    p = biz.get_active_path(user.user_id)
+    return LearningPathOut.model_validate(p) if p else None
+
+
+@router.post(
+    "/learn/path/generate",
+    tags=["学生端 · 学习"],
+    response_model=LearningPathOut,
+    summary="按目标/诊断生成学习路径",
+    description="缺口技能优先；无 goal 时 body.occupation_id 必填。",
+)
+def learn_path_gen(
+    body: PathGenerateBody,
+    user: TempUser = Depends(require_temp_user),
+) -> LearningPathOut:
+    try:
+        p = biz.generate_path(
+            user.user_id, user.user_name, occupation_id=body.occupation_id
+        )
+        # attach progress
+        full = biz.get_active_path(user.user_id)
+        return LearningPathOut.model_validate(full or p)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post(
+    "/learn/steps/{step_id}/complete",
+    tags=["学生端 · 学习"],
+    response_model=LearningPathOut,
+    summary="完成学习步骤",
+    description="对齐「已标记学完」。",
+)
+def learn_step_done(
+    step_id: int,
+    user: TempUser = Depends(require_temp_user),
+) -> LearningPathOut:
+    try:
+        p = biz.complete_step(user.user_id, user.user_name, step_id)
+        return LearningPathOut.model_validate(p)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.get(
+    "/learn/resources",
+    tags=["学生端 · 学习"],
+    response_model=ResourceListOut,
+    summary="学习资源列表",
+    description="对齐资源卡片；当前映射 KG course 节点。",
+)
+def learn_resources(
+    skill_id: str | None = Query(None, description="关联技能 id（提示用）"),
+    q: str | None = Query(None, description="资源标题关键字"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    user: TempUser = Depends(require_temp_user),
+) -> ResourceListOut:
+    _ = user
+    return ResourceListOut.model_validate(
+        biz.list_resources(skill_id=skill_id, q=q, page=page, page_size=page_size)
+    )
+
+
+# ── 我的 ─────────────────────────────────────────────────────
+
+
+@router.get(
+    "/me",
+    tags=["学生端 · 我的"],
+    response_model=MeOut,
+    summary="我的主页摘要",
+    description="对齐 vMe：目标、成长值、徽章、技能画像、当前路径。",
+)
+def me(user: TempUser = Depends(require_temp_user)) -> MeOut:
+    return MeOut.model_validate(biz.me_summary(user.user_id, user.user_name))
+
+
+@router.get(
+    "/me/badges",
+    tags=["学生端 · 我的"],
+    response_model=list[BadgeDefOut],
+    summary="成就定义列表",
+    description="全部徽章配置；已解锁见 GET /me.badges。",
+)
+def me_badge_defs(user: TempUser = Depends(require_temp_user)) -> list[BadgeDefOut]:
+    _ = user
+    return [BadgeDefOut.model_validate(x) for x in biz.list_badge_defs()]
+
+
+@router.get(
+    "/me/skills",
+    tags=["学生端 · 我的"],
+    summary="我的技能画像",
+)
+def me_skills(user: TempUser = Depends(require_temp_user)) -> list[dict[str, Any]]:
+    return biz.me_summary(user.user_id, user.user_name).get("skills") or []

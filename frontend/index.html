@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>职业规划工作台</title>
+  <script src="/js/api-client.js"></script>
+  <style>
+    :root {
+      --bg: #f3f5f9;
+      --card: #fff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --primary: #1d4ed8;
+      --soft: #eff6ff;
+      --ok: #059669;
+      --warn: #d97706;
+      --bad: #dc2626;
+      --purple: #7c3aed;
+      --shadow: 0 10px 30px rgba(15, 23, 42, .07);
+      --r: 16px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 300px at 0% -10%, #dbeafe 0%, transparent 50%),
+        radial-gradient(700px 260px at 100% 0%, #fce7f3 0%, transparent 45%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    .app { max-width: 1080px; margin: 0 auto; padding: 20px 16px 56px; }
+
+    /* top */
+    .top {
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start;
+      justify-content: space-between; margin-bottom: 16px;
+    }
+    .brand h1 { margin: 0 0 4px; font-size: 22px; }
+    .brand p { margin: 0; color: var(--muted); font-size: 13px; }
+    .role-switch {
+      display: flex; background: #fff; border: 1px solid var(--line);
+      border-radius: 999px; padding: 4px; box-shadow: var(--shadow);
+    }
+    .role-switch button {
+      border: 0; background: transparent; padding: 8px 16px;
+      border-radius: 999px; font-size: 13px; font-weight: 600;
+      color: var(--muted); cursor: pointer;
+    }
+    .role-switch button.on { background: var(--primary); color: #fff; }
+
+    .status {
+      font-size: 12px; color: var(--muted); margin-bottom: 14px;
+      display: flex; gap: 12px; flex-wrap: wrap;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: middle; }
+    .dot.ok { background: #10b981; } .dot.bad { background: #ef4444; } .dot.warn { background: #f59e0b; }
+
+    /* steps student */
+    .steps {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+    }
+    .step-pill {
+      display: flex; align-items: center; gap: 8px;
+      background: #fff; border: 1px solid var(--line); border-radius: 999px;
+      padding: 8px 12px; font-size: 12px; color: var(--muted);
+    }
+    .step-pill .num {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: #e2e8f0; color: #475569; display: grid; place-items: center;
+      font-weight: 700; font-size: 11px;
+    }
+    .step-pill.on { border-color: #93c5fd; background: var(--soft); color: var(--primary); }
+    .step-pill.on .num { background: var(--primary); color: #fff; }
+    .step-pill.done { border-color: #a7f3d0; background: #ecfdf5; color: var(--ok); }
+    .step-pill.done .num { background: var(--ok); color: #fff; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: var(--r); box-shadow: var(--shadow);
+      padding: 16px 18px; margin-bottom: 14px;
+    }
+    .card h2 { margin: 0 0 6px; font-size: 16px; }
+    .card .sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    input[type="search"], select {
+      border: 1px solid var(--line); border-radius: 10px;
+      padding: 11px 12px; font-size: 14px; outline: none; background: #fff;
+    }
+    input[type="search"] { flex: 1 1 220px; min-width: 180px; }
+    input[type="search"]:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px #dbeafe; }
+    .btn {
+      border: 0; border-radius: 10px; padding: 11px 16px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      background: var(--primary); color: #fff;
+    }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .btn.ghost {
+      background: #fff; color: var(--text); border: 1px solid var(--line);
+    }
+    .btn.ok { background: var(--ok); }
+    .btn.sm { padding: 7px 12px; font-size: 12px; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .chip {
+      border: 1px solid var(--line); background: #fff; border-radius: 999px;
+      padding: 6px 12px; font-size: 12px; cursor: pointer; color: var(--text);
+    }
+    .chip:hover, .chip.on { background: var(--soft); border-color: #93c5fd; color: var(--primary); }
+
+    /* job cards */
+    .job-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 10px;
+    }
+    .job-card {
+      border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+      cursor: pointer; background: #fff; transition: .12s;
+    }
+    .job-card:hover { border-color: #93c5fd; }
+    .job-card.on { border-color: var(--primary); background: var(--soft); box-shadow: 0 0 0 2px #bfdbfe; }
+    .job-card h3 { margin: 0 0 6px; font-size: 15px; }
+    .job-card p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; min-height: 36px; }
+    .job-card .meta { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .tag {
+      font-size: 11px; padding: 2px 8px; border-radius: 999px;
+      background: #f1f5f9; color: #475569;
+    }
+    .tag.blue { background: #dbeafe; color: #1d4ed8; }
+    .tag.green { background: #d1fae5; color: #047857; }
+    .tag.orange { background: #ffedd5; color: #c2410c; }
+    .tag.purple { background: #ede9fe; color: #6d28d9; }
+    .tag.red { background: #fee2e2; color: #b91c1c; }
+
+    /* skill gap table */
+    table.gap {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    table.gap th {
+      text-align: left; padding: 8px 10px; background: #f8fafc;
+      border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600;
+    }
+    table.gap td {
+      padding: 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle;
+    }
+    table.gap tr:hover td { background: #f8fafc; }
+    .lv {
+      display: inline-block; font-size: 11px; font-weight: 700;
+      padding: 2px 8px; border-radius: 999px;
+    }
+    .lv.L1 { background: #ecfdf5; color: #047857; }
+    .lv.L2 { background: #eff6ff; color: #1d4ed8; }
+    .lv.L3 { background: #fef3c7; color: #b45309; }
+    .lv.L4 { background: #fae8ff; color: #a21caf; }
+    .lv.x { background: #f1f5f9; color: #64748b; }
+
+    select.self {
+      border: 1px solid var(--line); border-radius: 8px;
+      padding: 6px 8px; font-size: 12px; background: #fff;
+    }
+
+    /* plan timeline */
+    .timeline { display: flex; flex-direction: column; gap: 0; }
+    .phase {
+      display: grid; grid-template-columns: 88px 1fr;
+      gap: 12px; padding: 12px 0; border-bottom: 1px solid #f1f5f9;
+    }
+    .phase:last-child { border-bottom: 0; }
+    .phase .when {
+      font-size: 12px; font-weight: 700; color: var(--primary);
+      padding-top: 2px;
+    }
+    .phase .what h4 { margin: 0 0 6px; font-size: 14px; }
+    .phase ul { margin: 0; padding-left: 18px; color: #334155; font-size: 13px; line-height: 1.55; }
+    .phase .split {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px;
+    }
+    @media (max-width: 640px) {
+      .phase { grid-template-columns: 1fr; }
+      .phase .split { grid-template-columns: 1fr; }
+    }
+    .box {
+      border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fafafa;
+    }
+    .box h5 { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+    .box.course h5 { color: var(--purple); }
+    .box.cred h5 { color: var(--warn); }
+    .box li { margin: 2px 0; }
+
+    .empty {
+      text-align: center; color: var(--muted); font-size: 13px;
+      padding: 24px 12px; line-height: 1.6;
+    }
+
+    /* teacher */
+    .kpi {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px;
+    }
+    @media (max-width: 800px) { .kpi { grid-template-columns: 1fr 1fr; } }
+    .kpi .item {
+      background: #fff; border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px 14px; box-shadow: var(--shadow);
+    }
+    .kpi .item .n { font-size: 22px; font-weight: 800; }
+    .kpi .item .l { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .tracks {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 10px;
+    }
+    .track {
+      border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: #fff;
+    }
+    .track h3 { margin: 0 0 6px; font-size: 15px; }
+    .track p { margin: 0 0 10px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+    .track ol { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
+
+    .matrix-wrap { overflow: auto; }
+    table.matrix { border-collapse: collapse; font-size: 12px; min-width: 100%; }
+    table.matrix th, table.matrix td {
+      border: 1px solid var(--line); padding: 6px 8px; text-align: center;
+    }
+    table.matrix th { background: #f8fafc; color: var(--muted); font-weight: 600; }
+    table.matrix th.left, table.matrix td.left { text-align: left; white-space: nowrap; }
+    .cell-y { background: #d1fae5; color: #047857; font-weight: 700; }
+    .cell-n { background: #fff; color: #cbd5e1; }
+
+    .banner {
+      background: linear-gradient(90deg, #eff6ff, #fff); border: 1px solid #bfdbfe;
+      border-radius: 12px; padding: 12px 14px; font-size: 13px; margin-bottom: 12px;
+      color: #1e3a8a; line-height: 1.5;
+    }
+    .hidden { display: none !important; }
+    .footer { margin-top: 18px; text-align: center; font-size: 12px; color: var(--muted); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="top">
+      <div class="brand">
+        <h1>职业规划工作台</h1>
+        <p>五维底座：专业 → 岗位 → 技能等级 → 课程 → 认证 · 面向规划，而非画蜘蛛网</p>
+      </div>
+      <div class="role-switch">
+        <button type="button" class="on" data-role="student" id="btnStudent">我是应届生</button>
+        <button type="button" data-role="teacher" id="btnTeacher">我是教师</button>
+      </div>
+    </div>
+
+    <div class="status">
+      <span id="apiSt"><span class="dot warn"></span>检测服务…</span>
+      <span id="meta"></span>
+    </div>
+
+    <!-- ========== 学生视图 ========== -->
+    <div id="viewStudent">
+      <div class="steps" id="stuSteps">
+        <div class="step-pill on" data-s="1"><span class="num">1</span>确认专业</div>
+        <div class="step-pill" data-s="2"><span class="num">2</span>选择目标岗</div>
+        <div class="step-pill" data-s="3"><span class="num">3</span>看技能差距</div>
+        <div class="step-pill" data-s="4"><span class="num">4</span>学习计划</div>
+      </div>
+
+      <!-- S1 专业 -->
+      <section class="card" id="s1">
+        <h2>① 你的专业是什么？</h2>
+        <p class="sub">先锁定专业，系统会给出常见就业出口。也可点热门专业快速开始。</p>
+        <div class="row">
+          <input id="q" type="search" placeholder="例如：人工智能" value="人工智能" />
+          <select id="region">
+            <option value="CN" selected>国内</option>
+            <option value="">全部</option>
+            <option value="EU">欧盟</option>
+            <option value="US">美国</option>
+          </select>
+          <button class="btn" id="btnLoad" type="button">开始规划</button>
+        </div>
+        <div class="chips" id="hot"></div>
+        <div id="majorSummary" class="hidden" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)"></div>
+      </section>
+
+      <!-- S2 岗位 -->
+      <section class="card hidden" id="s2">
+        <h2>② 选择 1 个目标岗位</h2>
+        <p class="sub">以下为本专业图谱中的<strong>对口岗位</strong>。点选后进入技能差距与学习计划。</p>
+        <div class="job-grid" id="jobGrid"></div>
+      </section>
+
+      <!-- S3 技能差距 -->
+      <section class="card hidden" id="s3">
+        <h2>③ 技能差距 · <span id="gapJobName">—</span></h2>
+        <p class="sub">对照目标岗技能等级：用右侧「自评」标记你的当前水平。红色缺口将进入学习计划。</p>
+        <div class="banner" id="gapBanner">请先选择目标岗位</div>
+        <div style="overflow:auto">
+          <table class="gap" id="gapTable">
+            <thead>
+              <tr>
+                <th style="width:28%">技能</th>
+                <th style="width:12%">目标等级</th>
+                <th style="width:18%">我的水平（自评）</th>
+                <th style="width:14%">差距</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="actions">
+          <button class="btn ghost sm" type="button" id="btnBackJobs">重选岗位</button>
+          <button class="btn ok" type="button" id="btnGenPlan">生成 90 天学习计划</button>
+        </div>
+      </section>
+
+      <!-- S4 计划 -->
+      <section class="card hidden" id="s4">
+        <h2>④ 你的 90 天学习计划</h2>
+        <p class="sub">课程与认证<strong>分列</strong>。计划根据你勾选的技能缺口生成（示例逻辑，可再接测评/Agent）。</p>
+        <div class="banner" id="planBanner"></div>
+        <div class="timeline" id="planTimeline"></div>
+        <div class="actions">
+          <button class="btn ghost sm" type="button" id="btnEditGap">调整自评</button>
+          <button class="btn sm" type="button" id="btnCopyPlan">复制计划文本</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========== 教师视图 ========== -->
+    <div id="viewTeacher" class="hidden">
+      <section class="card">
+        <h2>专业出口与培养看板</h2>
+        <p class="sub">切换专业，查看出口岗位、技能覆盖与推荐职业轨道，便于给学生做规划辅导。</p>
+        <div class="row">
+          <input id="tq" type="search" placeholder="专业名称" value="人工智能" />
+          <select id="tregion">
+            <option value="CN" selected>国内</option>
+            <option value="">全部</option>
+          </select>
+          <button class="btn" id="btnTLoad" type="button">加载专业</button>
+        </div>
+        <div class="chips" id="thot"></div>
+      </section>
+
+      <div class="kpi" id="tkpi">
+        <div class="item"><div class="n" id="kJobs">0</div><div class="l">对口岗位</div></div>
+        <div class="item"><div class="n" id="kSkills">0</div><div class="l">涉及技能点</div></div>
+        <div class="item"><div class="n" id="kCourses">0</div><div class="l">关联课程</div></div>
+        <div class="item"><div class="n" id="kCreds">0</div><div class="l">关联认证</div></div>
+      </div>
+
+      <section class="card">
+        <h2>出口岗位（可点开生成学生路径包）</h2>
+        <p class="sub">教师视角：本专业图谱中的培养对口岗位。</p>
+        <div class="job-grid" id="tJobGrid"></div>
+      </section>
+
+      <section class="card">
+        <h2>技能 × 课程 覆盖（示意）</h2>
+        <p class="sub">绿色表示图谱中存在「技能—课程」关联；空白表示培养链可能偏弱（需补课或补数据）。</p>
+        <div class="matrix-wrap" id="matrixBox"><div class="empty">加载专业后显示</div></div>
+      </section>
+
+      <section class="card">
+        <h2>推荐职业轨道包（给学生用）</h2>
+        <p class="sub">按岗位自动生成 2～3 条轨道说明，可复制发给辅导员/学生。</p>
+        <div class="tracks" id="tracks"></div>
+        <div class="actions">
+          <button class="btn sm" type="button" id="btnCopyTracks">复制全部轨道说明</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="footer">学生：选岗 → 差距 → 计划　|　教师：出口看板 → 覆盖 → 轨道包　|　数据：Neo4j 五维图谱</div>
+  </div>
+
+  <script>
+    const HOT = [
+      "人工智能", "智能科学与技术", "数据科学与大数据技术",
+      "计算机科学与技术(AI方向)", "机器人工程", "认知科学与技术",
+    ];
+
+    const S = {
+      role: "student",
+      root: null,
+      nodes: [],
+      edges: [],
+      byId: new Map(),
+      jobs: [],
+      jobId: null,
+      selfLevel: {}, // skillId -> 0-4 self assessment
+      step: 1,
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "")
+      .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+
+    function parseAttrs(n) {
+      if (!n) return n;
+      if (typeof n.attrs === "string") {
+        try { n.attrs = JSON.parse(n.attrs); } catch { n.attrs = {}; }
+      }
+      if (!n.attrs) n.attrs = {};
+      return n;
+    }
+
+    function rel(e) {
+      return String(e.rel_type || e.neo4j_type || "").toLowerCase();
+    }
+
+    function setApi(ok, text) {
+      $("apiSt").innerHTML = `<span class="dot ${ok ? "ok" : "bad"}"></span>${text}`;
+    }
+
+    function updateSteps() {
+      document.querySelectorAll("#stuSteps .step-pill").forEach((el) => {
+        const n = Number(el.dataset.s);
+        el.classList.toggle("on", n === S.step);
+        el.classList.toggle("done", n < S.step);
+      });
+    }
+
+    function showStudentStep(step) {
+      S.step = step;
+      updateSteps();
+      $("s1").classList.toggle("hidden", false);
+      $("s2").classList.toggle("hidden", step < 2);
+      $("s3").classList.toggle("hidden", step < 3);
+      $("s4").classList.toggle("hidden", step < 4);
+      if (step >= 2) $("s2").scrollIntoView({ behavior: "smooth", block: "start" });
+      if (step === 3) $("s3").scrollIntoView({ behavior: "smooth", block: "start" });
+      if (step === 4) $("s4").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    /* ---------- graph helpers ---------- */
+    function jobsForMajor() {
+      if (!S.root) return [];
+      const ids = new Set();
+      S.edges.forEach((e) => {
+        if (rel(e) !== "prepares_for") return;
+        if (e.src_id === S.root.id && S.byId.get(e.dst_id)?.type === "occupation") ids.add(e.dst_id);
+        if (e.dst_id === S.root.id && S.byId.get(e.src_id)?.type === "occupation") ids.add(e.src_id);
+      });
+      return [...ids].map((id) => S.byId.get(id)).filter(Boolean);
+    }
+
+    function skillsForJob(jobId) {
+      const ids = new Set();
+      S.edges.forEach((e) => {
+        if (rel(e) !== "requires") return;
+        const a = S.byId.get(e.src_id);
+        const b = S.byId.get(e.dst_id);
+        if (a?.id === jobId && b?.type === "skill_level") ids.add(b.id);
+        if (b?.id === jobId && a?.type === "skill_level") ids.add(a.id);
+      });
+      const flat = [...ids].map((id) => S.byId.get(id)).filter(Boolean);
+      // 按技能名聚合：一行逻辑技能 + 最高要求档
+      const buckets = new Map();
+      flat.forEach((s) => {
+        const title = skillTitle(s.name);
+        const t = parseLevel(s.name);
+        const prev = buckets.get(title);
+        if (!prev || t.n > prev._levelN) {
+          buckets.set(title, {
+            ...s,
+            id: "agg:" + title,
+            name: title + (t.code && t.code !== "—" ? " · " + t.code : ""),
+            _levelN: t.n,
+            _levelCode: t.code,
+            _memberIds: prev ? prev._memberIds.concat([s.id]) : [s.id],
+          });
+        } else if (prev) {
+          prev._memberIds.push(s.id);
+        }
+      });
+      return [...buckets.values()];
+    }
+
+    function coursesForSkills(skillIds) {
+      const set = new Set(skillIds);
+      const ids = new Set();
+      // major related courses
+      if (S.root) {
+        S.edges.forEach((e) => {
+          const r = rel(e);
+          if (r !== "related_to" && r !== "taught_by") return;
+          const other = e.src_id === S.root.id ? e.dst_id : e.dst_id === S.root.id ? e.src_id : null;
+          if (other && S.byId.get(other)?.type === "course") ids.add(other);
+        });
+      }
+      S.edges.forEach((e) => {
+        if (rel(e) !== "taught_by") return;
+        const a = S.byId.get(e.src_id);
+        const b = S.byId.get(e.dst_id);
+        if (a?.type === "skill_level" && set.has(a.id) && b?.type === "course") ids.add(b.id);
+        if (b?.type === "skill_level" && set.has(b.id) && a?.type === "course") ids.add(a.id);
+        if (a?.type === "course" && b?.type === "skill_level" && set.has(b.id)) ids.add(a.id);
+        if (b?.type === "course" && a?.type === "skill_level" && set.has(a.id)) ids.add(b.id);
+      });
+      return [...ids].map((id) => S.byId.get(id)).filter(Boolean);
+    }
+
+    function credsForJobAndCourses(jobId, courseIds) {
+      const ids = new Set();
+      const cset = new Set(courseIds);
+      S.edges.forEach((e) => {
+        const r = rel(e);
+        const a = S.byId.get(e.src_id);
+        const b = S.byId.get(e.dst_id);
+        if (r === "recognized_by") {
+          if (a?.id === jobId && b?.type === "credential") ids.add(b.id);
+          if (b?.id === jobId && a?.type === "credential") ids.add(a.id);
+        }
+        if (r === "leads_to") {
+          if (a?.type === "course" && cset.has(a.id) && b?.type === "credential") ids.add(b.id);
+          if (b?.type === "course" && cset.has(b.id) && a?.type === "credential") ids.add(a.id);
+        }
+        if (r === "articulates_to" && S.root) {
+          if (a?.id === S.root.id && b?.type === "credential") ids.add(b.id);
+          if (b?.id === S.root.id && a?.type === "credential") ids.add(a.id);
+        }
+      });
+      return [...ids].map((id) => S.byId.get(id)).filter(Boolean);
+    }
+
+    function allSkillsForMajorJobs(jobs) {
+      const ids = new Set();
+      jobs.forEach((j) => skillsForJob(j.id).forEach((s) => ids.add(s.id)));
+      return [...ids].map((id) => S.byId.get(id)).filter(Boolean);
+    }
+
+    function allCoursesForMajor(jobs) {
+      const skillIds = allSkillsForMajorJobs(jobs).map((s) => s.id);
+      return coursesForSkills(skillIds);
+    }
+
+    function parseLevel(name) {
+      const s = String(name || "");
+      let m = s.match(/·\s*(L\d|IM\d|required)/i);
+      if (!m) m = s.match(/(一级|二级|三级|四级|五级)/);
+      if (!m) return { code: "—", n: 2 };
+      const raw = m[1];
+      const code = String(raw).toUpperCase();
+      if (code.startsWith("L")) return { code, n: Number(code.slice(1)) || 2 };
+      if (code.startsWith("IM")) return { code, n: Math.min(5, Math.max(1, Number(code.slice(2)) || 2)) };
+      // 国标五级：五级=入门L1 … 一级=专家L5（与产品自评方向一致）
+      const zhMap = { 五级: 1, 四级: 2, 三级: 3, 二级: 4, 一级: 5 };
+      if (zhMap[raw]) return { code: "L" + zhMap[raw], n: zhMap[raw] };
+      return { code, n: 2 };
+    }
+
+    function skillTitle(name) {
+      return String(name || "")
+        .replace(/\s*·\s*(L\d|IM\d|required).*$/i, "")
+        .replace(/\s*·\s*(一级|二级|三级|四级|五级).*$/i, "")
+        .trim();
+    }
+
+    /* UC / 旁路：优先 VocedApi；无则 X-Test-Uid 旁路 */
+    const TEMP_USER = { id: localStorage.getItem("voced_user_id") || "u_dev_student", name: localStorage.getItem("voced_user_name") || "student_dev" };
+    async function apiFetch(url, opts) {
+      opts = opts || {};
+      if (window.VocedApi && window.VocedApi.apiFetch) {
+        try {
+          return { ok: true, status: 200, json: async () => window.VocedApi.apiFetch(url, opts), _via: "voced" };
+        } catch (e) {
+          return { ok: false, status: e.status || 500, json: async () => ({ detail: e.message }) };
+        }
+      }
+      const headers = Object.assign(
+        { "X-Test-Uid": TEMP_USER.id, "X-Test-Uname": TEMP_USER.name, "X-User-Name": encodeURIComponent(TEMP_USER.name) },
+        opts.headers || {}
+      );
+      if (opts.body && typeof opts.body === "object" && !(opts.body instanceof FormData)) {
+        headers["Content-Type"] = "application/json";
+        opts = Object.assign({}, opts, { body: JSON.stringify(opts.body), headers });
+      } else {
+        opts = Object.assign({}, opts, { headers });
+      }
+      return fetch(url, opts);
+    }
+
+    /** 学员 API：专业 → 岗位 → 技能构成（聚合） */
+    async function loadViaStudentApi(name, region) {
+      const r = await apiFetch(
+        "/v1/student/professions?" + new URLSearchParams({ q: name, page: "1", page_size: "5", region: region || "CN" })
+      );
+      if (!r.ok) throw new Error("professions");
+      const list = await r.json();
+      const items = list.items || [];
+      if (!items.length) return null;
+      const prof = items[0];
+      const dres = await apiFetch("/v1/student/professions/" + encodeURIComponent(prof.id));
+      if (!dres.ok) throw new Error("profession detail");
+      const detail = await dres.json();
+      const positions = detail.positions || [];
+      const nodes = [
+        {
+          id: prof.id,
+          type: "major",
+          name: prof.raw_name || prof.name,
+          display_name: prof.name,
+          description: prof.desc,
+          attrs: prof.attrs,
+          counts: prof.counts,
+        },
+      ];
+      const edges = [];
+      for (const p of positions) {
+        nodes.push({
+          id: p.id,
+          type: "occupation",
+          name: p.raw_name || p.name,
+          description: p.desc,
+          industry_name: p.industry_name,
+          counts: p.counts,
+        });
+        edges.push({ src_id: prof.id, dst_id: p.id, rel_type: "prepares_for" });
+        try {
+          const cr = await apiFetch(
+            "/v1/student/positions/skill-composition?id=" + encodeURIComponent(p.id)
+          );
+          if (!cr.ok) continue;
+          const comp = await cr.json();
+          for (const s of comp.skills || []) {
+            const sid = s.id || s.skill_key;
+            if (!nodes.find((n) => n.id === sid)) {
+              nodes.push({
+                id: sid,
+                type: "skill_level",
+                name: (s.skill_key || s.name) + (s.required_level ? " · L" + s.required_level : ""),
+                skill_key: s.skill_key,
+                weight: s.weight,
+                attrs: { skill_name: s.skill_key, level_code: s.required_level ? "L" + s.required_level : null },
+              });
+            }
+            edges.push({
+              src_id: p.id,
+              dst_id: sid,
+              rel_type: "requires",
+              weight: s.weight,
+            });
+          }
+        } catch (_) { /* skip */ }
+      }
+      return {
+        root: nodes[0],
+        roots: [nodes[0]],
+        nodes,
+        edges,
+        meta: { matched: 1, source: "student_api", node_count: nodes.length, edge_count: edges.length },
+      };
+    }
+
+    /* ---------- load data ---------- */
+    async function loadGraph(name, region) {
+      // 1) 学生业务 API 2) 图 by-major 3) seed
+      try {
+        const data = await loadViaStudentApi(name, region);
+        if (data?.root) return { data, source: "student_api" };
+      } catch (_) { /* fallthrough */ }
+      const params = new URLSearchParams({ name, depth: "3", max_nodes: "400" });
+      if (region) params.set("region", region);
+      try {
+        const r = await apiFetch(`/v1/graph/by-major?${params}`);
+        if (r.status === 404) throw new Error("nf");
+        if (!r.ok) throw new Error("api");
+        return { data: await r.json(), source: "api" };
+      } catch {
+        const data = await loadSeed(name);
+        return { data, source: "seed" };
+      }
+    }
+
+    async function loadSeed(name) {
+      try {
+        const [nodes, edges] = await Promise.all([
+          fetch("/seed/nodes.json").then((r) => r.json()),
+          fetch("/seed/edges.json").then((r) => r.json()),
+        ]);
+        const q = name.trim().toLowerCase();
+        const root = nodes.find(
+          (n) => n.type === "major" && String(n.name).toLowerCase().includes(q)
+        );
+        if (!root) return null;
+        const ids = new Set([root.id]);
+        let fr = new Set([root.id]);
+        const used = [];
+        for (let i = 0; i < 3; i++) {
+          const next = new Set();
+          edges.forEach((e) => {
+            if (fr.has(e.src_id) || fr.has(e.dst_id)) {
+              used.push(e);
+              ids.add(e.src_id); ids.add(e.dst_id);
+              next.add(e.src_id); next.add(e.dst_id);
+            }
+          });
+          fr = next;
+        }
+        return {
+          root,
+          nodes: nodes.filter((n) => ids.has(n.id)),
+          edges: used,
+          meta: { matched: 1, node_count: ids.size, edge_count: used.length },
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    function applyGraph(data, source) {
+      const nodes = (data.nodes || []).map(parseAttrs);
+      S.root = data.root ? parseAttrs({ ...data.root }) : null;
+      if (S.root && !nodes.find((n) => n.id === S.root.id)) nodes.unshift(S.root);
+      S.nodes = nodes;
+      S.edges = data.edges || [];
+      S.byId = new Map(nodes.map((n) => [n.id, n]));
+      S.jobs = jobsForMajor();
+      S.jobId = null;
+      S.selfLevel = {};
+      const m = data.meta || {};
+      $("meta").textContent =
+        `「${S.root?.name || "—"}」· 岗位 ${S.jobs.length} · 源节点 ${m.node_count ?? nodes.length}` +
+        (source === "seed" ? " · 本地示例" : " · 在线");
+    }
+
+    /* ---------- student render ---------- */
+    function renderMajorSummary() {
+      const box = $("majorSummary");
+      if (!S.root) {
+        box.classList.add("hidden");
+        return;
+      }
+      box.classList.remove("hidden");
+      const a = S.root.attrs || {};
+      box.innerHTML = `
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;justify-content:space-between">
+          <div>
+            <div style="font-size:18px;font-weight:800;margin-bottom:4px">${esc(S.root.name)}</div>
+            <div style="font-size:13px;color:var(--muted);line-height:1.5;max-width:640px">${esc(S.root.description || a.note || a.core || "")}</div>
+            <div class="meta" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+              ${a.code ? `<span class="tag blue">${esc(a.code)}</span>` : ""}
+              ${a.discipline ? `<span class="tag">${esc(a.discipline)}</span>` : ""}
+              <span class="tag green">对口岗位 ${S.jobs.length}</span>
+            </div>
+          </div>
+          <button class="btn sm" type="button" id="btnToJobs">查看就业出口 →</button>
+        </div>`;
+      $("btnToJobs")?.addEventListener("click", () => {
+        renderJobs();
+        showStudentStep(2);
+      });
+    }
+
+    function renderJobs() {
+      const grid = $("jobGrid");
+      if (!S.jobs.length) {
+        grid.innerHTML = `<div class="empty">该专业暂无对口岗位（图谱缺少 prepares_for）。可换专业或补数据。</div>`;
+        return;
+      }
+      grid.innerHTML = S.jobs
+        .map((j) => {
+          const sk = skillsForJob(j.id).length;
+          const desc = j.description || j.attrs?.desc || j.attrs?.resp || "点击查看技能要求与学习计划";
+          const on = j.id === S.jobId ? "on" : "";
+          return `<div class="job-card ${on}" data-id="${esc(j.id)}">
+            <h3>${esc(j.name)}</h3>
+            <p>${esc(String(desc).slice(0, 96))}</p>
+            <div class="meta">
+              <span class="tag orange">目标岗</span>
+              <span class="tag">技能点 ${sk}</span>
+              ${j.confidence === "official" ? `<span class="tag green">官方</span>` : `<span class="tag">示例</span>`}
+            </div>
+          </div>`;
+        })
+        .join("");
+      grid.querySelectorAll(".job-card").forEach((el) => {
+        el.addEventListener("click", () => selectJob(el.dataset.id));
+      });
+    }
+
+    function selectJob(id) {
+      S.jobId = id;
+      // default self level: assume L1 for demo if unset
+      const skills = skillsForJob(id);
+      skills.forEach((s) => {
+        if (S.selfLevel[s.id] === undefined) S.selfLevel[s.id] = 1;
+      });
+      renderJobs();
+      renderGap();
+      showStudentStep(3);
+    }
+
+    function renderGap() {
+      const job = S.byId.get(S.jobId);
+      $("gapJobName").textContent = job?.name || "—";
+      const skills = skillsForJob(S.jobId);
+      if (!skills.length) {
+        $("gapBanner").textContent = "该岗位暂无技能数据，仍可进入计划页查看关联课程。";
+        $("gapTable").querySelector("tbody").innerHTML =
+          `<tr><td colspan="5" class="empty">暂无技能等级边（requires）</td></tr>`;
+        return;
+      }
+      let miss = 0;
+      const rows = skills.map((s) => {
+        const t = s._levelCode
+          ? { code: s._levelCode, n: s._levelN || 2 }
+          : parseLevel(s.name);
+        const self = Number(S.selfLevel[s.id] ?? 1);
+        const gap = Math.max(0, t.n - self);
+        if (gap > 0) miss++;
+        const gapLabel =
+          gap <= 0
+            ? `<span class="tag green">达标</span>`
+            : gap === 1
+              ? `<span class="tag orange">略缺</span>`
+              : `<span class="tag red">缺口 ${gap}</span>`;
+        const note = s.description || s.attrs?.note || s.attrs?.level_label || "";
+        const lvClass = /^L\d$/.test(t.code) ? t.code : "x";
+        return `<tr>
+          <td><strong>${esc(skillTitle(s.name))}</strong></td>
+          <td><span class="lv ${lvClass}">${esc(t.code)}</span></td>
+          <td>
+            <select class="self" data-sid="${esc(s.id)}">
+              <option value="0" ${self === 0 ? "selected" : ""}>不会</option>
+              <option value="1" ${self === 1 ? "selected" : ""}>L1 了解</option>
+              <option value="2" ${self === 2 ? "selected" : ""}>L2 能做</option>
+              <option value="3" ${self === 3 ? "selected" : ""}>L3 熟练</option>
+              <option value="4" ${self === 4 ? "selected" : ""}>L4 精通</option>
+              <option value="5" ${self === 5 ? "selected" : ""}>L5 专家</option>
+            </select>
+          </td>
+          <td>${gapLabel}</td>
+          <td style="color:var(--muted);font-size:12px">${esc(note)}</td>
+        </tr>`;
+      });
+      $("gapBanner").textContent =
+        `目标岗位「${job.name}」共 ${skills.length} 项逻辑技能（已聚合）· 自评后缺口 ${miss} 项将进入学习计划`;
+      $("gapTable").querySelector("tbody").innerHTML = rows.join("");
+      $("gapTable").querySelectorAll("select.self").forEach((sel) => {
+        sel.addEventListener("change", () => {
+          S.selfLevel[sel.dataset.sid] = Number(sel.value);
+          renderGap();
+        });
+      });
+    }
+
+    function genPlan() {
+      const job = S.byId.get(S.jobId);
+      if (!job) return;
+      const skills = skillsForJob(S.jobId);
+      const gaps = skills
+        .map((s) => {
+          const t = parseLevel(s.name);
+          const self = Number(S.selfLevel[s.id] ?? 1);
+          return { s, target: t, gap: Math.max(0, t.n - self) };
+        })
+        .filter((x) => x.gap > 0)
+        .sort((a, b) => b.gap - a.gap);
+
+      const gapSkills = gaps.length ? gaps.map((g) => g.s) : skills.slice(0, 4);
+      const skillIds = gapSkills.map((s) => s.id);
+      const courses = coursesForSkills(skillIds);
+      const creds = credsForJobAndCourses(S.jobId, courses.map((c) => c.id));
+
+      // fallback demo courses text if empty
+      const courseNames = courses.length
+        ? courses.map((c) => c.name)
+        : ["（图谱暂无课）请补充课程数据或使用外部公开课"];
+      const credNames = creds.length
+        ? creds.map((c) => c.name)
+        : ["（图谱暂无认证）后续接入 1+X / 职业资格目录"];
+
+      const topSkills = gapSkills.slice(0, 6).map((s) => skillTitle(s.name) + " · " + parseLevel(s.name).code);
+
+      $("planBanner").innerHTML =
+        `面向 <strong>${esc(job.name)}</strong> · 优先补齐：${esc(topSkills.slice(0, 3).join("、") || "通用基础")}` +
+        ` · 课程 ${courses.length} · 认证 ${creds.length}`;
+
+      const phases = [
+        {
+          when: "第 1–2 周",
+          title: "夯实基础",
+          skills: topSkills.slice(0, 2),
+          courses: courseNames.slice(0, 2),
+          creds: [],
+          tips: ["每天 1～2 小时", "先完成环境搭建与入门练习"],
+        },
+        {
+          when: "第 3–6 周",
+          title: "核心技能攻坚",
+          skills: topSkills.slice(0, 4),
+          courses: courseNames.slice(0, 4),
+          creds: credNames.slice(0, 1),
+          tips: ["做一个可放进简历的小项目", "对照目标等级刷练习"],
+        },
+        {
+          when: "第 7–10 周",
+          title: "项目与认证",
+          skills: topSkills,
+          courses: courseNames,
+          creds: credNames,
+          tips: ["作品集 1 个完整案例", "认证报名/备考（若有）"],
+        },
+        {
+          when: "第 11–12 周",
+          title: "求职包装",
+          skills: ["简历技能条对齐目标岗", "面试题按技能清单过一遍"],
+          courses: [],
+          creds: credNames,
+          tips: ["用缺口表检查是否还标红", "准备 3 个项目故事"],
+        },
+      ];
+
+      $("planTimeline").innerHTML = phases
+        .map((p) => {
+          const skillLis = (p.skills || []).map((x) => `<li>${esc(x)}</li>`).join("") || "<li>—</li>";
+          const courseLis = (p.courses || []).map((x) => `<li>${esc(x)}</li>`).join("") || "<li>本阶段以练习为主</li>";
+          const credLis = (p.creds || []).map((x) => `<li>${esc(x)}</li>`).join("") || "<li>本阶段无强制认证</li>";
+          const tips = (p.tips || []).map((x) => `<li>${esc(x)}</li>`).join("");
+          return `<div class="phase">
+            <div class="when">${esc(p.when)}</div>
+            <div class="what">
+              <h4>${esc(p.title)}</h4>
+              <div class="split">
+                <div class="box">
+                  <h5>技能重点</h5>
+                  <ul>${skillLis}</ul>
+                </div>
+                <div class="box course">
+                  <h5>④ 课程</h5>
+                  <ul>${courseLis}</ul>
+                </div>
+              </div>
+              <div class="split" style="margin-top:10px">
+                <div class="box cred">
+                  <h5>⑤ 认证</h5>
+                  <ul>${credLis}</ul>
+                </div>
+                <div class="box">
+                  <h5>行动提示</h5>
+                  <ul>${tips}</ul>
+                </div>
+              </div>
+            </div>
+          </div>`;
+        })
+        .join("");
+
+      // stash text for copy
+      S._planText = [
+        `【90天学习计划】${S.root?.name || ""} → ${job.name}`,
+        `优先技能：${topSkills.join("、")}`,
+        ...phases.map(
+          (p) =>
+            `${p.when} ${p.title}\n  技能：${(p.skills || []).join("、") || "—"}\n  课程：${(p.courses || []).join("、") || "—"}\n  认证：${(p.creds || []).join("、") || "—"}`
+        ),
+      ].join("\n\n");
+
+      showStudentStep(4);
+    }
+
+    /* ---------- teacher ---------- */
+    function renderTeacher() {
+      if (!S.root) return;
+      const jobs = S.jobs;
+      const skills = allSkillsForMajorJobs(jobs);
+      const courses = allCoursesForMajor(jobs);
+      const creds = credsForJobAndCourses(jobs[0]?.id, courses.map((c) => c.id));
+      // union creds rough
+      const allCreds = new Set();
+      jobs.forEach((j) => {
+        credsForJobAndCourses(j.id, courses.map((c) => c.id)).forEach((c) => allCreds.add(c.id));
+      });
+      S.edges.forEach((e) => {
+        if (rel(e) === "articulates_to") {
+          const a = S.byId.get(e.src_id);
+          const b = S.byId.get(e.dst_id);
+          if (a?.type === "credential") allCreds.add(a.id);
+          if (b?.type === "credential") allCreds.add(b.id);
+        }
+      });
+
+      $("kJobs").textContent = jobs.length;
+      $("kSkills").textContent = skills.length;
+      $("kCourses").textContent = courses.length;
+      $("kCreds").textContent = allCreds.size;
+
+      // jobs
+      $("tJobGrid").innerHTML = jobs.length
+        ? jobs
+            .map((j) => {
+              const sk = skillsForJob(j.id).length;
+              return `<div class="job-card" data-id="${esc(j.id)}">
+                <h3>${esc(j.name)}</h3>
+                <p>${esc((j.description || j.attrs?.desc || "").slice(0, 80))}</p>
+                <div class="meta"><span class="tag orange">出口</span><span class="tag">技能 ${sk}</span></div>
+                <div style="margin-top:10px"><button class="btn sm ghost" data-pack="${esc(j.id)}" type="button">生成学生路径包</button></div>
+              </div>`;
+            })
+            .join("")
+        : `<div class="empty">暂无对口岗位</div>`;
+
+      $("tJobGrid").querySelectorAll("[data-pack]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          // jump to student-like plan for this job
+          S.role = "student";
+          syncRoleUI();
+          S.jobId = btn.dataset.pack;
+          skillsForJob(S.jobId).forEach((s) => {
+            if (S.selfLevel[s.id] === undefined) S.selfLevel[s.id] = 1;
+          });
+          renderJobs();
+          renderGap();
+          genPlan();
+          alert("已切换到学生视图并生成该岗位的 90 天计划，可复制发给学生。");
+        });
+      });
+
+      // matrix skills x courses (cap size)
+      const sk = skills.slice(0, 8);
+      const cs = courses.slice(0, 6);
+      if (!sk.length || !cs.length) {
+        $("matrixBox").innerHTML = `<div class="empty">课程或技能数据不足，无法画覆盖矩阵（示例库课证偏少时属正常）</div>`;
+      } else {
+        // build skill-course link set
+        const link = new Set();
+        S.edges.forEach((e) => {
+          if (rel(e) !== "taught_by") return;
+          const a = S.byId.get(e.src_id);
+          const b = S.byId.get(e.dst_id);
+          if (a?.type === "skill_level" && b?.type === "course") link.add(a.id + ">" + b.id);
+          if (b?.type === "skill_level" && a?.type === "course") link.add(b.id + ">" + a.id);
+        });
+        let head = `<th class="left">技能 \\ 课程</th>` + cs.map((c) => `<th>${esc(c.name.slice(0, 10))}</th>`).join("");
+        let body = sk
+          .map((s) => {
+            const cells = cs
+              .map((c) => {
+                const ok = link.has(s.id + ">" + c.id);
+                return `<td class="${ok ? "cell-y" : "cell-n"}">${ok ? "●" : "·"}</td>`;
+              })
+              .join("");
+            return `<tr><td class="left">${esc(skillTitle(s.name))}</td>${cells}</tr>`;
+          })
+          .join("");
+        $("matrixBox").innerHTML = `<table class="matrix"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+      }
+
+      // tracks: top 3 jobs
+      const top = jobs.slice(0, 3);
+      $("tracks").innerHTML = top.length
+        ? top
+            .map((j, idx) => {
+              const sks = skillsForJob(j.id).slice(0, 5).map((s) => skillTitle(s.name) + parseLevel(s.name).code);
+              const cs2 = coursesForSkills(skillsForJob(j.id).map((s) => s.id)).slice(0, 3);
+              return `<div class="track">
+                <h3>轨道 ${idx + 1} · ${esc(j.name)}</h3>
+                <p>适合希望从事「${esc(j.name)}」方向的学生</p>
+                <ol>
+                  <li>对齐技能：${esc(sks.join("、") || "补全技能数据")}</li>
+                  <li>课程：${esc(cs2.map((c) => c.name).join("、") || "待配置课程")}</li>
+                  <li>认证：${esc(
+                    credsForJobAndCourses(j.id, cs2.map((c) => c.id))
+                      .map((c) => c.name)
+                      .join("、") || "待配置认证"
+                  )}</li>
+                  <li>产出：项目作品 + 简历技能条对齐本岗</li>
+                </ol>
+              </div>`;
+            })
+            .join("")
+        : `<div class="empty">无岗位则无法生成轨道</div>`;
+
+      S._tracksText = top
+        .map((j, idx) => {
+          const sks = skillsForJob(j.id).slice(0, 5).map((s) => skillTitle(s.name));
+          return `轨道${idx + 1} ${j.name}\n技能：${sks.join("、")}\n专业：${S.root.name}`;
+        })
+        .join("\n\n");
+    }
+
+    /* ---------- role / events ---------- */
+    function syncRoleUI() {
+      const stu = S.role === "student";
+      $("btnStudent").classList.toggle("on", stu);
+      $("btnTeacher").classList.toggle("on", !stu);
+      $("viewStudent").classList.toggle("hidden", !stu);
+      $("viewTeacher").classList.toggle("hidden", stu);
+    }
+
+    async function studentStart() {
+      const name = $("q").value.trim();
+      if (!name) return alert("请输入专业");
+      $("btnLoad").disabled = true;
+      try {
+        if (window.VocedApi && window.VocedApi.initAuth) {
+          await window.VocedApi.initAuth().catch(() => null);
+        }
+      } catch (_) {}
+      const { data, source } = await loadGraph(name, $("region").value);
+      $("btnLoad").disabled = false;
+      if (!data?.root) {
+        alert("未找到该专业，请换热门标签试试");
+        return;
+      }
+      applyGraph(data, source);
+      renderMajorSummary();
+      renderJobs();
+      showStudentStep(2);
+      const banner = $("gapBanner");
+      if (banner && source === "student_api") {
+        /* 下一步选岗时提示 */
+      }
+      console.info("[workbench] data source:", source);
+    }
+
+    async function teacherStart() {
+      const name = $("tq").value.trim();
+      if (!name) return alert("请输入专业");
+      $("btnTLoad").disabled = true;
+      const { data, source } = await loadGraph(name, $("tregion").value);
+      $("btnTLoad").disabled = false;
+      if (!data?.root) {
+        alert("未找到该专业");
+        return;
+      }
+      applyGraph(data, source);
+      renderTeacher();
+    }
+
+    // hot chips
+    function fillHot(el, inputId, onPick) {
+      HOT.forEach((n) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "chip";
+        b.textContent = n;
+        b.addEventListener("click", () => {
+          $(inputId).value = n;
+          el.querySelectorAll(".chip").forEach((x) => x.classList.remove("on"));
+          b.classList.add("on");
+          onPick();
+        });
+        el.appendChild(b);
+      });
+    }
+    fillHot($("hot"), "q", studentStart);
+    fillHot($("thot"), "tq", teacherStart);
+
+    $("btnStudent").addEventListener("click", () => {
+      S.role = "student";
+      syncRoleUI();
+    });
+    $("btnTeacher").addEventListener("click", () => {
+      S.role = "teacher";
+      syncRoleUI();
+      if (S.root) renderTeacher();
+    });
+    $("btnLoad").addEventListener("click", studentStart);
+    $("btnTLoad").addEventListener("click", teacherStart);
+    $("q").addEventListener("keydown", (e) => e.key === "Enter" && studentStart());
+    $("tq").addEventListener("keydown", (e) => e.key === "Enter" && teacherStart());
+    $("btnGenPlan").addEventListener("click", genPlan);
+    $("btnBackJobs").addEventListener("click", () => showStudentStep(2));
+    $("btnEditGap").addEventListener("click", () => showStudentStep(3));
+    $("btnCopyPlan").addEventListener("click", async () => {
+      const t = S._planText || "";
+      try {
+        await navigator.clipboard.writeText(t);
+        alert("计划已复制到剪贴板");
+      } catch {
+        prompt("复制以下内容", t);
+      }
+    });
+    $("btnCopyTracks").addEventListener("click", async () => {
+      const t = S._tracksText || "";
+      try {
+        await navigator.clipboard.writeText(t);
+        alert("轨道说明已复制");
+      } catch {
+        prompt("复制以下内容", t);
+      }
+    });
+
+    async function probe() {
+      try {
+        const j = await fetch("/health", { signal: AbortSignal.timeout(2500) }).then((r) => r.json());
+        const ok = j.postgresql?.ok || j.status === "ok";
+        setApi(!!ok, ok ? "服务正常（PostgreSQL）" : "API 在线");
+      } catch {
+        setApi(false, "API 不可用 · 将用本地示例数据");
+      }
+    }
+
+    probe().then(() => studentStart());
+  </script>
+</body>
+</html>

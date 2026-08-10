@@ -1,0 +1,17 @@
+{
+  "source_system": "ONET",
+  "version": "30_3",
+  "home": "https://www.onetcenter.org/database.html",
+  "license": "O*NET Database License (Creative Commons; see onetcenter.org/license_db.html)",
+  "fetched_at": "2026-08-05T04:38:24+00:00",
+  "results": [
+    {
+      "status": "downloaded",
+      "path": "D:\\workspace\\职业教育知识图谱\\data\\raw\\US\\onet\\db_30_3\\db_30_3_text.zip",
+      "bytes": 13222549,
+      "sha256": "7758ec966fd91895b3d290b83c9f1f1d46730d37fdda4faac67104d1c0d2a780",
+      "url": "https://www.onetcenter.org/dl_files/database/db_30_3_text.zip",
+      "format": "text"
+    }
+  ]
+}

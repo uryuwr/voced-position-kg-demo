@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+**/.env
+.env.*
+!**/.env.example
+!.env.example
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local partial downloads
+*.part
+
+# 大体量原始数据与中间态（管道输入/落地，勿进库）
+data/raw/
+data/staging/
+data/graph/*.sqlite
+data/graph/*.sqlite-*
+
+# 运行日志、截图、逐步 stdout（验收 md/json 仍可提交）
+reports/**/*.log
+reports/**/*.out.txt
+reports/**/e2e_shots/
+reports/**/*.png
+reports/**/*.jpg
+reports/**/*.jpeg
+reports/h2_probe/*.png
+reports/industry_probe/*.png
+reports/cn_full_landing.log
+reports/cn_full_landing_watchdog.log
+reports/step_*.out.txt
+
+# 本地临时脚本产物
+scripts/_tmp_*
+scripts/**/__pycache__/
+
+# 内部资料，不进公开仓库（接口预研原始件、设计截图/xmind）
+知识图谱接口预研/
+docs/**/*.png
+docs/**/*.jpg
+docs/**/*.xmind
+*.xmind

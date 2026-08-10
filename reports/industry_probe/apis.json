@@ -1,0 +1,1496 @@
+[
+  {
+    "url": "https://apm-fe.zhipin.com/wapi/zpApm/httpMetrics/getConfig?appKey=ObsSRskiryhn60pf",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zppassport/set/zpToken",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getSecurityGuideV1",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/collection/popup/window",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/webtopbanner/query.json",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://apm-fe.zhipin.com/wapi/zpApm/httpMetrics/getConfig?appKey=ObsSRskiryhn60pf",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"result\": {\"appKey\": \"ObsSRskiryhn60pf\", \"bucketSize\": 10, \"timeSlice\": 10, \"reportPeriod\": 10, \"metricsSwitch\": false, \"pathBlacklist\": [], \"hostBlacklist\": []}}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zppassport/set/zpToken",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": true}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/webtopbanner/query.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/collection/popup/window",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"userType\": 0, \"cid\": \"\"}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getSecurityGuideV1",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"whetherPopUp\": false, \"title\": null, \"subTitle\": null, \"imgUrl\": null, \"url\": null, \"type\": 0}}"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/agreement/update/tip.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/parser/querybar.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/city/site.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"otherCitySites\": [{\"name\": \"南通\", \"code\": 101190500, \"url\": \"/nantong/\"}, {\"name\": \"无锡\", \"code\": 101190200, \"url\": \"/wuxi/\"}, {\"name\": \"珠海\", \"code\": 101280700, \"url\": \"/zhuhai/\"}, {\"name\": \"南宁\", \"code\": 101300100, \"url\": \"/nanning/\"}, {\"name\": \"常州\", \"code"
+  },
+  {
+    "url": "https://docdownload.zhipin.com/wflow/zpgeek/qrcode/generate.json?content=https%3A%2F%2Fwww.zhipin.com%2Fwapi%2FzpCommon%2Fdownload%2Findex%3Ftype%3Dqr%26pkn%3Dmain-m%26sid%3Dmoren_14&w=200&h=200",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/industry.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": [{\"code\": 100000, \"name\": \"互联网/AI\", \"tip\": null, \"subLevelModelList\": [{\"code\": 100020, \"name\": \"互联网\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/getCityShowPosition?cityCode=101230100",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"position\": [{\"code\": 1010000, \"name\": \"互联网/AI\", \"tip\": null, \"subLevelModelList\": [{\"code\": 1000020, \"name\": \"后端开发\", \"tip\": null, \"subLevelModelList\": [{\"code\": 100101, \"name\": \"Java\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/city.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"hotCityList\": [{\"code\": 100010000, \"name\": \"全国\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\": null, \"recruitmentType\": null, \"cityCode\": \"\", \"reg"
+  },
+  {
+    "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://apm-fe.zhipin.com/wapi/zpApm/httpMetrics/getConfig?appKey=ObsSRskiryhn60pf",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"result\": {\"appKey\": \"ObsSRskiryhn60pf\", \"bucketSize\": 10, \"timeSlice\": 10, \"reportPeriod\": 10, \"metricsSwitch\": false, \"pathBlacklist\": [], \"hostBlacklist\": []}}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zppassport/set/zpToken",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": true}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpchat/notify/setting/get?_=1786005454433",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json?_=1786005454433",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/header.json?_=1786005454489",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": \"<script>\\n    var staticPath = 'https://static.zhipin.com/v2';\\n    _PAGE = {\\n        checkMobileUrl: \\\"/registe/sendSms.json\\\",\\n        regMobileUrl: \\\"/registe/save.json\\\",\\n        loginMobileUrl: \\\"/login/phone.json\\\",\\n        loginAccountUrl: \\\"/l"
+  },
+  {
+    "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/complete/step.json?version=2&_=1786005454592",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/footer.json?_=1786005454592",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": \"<div id=\\\"footer\\\">\\n    <div class=\\\"inner home-inner\\\">\\n        <div class=\\\"footer-social\\\">\\n            <img src=\\\"https://static.zhipin.com/v2/web/geek/images/footer-logo.png\\\" alt=\\\"\\\">\\n            <p>企业服务热线和算法/未成年人等举报渠道 <span>400 065 5799</span>"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/pc/all/filter/conditions.json?_=1786005454592",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"payTypeList\": [{\"code\": 0, \"name\": \"不限\"}, {\"code\": 2501, \"name\": \"日结\"}, {\"code\": 2502, \"name\": \"周结\"}, {\"code\": 2503, \"name\": \"月结\"}, {\"code\": 2504, \"name\": \"完工结\"}], \"experienceList\": [{\"code\": 0, \"name\": \"不限\"}, {\"code\": 108, \"name\": \"在校生\"}, {\"code\": 102, "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/defaultcity.json?_=1786005454591",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"city\": {\"id\": 2669, \"code\": 101230100, \"name\": \"福州\", \"level\": 2, \"rank\": 1, \"parentCode\": 101230000, \"cityPinyin\": \"fz\", \"cityFullPinyin\": \"fuzhou\", \"firstChar\": \"f\", \"cityCode\": \"0591\", \"parentName\": \"福建\", \"grandParentCode\": 0, \"grandParentName\": null, "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/restrict/list.json?_=1786005454604",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getSecurityGuideV1",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"whetherPopUp\": false, \"title\": null, \"subTitle\": null, \"imgUrl\": null, \"url\": null, \"type\": 0}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/agreement/update/tip.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/parser/querybar.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/webtopbanner/query.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/city/site.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"otherCitySites\": [{\"name\": \"南通\", \"code\": 101190500, \"url\": \"/nantong/\"}, {\"name\": \"无锡\", \"code\": 101190200, \"url\": \"/wuxi/\"}, {\"name\": \"珠海\", \"code\": 101280700, \"url\": \"/zhuhai/\"}, {\"name\": \"南宁\", \"code\": 101300100, \"url\": \"/nanning/\"}, {\"name\": \"常州\", \"code"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/cityGroup.json?_=1786005454665",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"cityGroup\": [{\"firstChar\": \"A\", \"cityList\": [{\"code\": 101070300, \"name\": \"鞍山\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\": null, \"recruitmentTyp"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/industryFilterExemption?_=1786005454680",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": [{\"code\": 100000, \"name\": \"互联网/AI\", \"tip\": null, \"subLevelModelList\": [{\"code\": 100020, \"name\": \"互联网\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json?page=1&pageSize=15&city=101230100&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&experience=&degree=&industry=&scale=&_=1786",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101230100&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&_=1786005454889",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101230100&jobCity=&_=1786005454889",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://apm-fe.zhipin.com/wapi/zpApm/httpMetrics/getConfig?appKey=ObsSRskiryhn60pf",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"result\": {\"appKey\": \"ObsSRskiryhn60pf\", \"bucketSize\": 10, \"timeSlice\": 10, \"reportPeriod\": 10, \"metricsSwitch\": false, \"pathBlacklist\": [], \"hostBlacklist\": []}}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zppassport/set/zpToken",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": true}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpchat/notify/setting/get?_=1786005455468",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json?_=1786005455468",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/header.json?_=1786005455532",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": \"<script>\\n    var staticPath = 'https://static.zhipin.com/v2';\\n    _PAGE = {\\n        checkMobileUrl: \\\"/registe/sendSms.json\\\",\\n        regMobileUrl: \\\"/registe/save.json\\\",\\n        loginMobileUrl: \\\"/login/phone.json\\\",\\n        loginAccountUrl: \\\"/l"
+  },
+  {
+    "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/footer.json?_=1786005455565",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": \"<div id=\\\"footer\\\">\\n    <div class=\\\"inner home-inner\\\">\\n        <div class=\\\"footer-social\\\">\\n            <img src=\\\"https://static.zhipin.com/v2/web/geek/images/footer-logo.png\\\" alt=\\\"\\\">\\n            <p>企业服务热线和算法/未成年人等举报渠道 <span>400 065 5799</span>"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/pc/all/filter/conditions.json?_=1786005455565",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"payTypeList\": [{\"code\": 0, \"name\": \"不限\"}, {\"code\": 2501, \"name\": \"日结\"}, {\"code\": 2502, \"name\": \"周结\"}, {\"code\": 2503, \"name\": \"月结\"}, {\"code\": 2504, \"name\": \"完工结\"}], \"experienceList\": [{\"code\": 0, \"name\": \"不限\"}, {\"code\": 108, \"name\": \"在校生\"}, {\"code\": 102, "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/complete/step.json?version=2&_=1786005455565",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/defaultcity.json?_=1786005455565",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"city\": {\"id\": 2669, \"code\": 101230100, \"name\": \"福州\", \"level\": 2, \"rank\": 1, \"parentCode\": 101230000, \"cityPinyin\": \"fz\", \"cityFullPinyin\": \"fuzhou\", \"firstChar\": \"f\", \"cityCode\": \"0591\", \"parentName\": \"福建\", \"grandParentCode\": 0, \"grandParentName\": null, "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/agreement/update/tip.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/restrict/list.json?_=1786005455593",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/parser/querybar.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/webtopbanner/query.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getSecurityGuideV1",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"whetherPopUp\": false, \"title\": null, \"subTitle\": null, \"imgUrl\": null, \"url\": null, \"type\": 0}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/city/site.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"otherCitySites\": [{\"name\": \"南通\", \"code\": 101190500, \"url\": \"/nantong/\"}, {\"name\": \"无锡\", \"code\": 101190200, \"url\": \"/wuxi/\"}, {\"name\": \"珠海\", \"code\": 101280700, \"url\": \"/zhuhai/\"}, {\"name\": \"南宁\", \"code\": 101300100, \"url\": \"/nanning/\"}, {\"name\": \"常州\", \"code"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/cityGroup.json?_=1786005455642",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"cityGroup\": [{\"firstChar\": \"A\", \"cityList\": [{\"code\": 101070300, \"name\": \"鞍山\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\": null, \"recruitmentTyp"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/industryFilterExemption?_=1786005455652",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": [{\"code\": 100000, \"name\": \"互联网/AI\", \"tip\": null, \"subLevelModelList\": [{\"code\": 100020, \"name\": \"互联网\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\":"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json?page=1&pageSize=15&city=101230100&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&experience=&degree=&industry=&scale=&_=1786",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101230100&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&_=1786005455879",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101230100&jobCity=&_=1786005455879",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://apm-fe.zhipin.com/wapi/zpApm/httpMetrics/getConfig?appKey=ObsSRskiryhn60pf",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"result\": {\"appKey\": \"ObsSRskiryhn60pf\", \"bucketSize\": 10, \"timeSlice\": 10, \"reportPeriod\": 10, \"metricsSwitch\": false, \"pathBlacklist\": [], \"hostBlacklist\": []}}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zppassport/set/zpToken",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": true}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpchat/notify/setting/get?_=1786005456255",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json?_=1786005456255",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/header.json?_=1786005456321",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": \"<script>\\n    var staticPath = 'https://static.zhipin.com/v2';\\n    _PAGE = {\\n        checkMobileUrl: \\\"/registe/sendSms.json\\\",\\n        regMobileUrl: \\\"/registe/save.json\\\",\\n        loginMobileUrl: \\\"/login/phone.json\\\",\\n        loginAccountUrl: \\\"/l"
+  },
+  {
+    "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/complete/step.json?version=2&_=1786005456348",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/footer.json?_=1786005456348",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": \"<div id=\\\"footer\\\">\\n    <div class=\\\"inner home-inner\\\">\\n        <div class=\\\"footer-social\\\">\\n            <img src=\\\"https://static.zhipin.com/v2/web/geek/images/footer-logo.png\\\" alt=\\\"\\\">\\n            <p>企业服务热线和算法/未成年人等举报渠道 <span>400 065 5799</span>"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/defaultcity.json?_=1786005456348",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"city\": {\"id\": 2669, \"code\": 101230100, \"name\": \"福州\", \"level\": 2, \"rank\": 1, \"parentCode\": 101230000, \"cityPinyin\": \"fz\", \"cityFullPinyin\": \"fuzhou\", \"firstChar\": \"f\", \"cityCode\": \"0591\", \"parentName\": \"福建\", \"grandParentCode\": 0, \"grandParentName\": null, "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/pc/all/filter/conditions.json?_=1786005456348",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"payTypeList\": [{\"code\": 0, \"name\": \"不限\"}, {\"code\": 2501, \"name\": \"日结\"}, {\"code\": 2502, \"name\": \"周结\"}, {\"code\": 2503, \"name\": \"月结\"}, {\"code\": 2504, \"name\": \"完工结\"}], \"experienceList\": [{\"code\": 0, \"name\": \"不限\"}, {\"code\": 108, \"name\": \"在校生\"}, {\"code\": 102, "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/restrict/list.json?_=1786005456388",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/agreement/update/tip.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/parser/querybar.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/webtopbanner/query.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getSecurityGuideV1",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"whetherPopUp\": false, \"title\": null, \"subTitle\": null, \"imgUrl\": null, \"url\": null, \"type\": 0}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/city/site.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"otherCitySites\": [{\"name\": \"南通\", \"code\": 101190500, \"url\": \"/nantong/\"}, {\"name\": \"无锡\", \"code\": 101190200, \"url\": \"/wuxi/\"}, {\"name\": \"珠海\", \"code\": 101280700, \"url\": \"/zhuhai/\"}, {\"name\": \"南宁\", \"code\": 101300100, \"url\": \"/nanning/\"}, {\"name\": \"常州\", \"code"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/industryFilterExemption?_=1786005456413",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": [{\"code\": 100000, \"name\": \"互联网/AI\", \"tip\": null, \"subLevelModelList\": [{\"code\": 100020, \"name\": \"互联网\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/cityGroup.json?_=1786005456417",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"cityGroup\": [{\"firstChar\": \"A\", \"cityList\": [{\"code\": 101070300, \"name\": \"鞍山\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\": null, \"recruitmentTyp"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json?page=1&pageSize=15&city=101230100&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&experience=&degree=&industry=&scale=&_=1786",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101230100&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&_=1786005456640",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101230100&jobCity=&_=1786005456640",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://apm-fe.zhipin.com/wapi/zpApm/httpMetrics/getConfig?appKey=ObsSRskiryhn60pf",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"result\": {\"appKey\": \"ObsSRskiryhn60pf\", \"bucketSize\": 10, \"timeSlice\": 10, \"reportPeriod\": 10, \"metricsSwitch\": false, \"pathBlacklist\": [], \"hostBlacklist\": []}}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zppassport/set/zpToken",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": true}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpchat/notify/setting/get?_=1786005457006",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json?_=1786005457006",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/header.json?_=1786005457059",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": \"<script>\\n    var staticPath = 'https://static.zhipin.com/v2';\\n    _PAGE = {\\n        checkMobileUrl: \\\"/registe/sendSms.json\\\",\\n        regMobileUrl: \\\"/registe/save.json\\\",\\n        loginMobileUrl: \\\"/login/phone.json\\\",\\n        loginAccountUrl: \\\"/l"
+  },
+  {
+    "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/defaultcity.json?_=1786005457088",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"city\": {\"id\": 2669, \"code\": 101230100, \"name\": \"福州\", \"level\": 2, \"rank\": 1, \"parentCode\": 101230000, \"cityPinyin\": \"fz\", \"cityFullPinyin\": \"fuzhou\", \"firstChar\": \"f\", \"cityCode\": \"0591\", \"parentName\": \"福建\", \"grandParentCode\": 0, \"grandParentName\": null, "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/pc/all/filter/conditions.json?_=1786005457088",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"payTypeList\": [{\"code\": 0, \"name\": \"不限\"}, {\"code\": 2501, \"name\": \"日结\"}, {\"code\": 2502, \"name\": \"周结\"}, {\"code\": 2503, \"name\": \"月结\"}, {\"code\": 2504, \"name\": \"完工结\"}], \"experienceList\": [{\"code\": 0, \"name\": \"不限\"}, {\"code\": 108, \"name\": \"在校生\"}, {\"code\": 102, "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/complete/step.json?version=2&_=1786005457088",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/footer.json?_=1786005457088",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": \"<div id=\\\"footer\\\">\\n    <div class=\\\"inner home-inner\\\">\\n        <div class=\\\"footer-social\\\">\\n            <img src=\\\"https://static.zhipin.com/v2/web/geek/images/footer-logo.png\\\" alt=\\\"\\\">\\n            <p>企业服务热线和算法/未成年人等举报渠道 <span>400 065 5799</span>"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/restrict/list.json?_=1786005457117",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/parser/querybar.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/agreement/update/tip.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/webtopbanner/query.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getSecurityGuideV1",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"whetherPopUp\": false, \"title\": null, \"subTitle\": null, \"imgUrl\": null, \"url\": null, \"type\": 0}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/city/site.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"otherCitySites\": [{\"name\": \"南通\", \"code\": 101190500, \"url\": \"/nantong/\"}, {\"name\": \"无锡\", \"code\": 101190200, \"url\": \"/wuxi/\"}, {\"name\": \"珠海\", \"code\": 101280700, \"url\": \"/zhuhai/\"}, {\"name\": \"南宁\", \"code\": 101300100, \"url\": \"/nanning/\"}, {\"name\": \"常州\", \"code"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/industryFilterExemption?_=1786005457156",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": [{\"code\": 100000, \"name\": \"互联网/AI\", \"tip\": null, \"subLevelModelList\": [{\"code\": 100020, \"name\": \"互联网\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/cityGroup.json?_=1786005457160",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"cityGroup\": [{\"firstChar\": \"A\", \"cityList\": [{\"code\": 101070300, \"name\": \"鞍山\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\": null, \"recruitmentTyp"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json?page=1&pageSize=15&city=101230100&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&experience=&degree=&industry=&scale=&_=1786",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101230100&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&_=1786005457388",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101230100&jobCity=&_=1786005457388",
+    "err": "Response.json: Protocol error (Network.getResponseBody): No resource with given "
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://apm-fe.zhipin.com/wapi/zpApm/httpMetrics/getConfig?appKey=ObsSRskiryhn60pf",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"result\": {\"appKey\": \"ObsSRskiryhn60pf\", \"bucketSize\": 10, \"timeSlice\": 10, \"reportPeriod\": 10, \"metricsSwitch\": false, \"pathBlacklist\": [], \"hostBlacklist\": []}}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zppassport/set/zpToken",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": true}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json?_=1786005457758",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpchat/notify/setting/get?_=1786005457758",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/header.json?_=1786005457822",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": \"<script>\\n    var staticPath = 'https://static.zhipin.com/v2';\\n    _PAGE = {\\n        checkMobileUrl: \\\"/registe/sendSms.json\\\",\\n        regMobileUrl: \\\"/registe/save.json\\\",\\n        loginMobileUrl: \\\"/login/phone.json\\\",\\n        loginAccountUrl: \\\"/l"
+  },
+  {
+    "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/defaultcity.json?_=1786005457856",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"city\": {\"id\": 2669, \"code\": 101230100, \"name\": \"福州\", \"level\": 2, \"rank\": 1, \"parentCode\": 101230000, \"cityPinyin\": \"fz\", \"cityFullPinyin\": \"fuzhou\", \"firstChar\": \"f\", \"cityCode\": \"0591\", \"parentName\": \"福建\", \"grandParentCode\": 0, \"grandParentName\": null, "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/complete/step.json?version=2&_=1786005457856",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/footer.json?_=1786005457857",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": \"<div id=\\\"footer\\\">\\n    <div class=\\\"inner home-inner\\\">\\n        <div class=\\\"footer-social\\\">\\n            <img src=\\\"https://static.zhipin.com/v2/web/geek/images/footer-logo.png\\\" alt=\\\"\\\">\\n            <p>企业服务热线和算法/未成年人等举报渠道 <span>400 065 5799</span>"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/pc/all/filter/conditions.json?_=1786005457857",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"payTypeList\": [{\"code\": 0, \"name\": \"不限\"}, {\"code\": 2501, \"name\": \"日结\"}, {\"code\": 2502, \"name\": \"周结\"}, {\"code\": 2503, \"name\": \"月结\"}, {\"code\": 2504, \"name\": \"完工结\"}], \"experienceList\": [{\"code\": 0, \"name\": \"不限\"}, {\"code\": 108, \"name\": \"在校生\"}, {\"code\": 102, "
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/restrict/list.json?_=1786005457879",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/resume/parser/querybar.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/agreement/update/tip.json",
+    "ct": "application/json;charset=UTF-8",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 7, \"message\": \"当前登录状态已失效\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/webtopbanner/query.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpuser/wap/getSecurityGuideV1",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"whetherPopUp\": false, \"title\": null, \"subTitle\": null, \"imgUrl\": null, \"url\": null, \"type\": 0}}"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/common/data/city/site.json",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"otherCitySites\": [{\"name\": \"南通\", \"code\": 101190500, \"url\": \"/nantong/\"}, {\"name\": \"无锡\", \"code\": 101190200, \"url\": \"/wuxi/\"}, {\"name\": \"珠海\", \"code\": 101280700, \"url\": \"/zhuhai/\"}, {\"name\": \"南宁\", \"code\": 101300100, \"url\": \"/nanning/\"}, {\"name\": \"常州\", \"code"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/industryFilterExemption?_=1786005457915",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": [{\"code\": 100000, \"name\": \"互联网/AI\", \"tip\": null, \"subLevelModelList\": [{\"code\": 100020, \"name\": \"互联网\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\":"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/data/cityGroup.json?_=1786005457966",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"cityGroup\": [{\"firstChar\": \"A\", \"cityList\": [{\"code\": 101070300, \"name\": \"鞍山\", \"tip\": null, \"subLevelModelList\": null, \"firstChar\": null, \"pinyin\": null, \"rank\": 0, \"mark\": 0, \"positionType\": 0, \"cityType\": 0, \"capital\": 0, \"color\": null, \"recruitmentTyp"
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+    "ct": "application/json",
+    "status": 200,
+    "keys": [
+      "code",
+      "message",
+      "zpData"
+    ],
+    "head": "{\"code\": 0, \"message\": \"Success\", \"zpData\": {\"exp_autogen_subject_13688_number_1\": {\"toggleKey\": \"exp_autogen_subject_13688_number_1\", \"type\": \"NUMBER\", \"result\": 0.0, \"version\": 9}, \"exp_autogen_subject_13431_number_1\": {\"toggleKey\": \"exp_autogen_subject_13431_number_1\", \"type\": \"NUMBER\", \"result\":"
+  },
+  {
+    "url": "https://logapi.zhipin.com/dap/api/json",
+    "ct": "",
+    "status": 200
+  },
+  {
+    "url": "https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json?page=1&pageSize=15&city=101230100&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&experience=&degree=&industry=&scale=&_=1786",
+    "err": "Response.json: Target page, context or browser has been closed"
+  }
+]

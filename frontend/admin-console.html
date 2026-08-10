@@ -1,0 +1,1645 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>管理端 · 职业教育知识图谱</title>
+  <script src="/js/api-client.js"></script>
+  <style>
+    :root {
+      --bg: #f1f5f9; --panel: #fff; --line: #e2e8f0; --line2: #cbd5e1;
+      --text: #0f172a; --muted: #64748b; --primary: #2563eb; --ok: #059669;
+      --warn: #d97706; --bad: #dc2626; --ink: #1e293b; --sb: 220px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text); background: var(--bg);
+      display: flex; flex-direction: column;
+    }
+    .top {
+      height: 52px; background: var(--panel); border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; gap: 12px; padding: 0 16px; flex-shrink: 0;
+    }
+    .top .logo { font-weight: 700; font-size: 15px; }
+    .top .badge {
+      font-size: 11px; color: #0369a1; background: #e0f2fe; border: 1px solid #bae6fd;
+      padding: 2px 8px; border-radius: 999px; font-weight: 600;
+    }
+    .top .grow { flex: 1; }
+    .top .user-box {
+      display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted);
+    }
+    .top .user-box input {
+      width: 110px; border: 1px solid var(--line2); border-radius: 6px;
+      padding: 5px 8px; font-size: 12px; font-family: inherit;
+    }
+    .top a.doc { font-size: 12px; color: var(--primary); text-decoration: none; margin-left: 8px; }
+    .top a.doc:hover { text-decoration: underline; }
+    .shell { flex: 1; display: flex; min-height: 0; }
+    .sider {
+      width: var(--sb); background: var(--panel); border-right: 1px solid var(--line);
+      padding: 12px 10px; overflow: auto; flex-shrink: 0;
+    }
+    .nav-sec { font-size: 11px; font-weight: 700; color: var(--muted); margin: 12px 8px 6px; letter-spacing: .04em; }
+    .nav-item {
+      display: block; width: 100%; text-align: left; border: 0; background: transparent;
+      padding: 9px 12px; border-radius: 8px; font-size: 13px; color: var(--text);
+      cursor: pointer; font-family: inherit; margin-bottom: 2px;
+    }
+    .nav-item:hover { background: #f8fafc; }
+    .nav-item.on { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+    .main { flex: 1; overflow: auto; padding: 18px 20px 40px; }
+    .page-h { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
+    .page-h h1 { margin: 0; font-size: 20px; }
+    .page-h p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+      padding: 14px 16px; box-shadow: 0 1px 2px rgba(15,23,42,.04);
+    }
+    .card .k { font-size: 12px; color: var(--muted); }
+    .card .v { font-size: 22px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .toolbar input, .toolbar select {
+      border: 1px solid var(--line2); border-radius: 8px; padding: 8px 10px;
+      font-size: 13px; font-family: inherit; background: #fff;
+    }
+    .toolbar input[type="search"] { min-width: 200px; }
+    .btn {
+      border: 1px solid var(--line2); background: #fff; border-radius: 8px;
+      padding: 7px 12px; font-size: 13px; cursor: pointer; font-family: inherit; color: var(--text);
+    }
+    .btn:hover { border-color: var(--primary); color: var(--primary); }
+    .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+    .btn.primary:hover { filter: brightness(1.05); color: #fff; }
+    .btn.danger { color: var(--bad); border-color: #fecaca; }
+    .btn.ok { color: var(--ok); border-color: #a7f3d0; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .panel {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+      overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.04);
+    }
+    table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.data th, table.data td {
+      padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top;
+    }
+    table.data th { background: #f8fafc; font-size: 12px; color: var(--muted); font-weight: 600; }
+    table.data tr:hover td { background: #fafbfc; }
+    .tag {
+      display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 999px;
+      background: #f1f5f9; color: var(--muted); border: 1px solid var(--line);
+    }
+    .tag.pub { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .tag.draft { background: #fffbeb; color: #b45309; border-color: #fcd34d; }
+    .tag.arch { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+    .tag.pend { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+    .tag.mixed { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+    .toolbar select {
+      height: 34px; border: 1px solid var(--line); border-radius: 8px;
+      padding: 0 10px; font-size: 13px; background: #fff; color: var(--text);
+    }
+    .pager { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 12px; color: var(--muted); }
+    .muted { color: var(--muted); font-size: 12px; }
+    .empty { padding: 40px; text-align: center; color: var(--muted); font-size: 13px; }
+    /* 能力全景 */
+    .cap-root { padding: 12px 14px; border-bottom: 1px solid var(--line); font-size: 14px; }
+    .cap-occ { border-bottom: 1px solid var(--line); }
+    .cap-occ-h { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; font-size: 14px; }
+    .cap-occ-h:hover { background: #f8fafc; }
+    .cap-lv { flex-shrink: 0; font-size: 12px; font-weight: 700; color: #166534; background: #dcfce7; border-radius: 999px; padding: 2px 8px; }
+    .cap-nm { flex: 1; }
+    .cap-sks { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 12px 44px; }
+    .cap-sk { font-size: 12px; background: #eef2f7; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; }
+    .toast {
+      position: fixed; right: 16px; bottom: 16px; z-index: 100;
+      background: #0f172a; color: #fff; padding: 10px 14px; border-radius: 10px;
+      font-size: 13px; max-width: 360px; display: none; box-shadow: 0 10px 30px rgba(0,0,0,.2);
+    }
+    .toast.on { display: block; }
+    .toast.err { background: #991b1b; }
+    .modal-mask {
+      position: fixed; inset: 0; background: rgba(15,23,42,.4); z-index: 90;
+      display: none; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-mask.on { display: flex; }
+    .modal {
+      background: #fff; border-radius: 14px; width: min(520px, 100%);
+      max-height: 90vh; overflow: auto; padding: 18px 18px 14px;
+      box-shadow: 0 20px 50px rgba(15,23,42,.25);
+    }
+    .modal h2 { margin: 0 0 12px; font-size: 16px; }
+    .form-row { margin-bottom: 10px; }
+    .form-row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .form-row input, .form-row select, .form-row textarea {
+      width: 100%; border: 1px solid var(--line2); border-radius: 8px;
+      padding: 8px 10px; font-size: 13px; font-family: inherit;
+    }
+    .form-row textarea { min-height: 72px; resize: vertical; }
+    .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+    .row-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+    .name-cell { font-weight: 600; max-width: 280px; word-break: break-word; }
+    .id-cell { font-size: 11px; color: var(--muted); word-break: break-all; max-width: 200px; }
+    .warn-banner {
+      background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+      padding: 8px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 12px;
+    }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 800px) {
+      .sider { display: none; }
+      .grid2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <span class="logo">管理端</span>
+    <span class="badge">CN · PG</span>
+    <span class="grow"></span>
+    <div class="user-box" title="UC 登录用户；开发旁路可改测试 uid">
+      <span id="userLabel">未登录</span>
+      <span id="bypassBox" style="display:none">
+        <input id="uid" placeholder="X-Test-Uid" style="width:90px" />
+        <input id="uname" placeholder="X-Test-Uname" style="width:90px" />
+        <button class="btn" type="button" id="btnSaveUser">保存旁路</button>
+      </span>
+    </div>
+    <a class="doc" href="/docs" target="_blank">API 文档</a>
+    <a class="doc" href="/admin-cytoscape">图探索</a>
+  </header>
+  <div class="shell">
+    <aside class="sider" id="sider"></aside>
+    <main class="main" id="main"></main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <div class="modal-mask" id="modalMask">
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const api = window.VocedApi;
+    const TYPE_ZH = {
+      industry: "行业", major: "专业", occupation: "岗位",
+      skill_level: "技能", course: "课程", credential: "认证",
+    };
+    const DIMS = [
+      { type: "industry", label: "行业管理", nav: "industry" },
+      { type: "major", label: "专业管理", nav: "major" },
+      { type: "occupation", label: "岗位模型", nav: "occupation" },
+      { type: "skill_level", label: "技能库", nav: "skill" },
+    ];
+
+    const state = {
+      view: "dash",
+      listType: "major",
+      q: "",
+      statusFilter: "", // ""=全部 | published|draft|disabled
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 0,
+      items: [],
+      loading: false,
+      listMode: "nodes", // nodes | skill_bundle
+      proposals: [],
+      reviewRequired: false, // 与 /v1/config.review_required 同步；默认无审核直写
+      // 边管理
+      edgeRel: "",
+      edgeNodeId: "",
+      edgeQ: "",
+      edgePage: 1,
+      edgePageSize: 20,
+      edgeTotal: 0,
+      edgeTotalPages: 0,
+      edgeItems: [],
+      // 能力全景
+      capQ: "大数据技术",
+      capData: null,
+      capOpen: {},
+    };
+    const STATUS_FILTER_OPTS = [
+      { v: "", lab: "全部状态" },
+      { v: "published", lab: "已发布" },
+      { v: "draft", lab: "草稿" },
+      { v: "disabled", lab: "已停用" },
+    ];
+    const REL_OPTS = [
+      "", "belongs_to", "prepares_for", "requires", "parent_of",
+      "related_to", "taught_by",
+    ];
+
+    function toast(msg, err) {
+      const el = $("toast");
+      el.textContent = typeof msg === "string" ? msg : JSON.stringify(msg);
+      el.className = "toast on" + (err ? " err" : "");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove("on"), 3200);
+    }
+
+    function statusTag(s, label) {
+      const v = s || "published";
+      const map = {
+        published: ["pub", "已发布"],
+        disabled: ["arch", "已停用"],
+        draft: ["draft", "草稿"],
+        archived: ["arch", "已归档"],
+        pending: ["pend", "待审核"],
+        mixed: ["mixed", "混合"],
+      };
+      const [cls, lab] = map[v] || ["", v];
+      return `<span class="tag ${cls}">${esc(label || lab)}</span>`;
+    }
+    const PENDING_ACT_ZH = {
+      update: "有待审编辑",
+      delete: "有待审删除",
+      disable: "有待审停用",
+      enable: "有待审发布",
+      create: "有待审新建",
+    };
+    /** 主状态 = 库内生效状态（未审通过前删除仍显示已发布，前台继续可见） */
+    function nodeStatusCell(n) {
+      const st = n.status || "published";
+      let html = statusTag(st);
+      if (n.pending_action) {
+        const tip = PENDING_ACT_ZH[n.pending_action] || "有待审";
+        html += ` <span class="tag pend" title="审核通过后才生效">#${esc(n.pending_change_id)} ${esc(tip)}</span>`;
+      }
+      return html;
+    }
+    function reviewOn() {
+      return !!state.reviewRequired;
+    }
+    /** 操作文案：无审核直写 vs 进待审 */
+    function actMsg(done, pending) {
+      return reviewOn() ? pending : done;
+    }
+    function saveBtnLabel() {
+      return reviewOn() ? "提交审核" : "保存生效";
+    }
+    function stayAndReload(msg) {
+      toast(msg || actMsg("已保存生效", "已提交审核"));
+      render();
+    }
+    function esc(s) {
+      return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+
+    /* ---------- auth ---------- */
+    async function bootAuth() {
+      const main = $("main");
+      main.innerHTML = `<div class="empty">正在登录 UC…</div>`;
+      try {
+        const r = await api.initAuth();
+        if (r && r.redirecting) return false;
+        const u = api.getUser();
+        $("userLabel").textContent = `${u.name} (${u.id})`;
+        const cfg = r.config || (await api.loadConfig());
+        state.reviewRequired = !!cfg.review_required;
+        if (cfg.auth_bypass) {
+          $("bypassBox").style.display = "";
+          $("uid").value = u.id;
+          $("uname").value = u.name;
+          $("btnSaveUser").onclick = () => {
+            api.setUser($("uid").value, $("uname").value);
+            $("userLabel").textContent = `${$("uname").value} (${$("uid").value})`;
+            toast("已保存开发旁路身份");
+          };
+        }
+        return true;
+      } catch (e) {
+        main.innerHTML = `<div class="empty">登录失败：${esc(e.message || e)}<br/><span class="muted">本地可设 AUTH_BYPASS=1</span></div>`;
+        return false;
+      }
+    }
+
+    /* ---------- nav ---------- */
+    function renderSider() {
+      const items = [
+        { sec: "运营", id: "dash", label: "运营看板" },
+        { sec: "能力建模", id: "industry", label: "行业管理" },
+        { id: "major", label: "专业管理" },
+        { id: "occupation", label: "岗位模型" },
+        { id: "skill", label: "技能库" },
+        { id: "edges", label: "边管理" },
+        { id: "edgeReview", label: "AI边抽检" },
+        { sec: "治理", id: "create", label: "手工建数" },
+        { id: "review", label: "审核发布" },
+        { sec: "图谱", id: "kgexp", label: "知识图谱（行业入口）" },
+        { sec: "图谱", id: "graph", label: "知识图谱（探索）" },
+        { sec: "图谱", id: "capability", label: "能力全景" },
+      ];
+      let html = "";
+      let lastSec = null;
+      items.forEach((it) => {
+        if (it.sec && it.sec !== lastSec) {
+          html += `<div class="nav-sec">${esc(it.sec)}</div>`;
+          lastSec = it.sec;
+        }
+        html += `<button type="button" class="nav-item ${state.view === it.id ? "on" : ""}" data-nav="${it.id}">${esc(it.label)}</button>`;
+      });
+      $("sider").innerHTML = html;
+      $("sider").querySelectorAll("[data-nav]").forEach((btn) => {
+        btn.onclick = () => {
+          const id = btn.dataset.nav;
+          if (id === "kgexp") { location.href = "/kg"; return; }
+          if (id === "graph") { location.href = "/admin-cytoscape"; return; }
+          if (id === "capability") { state.view = "capability"; render(); return; }
+          state.view = id;
+          if (DIMS.some((d) => d.nav === id)) {
+            state.listType = DIMS.find((d) => d.nav === id).type;
+            state.page = 1;
+            state.q = "";
+            state.statusFilter = "";
+          }
+          render();
+        };
+      });
+    }
+
+    /* ---------- pages ---------- */
+    async function render() {
+      renderSider();
+      const main = $("main");
+      main.innerHTML = `<div class="empty">加载中…</div>`;
+      try {
+        if (state.view === "dash") await viewDash(main);
+        else if (DIMS.some((d) => d.nav === state.view)) await viewDimList(main);
+        else if (state.view === "edges") await viewEdges(main);
+        else if (state.view === "edgeReview") await viewEdgeReview(main);
+        else if (state.view === "create") viewCreate(main);
+        else if (state.view === "review") await viewReview(main);
+        else if (state.view === "capability") await viewCapability(main);
+        else main.innerHTML = `<div class="empty">未知视图</div>`;
+      } catch (e) {
+        const msg = e.message || String(e);
+        const hint = e.status === 401
+          ? "（UC MAC 鉴权失败：请重新登录，或检查签名是否含完整 URL query）"
+          : "";
+        main.innerHTML = `<div class="empty">加载失败：${esc(msg)}${esc(hint)}</div>`;
+        toast(msg, true);
+      }
+    }
+
+    /* ---------- 能力全景（专业 → 行业/岗位(层级) → 技能） ---------- */
+    async function viewCapability(main) {
+      main.innerHTML = `
+        <div class="page-h">
+          <div>
+            <h1>能力全景</h1>
+            <p>专业 → 所属行业 / 对口岗位（层级） → 岗位所需技能 · 仅展示已发布数据 · GET /v1/capability</p>
+          </div>
+        </div>
+        <div class="toolbar">
+          <input type="search" id="capQ" placeholder="输入专业名，如 大数据技术 / 软件技术" value="${esc(state.capQ)}" />
+          <button class="btn primary" type="button" id="btnCap">查询</button>
+        </div>
+        <div class="panel" id="capBody"><div class="empty">加载中…</div></div>
+      `;
+      $("btnCap").onclick = () => {
+        state.capQ = $("capQ").value.trim();
+        state.capOpen = {};
+        loadCapability();
+      };
+      $("capQ").onkeydown = (e) => { if (e.key === "Enter") $("btnCap").click(); };
+      await loadCapability();
+    }
+
+    async function loadCapability() {
+      const box = $("capBody");
+      if (!box) return;
+      const q = state.capQ;
+      if (!q) { box.innerHTML = `<div class="empty">请输入专业名后查询</div>`; return; }
+      box.innerHTML = `<div class="empty">加载中…</div>`;
+      try {
+        state.capData = await api.apiFetch("/v1/capability?major=" + encodeURIComponent(q));
+        renderCapabilityBody();
+      } catch (e) {
+        state.capData = null;
+        const msg = e.status === 404 ? `未找到专业「${q}」` : (e.message || String(e));
+        box.innerHTML = `<div class="empty">${esc(msg)}</div>`;
+      }
+    }
+
+    /** 悬停/点击岗位时按需拉技能（渐进式：默认视图不带技能明细） */
+    async function loadOccSkills(occId) {
+      state.capSkills = state.capSkills || {};
+      if (state.capSkills[occId]) return;
+      state.capSkills[occId] = "loading";
+      try {
+        const rows = await api.apiFetch(
+          "/v1/occupations/skills?aggregate=true&limit=200&occupation_id=" + encodeURIComponent(occId)
+        );
+        state.capSkills[occId] = Array.isArray(rows) ? rows : [];
+      } catch (e) {
+        state.capSkills[occId] = [];
+      }
+      renderCapabilityBody();
+    }
+
+    function renderCapabilityBody() {
+      const box = $("capBody");
+      const d = state.capData;
+      if (!box || !d) return;
+      state.capSkills = state.capSkills || {};
+      const root = d.root || {};
+      const meta = d.meta || {};
+      const inds = (d.industries || []).map((i) => esc(i.display_name || i.name)).join(" / ")
+        || `<span class="muted">（未关联行业）</span>`;
+
+      // 晋升链：默认视图的主问题之一「怎么晋升」
+      const progs = d.progressions || [];
+      const progHtml = progs.length
+        ? `<div class="cap-root"><b>晋升链</b> <span class="muted">（${progs.length} 条 · 由岗位层级派生）</span>
+             <div style="margin-top:6px">${progs.map((p) =>
+               `<div class="muted">L${p.from_level} ${esc(p.from_name)} → L${p.to_level} ${esc(p.to_name)}</div>`
+             ).join("")}</div>
+           </div>`
+        : `<div class="cap-root"><b>晋升链</b>
+             <div class="muted">暂无。当前岗位来自「职业分类大典」，该数据源不含职级维度，
+             待企业职级表 / 招聘级别数据接入后自动生效。</div>
+           </div>`;
+
+      // 共享技能：高频技能提到这里展示，避免图上星形汇聚
+      const shared = d.shared_skills || [];
+      const sharedHtml = shared.length
+        ? `<div class="cap-root"><b>共享技能</b>
+             <span class="muted">（被 ≥2 个岗位共同要求，共 ${shared.length} 项）</span>
+             <div style="margin-top:6px">${shared.map((s) =>
+               `<span class="cap-sk">${esc(s.skill_key)} <b>×${s.occ_count}</b></span>`
+             ).join("")}</div>
+           </div>`
+        : "";
+
+      const occs = (d.occupations || []).map((o, i) => {
+        const open = !!state.capOpen[i];
+        const cnt = o.skill_count != null ? o.skill_count : (o.skills || []).length;
+        const cached = state.capSkills[o.id];
+        let skillHtml = "";
+        if (open) {
+          if (cached === "loading") {
+            skillHtml = `<span class="muted">加载中…</span>`;
+          } else {
+            const list = Array.isArray(cached) ? cached : (o.skills || []);
+            skillHtml = list.length
+              ? list.map((s) => `<span class="cap-sk">${esc(s.display_name || s.skill_key || s.name)}</span>`).join("")
+              : `<span class="muted">（暂无技能）</span>`;
+          }
+        }
+        return `
+          <div class="cap-occ">
+            <div class="cap-occ-h" data-cap-occ="${i}">
+              <span class="cap-lv">L${o.level == null ? "-" : o.level}</span>
+              <span class="cap-nm">${esc(o.display_name || o.name)}</span>
+              <span class="muted">技能 ${cnt} ${open ? "▾" : "▸"}</span>
+            </div>
+            <div class="cap-sks" ${open ? "" : "hidden"}>${skillHtml}</div>
+          </div>`;
+      }).join("");
+
+      box.innerHTML = `
+        <div class="cap-root">
+          专业：<b>${esc(root.display_name || root.name || state.capQ)}</b>
+          <div class="muted">所属行业：${inds} · 对口岗位 ${meta.occupation_count || 0} · 技能合计 ${meta.skill_total || 0}
+            ${meta.skills_included ? "" : "· 技能默认折叠，点岗位展开"}</div>
+        </div>
+        ${progHtml}
+        ${sharedHtml}
+        ${occs || `<div class="empty">该专业暂无对口岗位（prepares_for）</div>`}
+      `;
+      box.querySelectorAll("[data-cap-occ]").forEach((el) => {
+        el.onclick = () => {
+          const i = el.dataset.capOcc;
+          state.capOpen[i] = !state.capOpen[i];
+          const o = (state.capData.occupations || [])[i];
+          if (state.capOpen[i] && o && !state.capSkills[o.id]) {
+            loadOccSkills(o.id);
+            return;
+          }
+          renderCapabilityBody();
+        };
+      });
+    }
+
+    async function viewDash(main) {
+      const d = await api.apiFetch("/v1/admin/dashboard/summary");
+      const by = d.nodes_by_type || {};
+      main.innerHTML = `
+        <div class="page-h">
+          <div>
+            <h1>运营看板</h1>
+            <p>图规模与业务量摘要 · 对齐管理端 backend 看板能力</p>
+          </div>
+          <button class="btn" type="button" id="btnRefreshDash">刷新</button>
+        </div>
+        <div class="warn-banner">鉴权：UC MAC Token。四维新建/编辑/删除/停用/发布均进「审核发布」，通过后立即生效。</div>
+        <div class="cards">
+          <div class="card"><div class="k">图节点</div><div class="v">${d.kg_nodes ?? "—"}</div></div>
+          <div class="card"><div class="k">图边</div><div class="v">${d.kg_edges ?? "—"}</div></div>
+          <div class="card"><div class="k">待审提案</div><div class="v">${d.pending_proposals ?? 0}</div></div>
+          <div class="card"><div class="k">学员目标数</div><div class="v">${d.users_with_goal ?? 0}</div></div>
+          <div class="card"><div class="k">诊断会话</div><div class="v">${d.diagnosis_sessions ?? 0}</div></div>
+          <div class="card"><div class="k">学习路径</div><div class="v">${d.learning_paths ?? 0}</div></div>
+        </div>
+        <div class="page-h"><div><h1 style="font-size:16px">四维节点量</h1></div></div>
+        <div class="cards">
+          ${["industry","major","occupation","skill_level"].map((t) =>
+            `<div class="card"><div class="k">${TYPE_ZH[t]}</div><div class="v">${by[t] ?? 0}</div></div>`
+          ).join("")}
+          <div class="card"><div class="k">课程</div><div class="v">${by.course ?? 0}</div></div>
+          <div class="card"><div class="k">认证</div><div class="v">${by.credential ?? 0}</div></div>
+        </div>
+      `;
+      $("btnRefreshDash").onclick = () => render();
+    }
+
+    function countsOf(n) {
+      return n && n.counts && typeof n.counts === "object" ? n.counts : {};
+    }
+
+    /** 关联数展示文案（按维度） */
+    function countsCellHtml(n, type) {
+      const c = countsOf(n);
+      const parts = [];
+      if (type === "industry") {
+        parts.push(`专业 ${c.major ?? 0}`);
+        parts.push(`岗位 ${c.occupation ?? 0}`);
+      } else if (type === "major") {
+        parts.push(`岗位 ${c.occupation ?? 0}`);
+        parts.push(`技能 ${c.skill ?? 0}`);
+      } else if (type === "occupation") {
+        parts.push(`技能 ${c.skill ?? 0}`);
+        if (c.major != null) parts.push(`专业 ${c.major}`);
+        if (c.industry != null) parts.push(`行业 ${c.industry}`);
+      } else if (type === "skill_level" || type === "skill_bundle") {
+        parts.push(`岗位 ${c.occupation ?? 0}`);
+        if (c.level != null) parts.push(`档位 ${c.level}`);
+      }
+      if (!parts.length) return `<span class="muted">—</span>`;
+      return parts.map((p) => `<span class="tag">${p}</span>`).join(" ");
+    }
+
+    function levelsCellHtml(n) {
+      const av = n.available_levels || (n.attrs && n.attrs.available_levels) || [];
+      return ["L1", "L2", "L3", "L4", "L5"]
+        .map((lv) => `<span class="tag ${av.includes(lv) ? "pub" : ""}">${esc(lv)}</span>`)
+        .join(" ");
+    }
+
+    /** 岗位所属行业（直连 + 经专业）；多行业用顿号 */
+    function industryCellHtml(n) {
+      const inds = Array.isArray(n.industries) ? n.industries : [];
+      if (inds.length) {
+        const names = inds.map((x) => x && (x.name || x.id)).filter(Boolean);
+        if (!names.length) return `<span class="muted">—</span>`;
+        const show = names.slice(0, 3).map((s) => esc(s)).join("、");
+        const more = names.length > 3 ? ` <span class="muted">+${names.length - 3}</span>` : "";
+        const tip = names.join("、");
+        return `<span title="${esc(tip)}">${show}${more}</span>`;
+      }
+      const one = n.industry_name || n.industry_id;
+      return one ? esc(one) : `<span class="muted">—</span>`;
+    }
+
+    async function loadList() {
+      state.listMode = "nodes";
+      // 技能库：管理端聚合（含 draft，真实 status）
+      if (state.listType === "skill_level") {
+        const params = new URLSearchParams({
+          page: String(state.page),
+          page_size: String(state.pageSize),
+          region: "CN",
+        });
+        if (state.q) params.set("q", state.q);
+        if (state.statusFilter) params.set("status", state.statusFilter);
+        const data = await api.apiFetch("/v1/admin/skills?" + params);
+        state.listMode = "skill_bundle";
+        state.items = (data.items || []).map((b) => ({
+          ...b,
+          type: "skill_bundle",
+          display_name: b.name || b.skill_name || b.skill_key,
+          name: b.name || b.skill_name || b.skill_key,
+          source_system: b.source_system || "aggregated",
+          confidence: b.confidence || "—",
+          status: b.status || "draft",
+        }));
+        state.total = data.total || 0;
+        state.totalPages = data.total_pages || 0;
+        return;
+      }
+      const params = new URLSearchParams({
+        type: state.listType,
+        page: String(state.page),
+        page_size: String(state.pageSize),
+        region: "CN",
+        scope: "manage",
+        include_counts: "1",
+      });
+      if (state.q) params.set("q", state.q);
+      if (state.statusFilter) params.set("status", state.statusFilter);
+      const data = await api.apiFetch("/v1/kg/nodes?" + params);
+      state.items = data.items || [];
+      state.total = data.total || 0;
+      state.totalPages = data.total_pages || 0;
+    }
+
+    async function viewDimList(main) {
+      const dim = DIMS.find((d) => d.nav === state.view) || DIMS[1];
+      state.listType = dim.type;
+      await loadList();
+      const isSkillBundle = state.listMode === "skill_bundle";
+      const rows = state.items.map((n) => {
+        const name = n.display_name || n.name || "—";
+        const idShow = isSkillBundle ? (n.skill_key || n.id) : n.id;
+        if (isSkillBundle) {
+          const st = n.status || "draft";
+          return `<tr>
+            <td class="name-cell">${esc(name)}<div class="id-cell">${esc(idShow)}</div></td>
+            <td>${nodeStatusCell(n)}</td>
+            <td>${levelsCellHtml(n)}</td>
+            <td>${countsCellHtml(n, "skill_bundle")}</td>
+            <td class="row-actions">
+              <button class="btn" type="button" data-edit="${esc(n.skill_key || n.name || "")}" title="编辑逻辑技能">编辑</button>
+              <button class="btn" type="button" data-expand-skill="${esc(n.skill_key || n.name || "")}">档位明细</button>
+              ${st === "published"
+                ? `<button class="btn" type="button" data-dis-skill="${esc(n.skill_key || n.name || "")}">停用</button>`
+                : `<button class="btn ok" type="button" data-en-skill="${esc(n.skill_key || n.name || "")}">发布</button>`}
+            </td>
+          </tr>`;
+        }
+        const extraBtn = dim.type === "occupation"
+          ? `<button class="btn" type="button" data-comp="${esc(n.id)}">技能构成</button>`
+          : "";
+        const isOcc = dim.type === "occupation";
+        return `<tr>
+          <td class="name-cell">${esc(name)}<div class="id-cell">${esc(n.id)}</div></td>
+          <td>${nodeStatusCell(n)}</td>
+          ${isOcc ? `<td class="name-cell">${industryCellHtml(n)}</td>` : ""}
+          <td>${countsCellHtml(n, dim.type)}</td>
+          <td class="muted">${esc(n.source_system || "—")}</td>
+          <td class="muted">${esc(n.confidence || "—")}</td>
+          <td class="row-actions">
+            ${n.pending_action
+              ? `<span class="muted">审核中 #${esc(n.pending_change_id)}</span>`
+              : `${extraBtn}<button class="btn" type="button" data-edit="${esc(n.id)}">编辑</button>
+            ${(n.status || "published") === "published"
+              ? `<button class="btn" type="button" data-dis="${esc(n.id)}">停用</button>`
+              : `<button class="btn ok" type="button" data-en="${esc(n.id)}">发布</button>`}
+            <button class="btn danger" type="button" data-del="${esc(n.id)}">删除</button>`}
+          </td>
+        </tr>`;
+      }).join("");
+      const isOccList = !isSkillBundle && dim.type === "occupation";
+      const head = isSkillBundle
+        ? `<tr><th>技能名 / key</th><th>状态</th><th>等级 L1–L5</th><th>关联</th><th>操作</th></tr>`
+        : isOccList
+          ? `<tr><th>名称 / ID</th><th>状态</th><th>所属行业</th><th>关联数</th><th>来源</th><th>置信度</th><th>操作</th></tr>`
+          : `<tr><th>名称 / ID</th><th>状态</th><th>关联数</th><th>来源</th><th>置信度</th><th>操作</th></tr>`;
+      const skillNote = isSkillBundle
+        ? " · 按 skill_key 聚合 · 状态为各档聚合"
+        : isOccList
+          ? " · 所属行业=直连 belongs_to + 经专业两跳"
+          : " · 关联数为联读统计";
+      const statusSel = STATUS_FILTER_OPTS.map(
+        (o) => `<option value="${esc(o.v)}" ${state.statusFilter === o.v ? "selected" : ""}>${esc(o.lab)}</option>`
+      ).join("");
+      main.innerHTML = `
+        <div class="page-h">
+          <div>
+            <h1>${esc(dim.label)}</h1>
+            <p>可查看/筛选全部状态 · ${reviewOn() ? "写操作进审核" : "写操作直接生效（无审核）"} · 共 ${state.total} 条${skillNote}</p>
+          </div>
+          <button class="btn primary" type="button" id="btnNewNode">新建${esc(TYPE_ZH[dim.type] || "")}</button>
+        </div>
+        <div class="toolbar">
+          <input type="search" id="q" placeholder="名称检索…" value="${esc(state.q)}" />
+          <select id="stFilter" title="按状态筛选">${statusSel}</select>
+          <button class="btn" type="button" id="btnSearch">搜索</button>
+          <button class="btn" type="button" id="btnReload">刷新</button>
+        </div>
+        <div class="panel">
+          ${state.items.length ? `
+          <table class="data">
+            <thead>${head}</thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="pager">
+            第 ${state.page} / ${Math.max(state.totalPages, 1)} 页 · 每页 ${state.pageSize}
+            <button class="btn" type="button" data-pg="-1" ${state.page <= 1 ? "disabled" : ""}>上一页</button>
+            <button class="btn" type="button" data-pg="1" ${state.page >= state.totalPages ? "disabled" : ""}>下一页</button>
+          </div>` : `<div class="empty">暂无数据</div>`}
+        </div>
+      `;
+      $("btnSearch").onclick = () => {
+        state.q = $("q").value.trim();
+        state.statusFilter = ($("stFilter") && $("stFilter").value) || "";
+        state.page = 1;
+        render();
+      };
+      $("q").onkeydown = (e) => { if (e.key === "Enter") $("btnSearch").click(); };
+      if ($("stFilter")) {
+        $("stFilter").onchange = () => {
+          state.statusFilter = $("stFilter").value || "";
+          state.page = 1;
+          render();
+        };
+      }
+      $("btnReload").onclick = () => render();
+      $("btnNewNode").onclick = () => openNodeForm({ type: dim.type, status: "draft" });
+      main.querySelectorAll("[data-pg]").forEach((b) => {
+        b.onclick = () => {
+          state.page = Math.max(1, state.page + Number(b.dataset.pg));
+          render();
+        };
+      });
+      main.querySelectorAll("[data-expand-skill]").forEach((b) => {
+        b.onclick = async () => {
+          const key = b.dataset.expandSkill;
+          try {
+            const detail = await api.apiFetch(
+              "/v1/admin/skills/" + encodeURIComponent(key) + "?region=CN"
+            );
+            const levels = detail.levels || [];
+            const body = levels.length
+              ? `<table class="data"><thead><tr><th>等级</th><th>状态</th><th>节点 ID</th><th>描述</th><th></th></tr></thead><tbody>${
+                  levels.map((lv) => `<tr>
+                    <td><span class="tag pub">${esc(lv.level_code || "L?")}</span> ${esc(lv.level_label || "")}</td>
+                    <td>${statusTag(lv.status || detail.status || "draft")}</td>
+                    <td class="id-cell">${esc(lv.node_id || "—")}</td>
+                    <td class="muted">${esc((lv.description || "").slice(0, 80))}</td>
+                    <td>${lv.node_id ? `<button class="btn" type="button" data-edit-lv="${esc(lv.node_id)}">编辑</button>` : ""}</td>
+                  </tr>`).join("")
+                }</tbody></table>`
+              : `<div class="empty">暂无分档节点</div>`;
+            const prereqs = detail.prerequisites || [];
+            const preHtml = prereqs.length
+              ? `<p class="muted">先修：${prereqs.map((p) => esc(p.skill_key || p.name)).join("、")}</p>`
+              : `<p class="muted">先修：无</p>`;
+            openModal(`
+              <h2>技能档位 · ${esc(detail.name || key)} ${statusTag(detail.status || "draft")}</h2>
+              <p class="muted">关联岗位 ${detail.counts?.occupation ?? 0} · 已有 ${detail.available_levels?.join(" / ") || "—"}</p>
+              ${preHtml}
+              ${body}
+              <div class="form-actions">
+                <button class="btn" type="button" id="btnEditBundle">编辑多档/先修</button>
+                <button class="btn" type="button" id="btnCloseLv">关闭</button>
+              </div>
+            `);
+            $("btnCloseLv").onclick = closeModal;
+            $("btnEditBundle").onclick = () => openSkillBundleForm({ skill_key: key, name: detail.name || key, _edit: true, _detail: detail });
+            $("modal").querySelectorAll("[data-edit-lv]").forEach((btn) => {
+              btn.onclick = async () => {
+                try {
+                  const n = await api.apiFetch(
+                    "/v1/node?id=" + encodeURIComponent(btn.dataset.editLv) + "&scope=manage"
+                  );
+                  openNodeForm(n, true);
+                } catch (e) { toast(e.message, true); }
+              };
+            });
+          } catch (e) { toast(e.message || e, true); }
+        };
+      });
+      main.querySelectorAll("[data-comp]").forEach((b) => {
+        b.onclick = async () => {
+          try {
+            const data = await api.apiFetch(
+              "/v1/student/positions/skill-composition?id=" + encodeURIComponent(b.dataset.comp)
+            );
+            const rows = (data.skills || []).map((s) => `<tr>
+              <td>${esc(s.skill_key || s.name)}</td>
+              <td>${s.required_level != null ? "L" + s.required_level : "—"}</td>
+              <td>${s.weight != null ? (Number(s.weight) * 100).toFixed(1) + "%" : "—"}</td>
+              <td class="muted">${esc((s.available_levels || []).join("/") || "—")}</td>
+            </tr>`).join("");
+            openModal(`
+              <h2>技能构成 · ${esc(data.occupation?.name || "")}</h2>
+              <p class="muted">权重和 ${data.weight_sum ?? 0}（${data.weight_sum_ok ? "合理" : "需检查"}）· 只认 requires 边</p>
+              <table class="data"><thead><tr><th>技能</th><th>要求档</th><th>权重</th><th>已有档</th></tr></thead>
+              <tbody>${rows || `<tr><td colspan="4" class="empty">无技能边</td></tr>`}</tbody></table>
+              <div class="form-actions"><button class="btn" type="button" id="btnCloseComp">关闭</button></div>
+            `);
+            $("btnCloseComp").onclick = closeModal;
+          } catch (e) { toast(e.message || e, true); }
+        };
+      });
+      main.querySelectorAll("[data-edit]").forEach((b) => {
+        b.onclick = async () => {
+          try {
+            // 推荐 query：id 含冒号时 path 编码易触发 UC MAC 失败
+            const nid = b.dataset.edit;
+            if (isSkillBundle) {
+              openSkillBundleForm({ skill_key: b.dataset.edit, _edit: true });
+              return;
+            }
+            const n = await api.apiFetch(
+              "/v1/node?id=" + encodeURIComponent(nid) + "&scope=manage"
+            );
+            openNodeForm(n, true);
+          } catch (e) { toast(e.message, true); }
+        };
+      });
+      main.querySelectorAll("[data-del]").forEach((b) => {
+        b.onclick = async () => {
+          if (!confirm(actMsg(
+            "确认删除？将立即物理删除节点及其关联边（不删其它节点）。",
+            "删除将提交审核，通过后物理删除节点及其关联边。继续？"
+          ))) return;
+          try {
+            await api.apiFetch("/v1/admin/changes", {
+              method: "POST",
+              body: {
+                entity_kind: "node",
+                action: "delete",
+                dim_type: dim.type,
+                target_id: b.dataset.del,
+                payload: {},
+              },
+            });
+            stayAndReload(actMsg("已删除", "已提交删除审核"));
+          } catch (e) { toast(e.message, true); }
+        };
+      });
+      main.querySelectorAll("[data-dis]").forEach((b) => {
+        b.onclick = async () => {
+          try {
+            await api.apiFetch("/v1/admin/changes", {
+              method: "POST",
+              body: { entity_kind: "node", action: "disable", target_id: b.dataset.dis, payload: {} },
+            });
+            stayAndReload(actMsg("已停用", "已提交停用审核"));
+          } catch (e) { toast(e.message, true); }
+        };
+      });
+      main.querySelectorAll("[data-en]").forEach((b) => {
+        b.onclick = async () => {
+          try {
+            await api.apiFetch("/v1/admin/changes", {
+              method: "POST",
+              body: {
+                entity_kind: "node",
+                action: "enable",
+                dim_type: dim.type,
+                target_id: b.dataset.en,
+                payload: {},
+              },
+            });
+            stayAndReload(actMsg("已发布（须过 BR 门禁）", "已提交发布审核"));
+          } catch (e) { toast(e.message, true); }
+        };
+      });
+      // 逻辑技能发布/停用：target_id = skill_key
+      main.querySelectorAll("[data-en-skill]").forEach((b) => {
+        b.onclick = async () => {
+          try {
+            await api.apiFetch("/v1/admin/changes", {
+              method: "POST",
+              body: {
+                entity_kind: "node",
+                action: "enable",
+                dim_type: "skill_level",
+                target_id: b.dataset.enSkill,
+                title: "发布技能:" + b.dataset.enSkill,
+                payload: { skill_key: b.dataset.enSkill },
+              },
+            });
+            stayAndReload(actMsg("已发布（须过 BR 门禁）", "已提交发布审核"));
+          } catch (e) { toast(e.message, true); }
+        };
+      });
+      main.querySelectorAll("[data-dis-skill]").forEach((b) => {
+        b.onclick = async () => {
+          try {
+            await api.apiFetch("/v1/admin/changes", {
+              method: "POST",
+              body: {
+                entity_kind: "node",
+                action: "disable",
+                dim_type: "skill_level",
+                target_id: b.dataset.disSkill,
+                title: "停用技能:" + b.dataset.disSkill,
+                payload: { skill_key: b.dataset.disSkill },
+              },
+            });
+            stayAndReload(actMsg("已停用", "已提交停用审核"));
+          } catch (e) { toast(e.message, true); }
+        };
+      });
+    }
+
+    function viewCreate(main) {
+      main.innerHTML = `
+        <div class="page-h">
+          <div>
+            <h1>手工建数</h1>
+            <p>新建节点 / 边（默认 draft）；${reviewOn() ? "也可提交审核提案" : "当前无审核，保存即生效"}</p>
+          </div>
+        </div>
+        <div class="cards" style="grid-template-columns:1fr 1fr">
+          <div class="card">
+            <div class="k">节点</div>
+            <p class="muted" style="margin:8px 0 12px">行业 / 专业 / 岗位 / 技能等</p>
+            <button class="btn primary" type="button" id="cNode">新建节点</button>
+          </div>
+          <div class="card">
+            <div class="k">关系边</div>
+            <p class="muted" style="margin:8px 0 12px">prepares_for / requires / belongs_to …</p>
+            <button class="btn primary" type="button" id="cEdge">新建边</button>
+          </div>
+          <div class="card">
+            <div class="k">提交审核提案</div>
+            <p class="muted" style="margin:8px 0 12px">payload 先进 pending，审核通过再 published</p>
+            <button class="btn" type="button" id="cProp">提交提案</button>
+          </div>
+        </div>
+      `;
+      $("cNode").onclick = () => openNodeForm({ type: "major", status: "draft" });
+      $("cEdge").onclick = () => openEdgeForm();
+      $("cProp").onclick = () => openProposalForm();
+    }
+
+    async function loadEdges() {
+      const params = new URLSearchParams({
+        page: String(state.edgePage),
+        page_size: String(state.edgePageSize),
+      });
+      if (state.edgeRel) params.set("rel_type", state.edgeRel);
+      if (state.edgeNodeId.trim()) params.set("node_id", state.edgeNodeId.trim());
+      if (state.edgeQ.trim()) params.set("q", state.edgeQ.trim());
+      const data = await api.apiFetch("/v1/kg/edges?" + params);
+      state.edgeItems = data.items || [];
+      state.edgeTotal = data.total || 0;
+      state.edgeTotalPages = data.total_pages || 0;
+    }
+
+    async function viewEdges(main) {
+      await loadEdges();
+      const rows = state.edgeItems.map((e) => `
+        <tr>
+          <td>
+            <div class="name-cell">${esc(e.src_name || "—")}
+              <span class="tag">${esc(TYPE_ZH[e.src_type] || e.src_type || "")}</span>
+            </div>
+            <div class="id-cell">${esc(e.src_id)}</div>
+          </td>
+          <td><span class="tag">${esc(e.rel_type || "")}</span></td>
+          <td>
+            <div class="name-cell">${esc(e.dst_name || "—")}
+              <span class="tag">${esc(TYPE_ZH[e.dst_type] || e.dst_type || "")}</span>
+            </div>
+            <div class="id-cell">${esc(e.dst_id)}</div>
+          </td>
+          <td class="muted">${e.weight != null ? esc(e.weight) : "—"}</td>
+          <td>${statusTag(e.status)}</td>
+          <td class="id-cell" title="${esc(e.id)}">${esc((e.id || "").slice(0, 48))}${(e.id || "").length > 48 ? "…" : ""}</td>
+        </tr>
+      `).join("");
+      main.innerHTML = `
+        <div class="page-h">
+          <div>
+            <h1>边管理</h1>
+            <p>查看关系边 · 删节点后可用「端点节点 ID」核对关联边是否已清空（total=0）</p>
+          </div>
+          <button class="btn" type="button" id="btnEdgeReload">刷新</button>
+        </div>
+        <div class="toolbar">
+          <select id="edgeRel">
+            ${REL_OPTS.map((r) =>
+              `<option value="${esc(r)}" ${state.edgeRel === r ? "selected" : ""}>${r ? r : "全部关系"}</option>`
+            ).join("")}
+          </select>
+          <input id="edgeNodeId" type="text" style="min-width:260px"
+            placeholder="端点节点 ID（src 或 dst）" value="${esc(state.edgeNodeId)}" />
+          <input id="edgeQ" type="search" placeholder="端点名称关键字…" value="${esc(state.edgeQ)}" />
+          <button class="btn" type="button" id="btnEdgeSearch">查询</button>
+          <button class="btn" type="button" id="btnEdgeClear">清空条件</button>
+        </div>
+        <div class="panel">
+          ${state.edgeItems.length ? `
+          <table class="data">
+            <thead>
+              <tr>
+                <th>起点</th><th>关系</th><th>终点</th><th>权重</th><th>状态</th><th>边 ID</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="pager">
+            共 ${state.edgeTotal} 条 · 第 ${state.edgePage}/${Math.max(state.edgeTotalPages, 1)} 页
+            <button class="btn" type="button" data-epg="-1" ${state.edgePage <= 1 ? "disabled" : ""}>上一页</button>
+            <button class="btn" type="button" data-epg="1" ${state.edgePage >= state.edgeTotalPages ? "disabled" : ""}>下一页</button>
+          </div>` : `<div class="empty">无匹配边${state.edgeNodeId.trim() ? "（若刚删节点，说明关联边已清理干净）" : ""}</div>`}
+        </div>
+      `;
+      const doSearch = () => {
+        state.edgeRel = $("edgeRel").value;
+        state.edgeNodeId = $("edgeNodeId").value.trim();
+        state.edgeQ = $("edgeQ").value.trim();
+        state.edgePage = 1;
+        render();
+      };
+      $("btnEdgeSearch").onclick = doSearch;
+      $("btnEdgeReload").onclick = () => render();
+      $("btnEdgeClear").onclick = () => {
+        state.edgeRel = "";
+        state.edgeNodeId = "";
+        state.edgeQ = "";
+        state.edgePage = 1;
+        render();
+      };
+      $("edgeQ").onkeydown = (e) => { if (e.key === "Enter") doSearch(); };
+      $("edgeNodeId").onkeydown = (e) => { if (e.key === "Enter") doSearch(); };
+      main.querySelectorAll("[data-epg]").forEach((b) => {
+        b.onclick = () => {
+          state.edgePage = Math.max(1, state.edgePage + Number(b.dataset.epg));
+          render();
+        };
+      });
+    }
+
+    async function viewEdgeReview(main) {
+      main.innerHTML = `<div class="page-h"><div><h1>AI 边抽检</h1><p>默认 confidence=ai_inferred</p></div>
+        <button class="btn" type="button" id="btnErReload">刷新</button></div>
+        <div class="toolbar">
+          <select id="erConf"><option value="ai_inferred">ai_inferred</option><option value="derived">derived</option><option value="">全部</option></select>
+          <select id="erRel"><option value="">全部关系</option><option value="prepares_for">prepares_for</option><option value="requires">requires</option><option value="belongs_to">belongs_to</option></select>
+          <button class="btn" type="button" id="btnErGo">查询</button>
+        </div>
+        <div class="panel" id="erBox"><div class="empty">加载中…</div></div>`;
+      async function load() {
+        const params = new URLSearchParams({ page: "1", page_size: "30" });
+        const conf = $("erConf").value;
+        if (conf) params.set("confidence", conf);
+        const rel = $("erRel").value;
+        if (rel) params.set("rel_type", rel);
+        try {
+          const data = await api.apiFetch("/v1/admin/edges/review?" + params);
+          const rows = (data.items || []).map((e) => `<tr>
+            <td>${esc(e.src_name)} <span class="tag">${esc(e.src_type)}</span><div class="id-cell">${esc(e.src_id)}</div></td>
+            <td><span class="tag">${esc(e.rel_type)}</span></td>
+            <td>${esc(e.dst_name)} <span class="tag">${esc(e.dst_type)}</span></td>
+            <td class="muted">${esc(e.confidence)}</td>
+            <td class="muted">${esc((e.evidence || "").slice(0, 60))}</td>
+            <td><button class="btn danger" type="button" data-del-edge="${esc(e.id)}">删边审核</button></td>
+          </tr>`).join("");
+          $("erBox").innerHTML = data.items?.length
+            ? `<table class="data"><thead><tr><th>源</th><th>关系</th><th>目标</th><th>置信</th><th>证据</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+               <p class="muted">共 ${data.total} 条</p>`
+            : `<div class="empty">无匹配边</div>`;
+          $("erBox").querySelectorAll("[data-del-edge]").forEach((b) => {
+            b.onclick = async () => {
+              if (!confirm("提交删除边审核？")) return;
+              try {
+                await api.apiFetch("/v1/admin/changes", {
+                  method: "POST",
+                  body: {
+                    entity_kind: "edge",
+                    action: "delete",
+                    target_id: b.dataset.delEdge,
+                    payload: { id: b.dataset.delEdge },
+                  },
+                });
+                toast(actMsg("边已删除", "删除边已提交审核"));
+                load();
+              } catch (e) { toast(e.message, true); }
+            };
+          });
+        } catch (e) {
+          $("erBox").innerHTML = `<div class="empty">${esc(e.message || e)}</div>`;
+        }
+      }
+      $("btnErGo").onclick = load;
+      $("btnErReload").onclick = load;
+      load();
+    }
+
+    async function viewReview(main) {
+      const list = await api.apiFetch("/v1/admin/changes?limit=50");
+      state.proposals = list || [];
+      const rows = state.proposals.map((p) => `
+        <tr>
+          <td>#${p.id}<div class="muted">${esc(p.created_at || "")}</div></td>
+          <td><span class="tag">${esc(p.entity_kind)}</span> <span class="tag">${esc(p.action)}</span>
+            ${p.dim_type ? `<span class="tag">${esc(TYPE_ZH[p.dim_type] || p.dim_type)}</span>` : ""}</td>
+          <td>${statusTag("pending")}</td>
+          <td class="muted">${esc(p.created_by_name || p.created_by || "—")}</td>
+          <td>
+            <div class="name-cell">${esc(p.title || "—")}</div>
+            <pre style="margin:4px 0 0;font-size:11px;max-width:320px;white-space:pre-wrap;word-break:break-all">${esc(JSON.stringify(p.payload || {}, null, 0).slice(0, 180))}</pre>
+          </td>
+          <td class="row-actions">
+            <button class="btn ok" type="button" data-ok="${p.id}">通过</button>
+            <button class="btn danger" type="button" data-no="${p.id}">驳回</button>
+          </td>
+        </tr>
+      `).join("");
+      main.innerHTML = `
+        <div class="page-h">
+          <div>
+            <h1>审核发布</h1>
+            <p>待审队列 · 通过立即生效 · 驳回删除记录</p>
+          </div>
+          <button class="btn" type="button" id="btnRevReload">刷新</button>
+        </div>
+        <div class="panel">
+          ${state.proposals.length ? `
+          <table class="data">
+            <thead><tr><th>ID</th><th>对象/动作</th><th>状态</th><th>提交人</th><th>摘要</th><th>操作</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>` : `<div class="empty">暂无待审。在四维列表点新建/编辑/删除/停用/发布会进入本队列。</div>`}
+        </div>
+      `;
+      $("btnRevReload").onclick = () => render();
+      main.querySelectorAll("[data-ok]").forEach((b) => {
+        b.onclick = async () => {
+          try {
+            await api.apiFetch(`/v1/admin/changes/${b.dataset.ok}/approve`, { method: "POST", body: {} });
+            toast("已通过并生效 #" + b.dataset.ok);
+            render();
+          } catch (e) { toast(e.message, true); }
+        };
+      });
+      main.querySelectorAll("[data-no]").forEach((b) => {
+        b.onclick = async () => {
+          if (!confirm("驳回将删除该待审记录，确认？")) return;
+          try {
+            await api.apiFetch(`/v1/admin/changes/${b.dataset.no}/reject`, { method: "POST", body: {} });
+            toast("已驳回并删除 #" + b.dataset.no);
+            render();
+          } catch (e) { toast(e.message, true); }
+        };
+      });
+    }
+
+    /* ---------- forms ---------- */
+    function openModal(html) {
+      $("modal").innerHTML = html;
+      $("modalMask").classList.add("on");
+    }
+    function closeModal() { $("modalMask").classList.remove("on"); }
+    $("modalMask").onclick = (e) => { if (e.target === $("modalMask")) closeModal(); };
+
+    async function loadLinkOptions(peerType) {
+      // 管理端关联：含 draft（多数专业/岗位已降级为草稿，仍应可选）
+      const data = await api.apiFetch(
+        `/v1/kg/nodes?type=${encodeURIComponent(peerType)}&page=1&page_size=200&region=CN&scope=manage`
+      );
+      return data.items || [];
+    }
+
+    function multiSelectHtml(id, items, selectedIds) {
+      const sel = new Set(selectedIds || []);
+      if (!items.length) return `<div class="muted" id="${id}">暂无可选项</div>`;
+      return `<select id="${id}" multiple size="8" style="width:100%;min-height:120px">
+        ${items.map((it) => {
+          const lab = it.display_name || it.name || it.id;
+          return `<option value="${esc(it.id)}" ${sel.has(it.id) ? "selected" : ""}>${esc(lab)}</option>`;
+        }).join("")}
+      </select>
+      <div class="muted">按住 Ctrl/⌘ 多选</div>`;
+    }
+
+    function selectedValues(selId) {
+      const el = document.getElementById(selId);
+      if (!el || !el.options) return [];
+      return [...el.selectedOptions].map((o) => o.value);
+    }
+
+    const LEVEL_META = [
+      { code: "L1", label: "了解" },
+      { code: "L2", label: "掌握" },
+      { code: "L3", label: "熟练" },
+      { code: "L4", label: "精通" },
+      { code: "L5", label: "专家" },
+    ];
+
+    /** 新建/编辑逻辑技能：L1–L5 + 岗位权重 + 先修 → admin/skills */
+    async function openSkillBundleForm(seed) {
+      seed = seed || {};
+      const isEdit = !!seed._edit;
+      openModal(`<h2>${isEdit ? "编辑" : "新建"}技能（多档）</h2><div class="empty">加载…</div>`);
+      let peers = [];
+      let detail = seed._detail || null;
+      try {
+        peers = await loadLinkOptions("occupation");
+      } catch (e) {
+        toast("加载岗位失败: " + (e.message || e), true);
+      }
+      if (isEdit && seed.skill_key && !detail) {
+        try {
+          detail = await api.apiFetch("/v1/admin/skills/" + encodeURIComponent(seed.skill_key));
+        } catch (_) { /* 无则空表 */ }
+      }
+      const descByLv = {};
+      const labelByLv = {};
+      (detail?.levels || []).forEach((lv) => {
+        const code = (lv.level_code || "").toUpperCase();
+        if (code) {
+          descByLv[code] = lv.description || "";
+          labelByLv[code] = lv.level_label || "";
+        }
+      });
+      Object.assign(descByLv, detail?.level_descriptions || {});
+      const levelRows = LEVEL_META.map((lv) => `
+        <div class="form-row" style="border-left:3px solid #bfdbfe;padding-left:10px;margin-bottom:10px">
+          <label><span class="tag pub">${lv.code}</span> ${lv.label}</label>
+          <input id="lv_label_${lv.code}" placeholder="档位名（默认 ${lv.label}）" value="${esc(labelByLv[lv.code] || lv.label)}" style="margin-bottom:6px" />
+          <textarea id="lv_desc_${lv.code}" placeholder="能力等级描述（可空则不建该档）" rows="2">${esc(descByLv[lv.code] || "")}</textarea>
+        </div>
+      `).join("");
+      const occOpts = peers.map((it) => {
+        const lab = it.display_name || it.name || it.id;
+        return `<option value="${esc(it.id)}">${esc(lab)}</option>`;
+      }).join("");
+      const preList = (detail?.prerequisites || []).map((p) => p.skill_key || p.name).filter(Boolean);
+      openModal(`
+        <h2>${isEdit ? "编辑" : "新建"}技能 · L1–L5</h2>
+        <p class="muted">审核通过后拆成多条 skill_level；岗位<strong>权重写在 requires 边</strong>（非技能节点）。</p>
+        <div class="form-row"><label>技能名 skill_key *</label>
+          <input id="f_skill_key" value="${esc(seed.skill_key || seed.name || detail?.skill_key || "")}" placeholder="如：流量承接" ${isEdit ? "readonly" : ""} />
+        </div>
+        <div class="form-row"><label>能力等级 levels.L* = {}</label>
+          ${levelRows}
+        </div>
+        <div class="form-row"><label>先修技能（BR-05，逗号分隔 skill_key）</label>
+          <input id="f_prereq" value="${esc(preList.join(", "))}" placeholder="如：精准投放, 内容脚本" />
+        </div>
+        <div class="form-row"><label>关联岗位（技能构成 · 边权重）</label>
+          <div style="display:grid;gap:8px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select id="f_occ_pick" style="flex:1;min-width:180px">${occOpts || "<option value=\"\">暂无岗位</option>"}</select>
+              <input id="f_occ_w" type="number" min="0" max="100" step="1" placeholder="权重%" value="20" style="width:88px" title="百分制，服务端转 0–1" />
+              <select id="f_occ_req" style="width:100px" title="要求档">
+                ${LEVEL_META.map((lv) => `<option value="${lv.code.slice(1)}">${lv.code}</option>`).join("")}
+              </select>
+              <button class="btn" type="button" id="btnAddOcc">添加</button>
+            </div>
+            <div id="occLinkList" class="muted">尚未添加岗位</div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn" type="button" id="f_cancel">取消</button>
+          <button class="btn" type="button" id="f_preview">预览拆分</button>
+          <button class="btn primary" type="button" id="f_save">${saveBtnLabel()}</button>
+        </div>
+      `);
+      const occLinks = [];
+      function renderOccLinks() {
+        const box = $("occLinkList");
+        if (!occLinks.length) {
+          box.innerHTML = `<span class="muted">尚未添加岗位</span>`;
+          return;
+        }
+        box.innerHTML = `<table class="data"><thead><tr><th>岗位</th><th>权重%</th><th>要求档</th><th></th></tr></thead><tbody>${
+          occLinks.map((x, i) => {
+            const p = peers.find((t) => t.id === x.occupation_id);
+            const lab = p ? (p.display_name || p.name) : x.occupation_id;
+            return `<tr>
+              <td>${esc(lab)}<div class="id-cell">${esc(x.occupation_id)}</div></td>
+              <td>${x.weight_pct != null ? x.weight_pct : "—"}</td>
+              <td>L${x.required_level || "—"}</td>
+              <td><button class="btn danger" type="button" data-rm="${i}">移除</button></td>
+            </tr>`;
+          }).join("")
+        }</tbody></table>`;
+        box.querySelectorAll("[data-rm]").forEach((b) => {
+          b.onclick = () => {
+            occLinks.splice(Number(b.dataset.rm), 1);
+            renderOccLinks();
+          };
+        });
+      }
+      $("btnAddOcc").onclick = () => {
+        const oid = $("f_occ_pick").value;
+        if (!oid) return;
+        if (occLinks.some((x) => x.occupation_id === oid)) {
+          toast("该岗位已添加", true);
+          return;
+        }
+        const wp = Number($("f_occ_w").value);
+        const rl = Number($("f_occ_req").value) || 3;
+        occLinks.push({
+          occupation_id: oid,
+          weight_pct: Number.isFinite(wp) ? wp : null,
+          required_level: rl,
+        });
+        renderOccLinks();
+      };
+      $("f_cancel").onclick = closeModal;
+
+      function buildBody() {
+        const skill_key = $("f_skill_key").value.trim();
+        const levels = {};
+        LEVEL_META.forEach((lv) => {
+          const desc = ($("lv_desc_" + lv.code).value || "").trim();
+          const label = ($("lv_label_" + lv.code).value || "").trim() || lv.label;
+          if (desc) {
+            levels[lv.code] = { label, description: desc };
+          }
+        });
+        const occupation_links = occLinks.map((x) => ({
+          occupation_id: x.occupation_id,
+          weight: x.weight_pct != null ? x.weight_pct / 100 : null,
+          required_level: x.required_level,
+        }));
+        return { skill_key, name: skill_key, levels, occupation_links, region: "CN" };
+      }
+
+      $("f_preview").onclick = async () => {
+        try {
+          const body = buildBody();
+          if (!body.skill_key) { toast("请填写技能名", true); return; }
+          if (!Object.keys(body.levels).length) { toast("至少填写一档描述", true); return; }
+          const p = await api.apiFetch("/v1/admin/skills/preview", { method: "POST", body });
+          toast(`将建 ${p.will_create_nodes} 个节点 · ${p.will_create_edges} 条 requires 边`);
+        } catch (e) { toast(e.message || e, true); }
+      };
+
+      $("f_save").onclick = async () => {
+        try {
+          const body = buildBody();
+          if (!body.skill_key) { toast("请填写技能名", true); return; }
+          if (!Object.keys(body.levels).length) { toast("至少填写一档描述", true); return; }
+          if (isEdit) {
+            await api.apiFetch("/v1/admin/skills/" + encodeURIComponent(body.skill_key), {
+              method: "PATCH",
+              body,
+            });
+          } else {
+            await api.apiFetch("/v1/admin/skills", { method: "POST", body });
+          }
+          // 先修：审核外即时写（无环校验）
+          const preRaw = ($("f_prereq").value || "").split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+          try {
+            await api.apiFetch(
+              "/v1/admin/skills/" + encodeURIComponent(body.skill_key) + "/prerequisites",
+              { method: "PUT", body: { prereq_skill_keys: preRaw, region: "CN" } }
+            );
+          } catch (pe) {
+            toast("多档已提交；先修写入失败: " + (pe.message || pe), true);
+          }
+          toast(isEdit
+            ? actMsg("技能已更新", "技能更新已提交审核")
+            : actMsg("技能已保存（多档已拆分）", "技能多档已提交审核；通过后拆成 N 条节点"));
+          closeModal();
+          state.view = "skill";
+          state.page = 1;
+          render();
+        } catch (e) { toast(e.message || e, true); }
+      };
+    }
+
+    async function openNodeForm(n, isEdit) {
+      n = n || {};
+      const types = ["industry", "major", "occupation", "skill_level"];
+      const ntype = n.type || "major";
+      // 新建技能：走多档 bundle 表单
+      if (!isEdit && ntype === "skill_level") {
+        return openSkillBundleForm(n);
+      }
+      openModal(`<h2>${isEdit ? "编辑节点" : "新建节点"}</h2><div class="empty">加载关联选项…</div>`);
+      let linkBlock = "";
+      let peerType = null;
+      let linkKey = null;
+      let linkLabel = "";
+      if (ntype === "major" || (!isEdit && true)) {
+        // 根据类型决定关联
+      }
+      const typeNow = isEdit ? ntype : ntype;
+      if (typeNow === "major") {
+        peerType = "industry"; linkKey = "industry_ids"; linkLabel = "所属行业（可多选）";
+      } else if (typeNow === "occupation") {
+        peerType = "major"; linkKey = "major_ids"; linkLabel = "对口专业（可多选）";
+      } else if (typeNow === "skill_level") {
+        peerType = "occupation"; linkKey = "occupation_ids"; linkLabel = "关联岗位（可多选）";
+      }
+      let peers = [];
+      try {
+        if (peerType) peers = await loadLinkOptions(peerType);
+      } catch (e) {
+        toast("加载关联列表失败: " + (e.message || e), true);
+      }
+      const preselected = n[linkKey] || (n.link_ids && n.link_ids[linkKey]) || [];
+      openModal(`
+        <h2>${isEdit ? "编辑节点" : "新建节点"}</h2>
+        <div class="form-row"><label>类型</label>
+          <select id="f_type" ${isEdit ? "disabled" : ""}>
+            ${types.map((t) => `<option value="${t}" ${(n.type || "major") === t ? "selected" : ""}>${TYPE_ZH[t]}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-row"><label>名称 *</label><input id="f_name" value="${esc(n.name || "")}" /></div>
+        <div class="form-row"><label>区域</label><input id="f_region" value="${esc(n.region || "CN")}" /></div>
+        <div class="form-row"><label>简介</label><textarea id="f_desc">${esc(n.description || "")}</textarea></div>
+        <div class="form-row" id="linkRow" ${peerType ? "" : "style=\"display:none\""}>
+          <label id="linkLab">${esc(linkLabel || "关联")}</label>
+          <div id="linkBox">${peerType ? multiSelectHtml("f_links", peers, preselected) : ""}</div>
+        </div>
+        <p class="muted">关联由服务端自动建边（专业↔行业 / 岗位↔专业 / 技能↔岗位）。${
+          reviewOn() ? "提交后进<strong>待审</strong>。" : "当前<strong>无审核</strong>，保存即生效。"
+        }</p>
+        <div class="form-actions">
+          <button class="btn" type="button" id="f_cancel">取消</button>
+          <button class="btn primary" type="button" id="f_save">${saveBtnLabel()}</button>
+        </div>
+      `);
+      $("f_cancel").onclick = closeModal;
+
+      async function refreshLinkForType(t) {
+        if (!isEdit && t === "skill_level") {
+          closeModal();
+          openSkillBundleForm({});
+          return;
+        }
+        const row = $("linkRow");
+        const lab = $("linkLab");
+        const box = $("linkBox");
+        let pt = null, key = null, label = "";
+        if (t === "major") { pt = "industry"; key = "industry_ids"; label = "所属行业（可多选）"; }
+        else if (t === "occupation") { pt = "major"; key = "major_ids"; label = "对口专业（可多选）"; }
+        else if (t === "skill_level") { pt = "occupation"; key = "occupation_ids"; label = "关联岗位（可多选）"; }
+        row.dataset.linkKey = key || "";
+        if (!pt) { row.style.display = "none"; box.innerHTML = ""; return; }
+        row.style.display = "";
+        lab.textContent = label;
+        box.innerHTML = `<div class="muted">加载中…</div>`;
+        try {
+          const items = await loadLinkOptions(pt);
+          box.innerHTML = multiSelectHtml("f_links", items, []);
+        } catch (e) {
+          box.innerHTML = `<div class="muted">加载失败</div>`;
+        }
+      }
+      // 新建/编辑都必须带上 linkKey，否则多选关联不会写入 payload
+      $("linkRow").dataset.linkKey = linkKey || "";
+      if (!isEdit) {
+        $("f_type").onchange = () => refreshLinkForType($("f_type").value);
+      }
+
+      $("f_save").onclick = async () => {
+        const payload = {
+          type: $("f_type").value,
+          name: $("f_name").value.trim(),
+          region: $("f_region").value.trim() || "CN",
+          description: $("f_desc").value.trim() || null,
+        };
+        const lk = $("linkRow").dataset.linkKey
+          || ($("f_type").value === "major" ? "industry_ids"
+            : $("f_type").value === "occupation" ? "major_ids"
+            : $("f_type").value === "skill_level" ? "occupation_ids" : "");
+        if (lk) {
+          const ids = selectedValues("f_links");
+          if (ids.length) payload[lk] = ids;
+          else if (isEdit) payload[lk] = []; // 编辑时空选表示清空关联
+        }
+        if (!payload.name) { toast("请填写名称", true); return; }
+        try {
+          if (isEdit && n.id) {
+            payload.id = n.id;
+            await api.apiFetch("/v1/admin/changes", {
+              method: "POST",
+              body: {
+                entity_kind: "node",
+                action: "update",
+                dim_type: n.type || payload.type,
+                target_id: n.id,
+                payload,
+              },
+            });
+            toast(actMsg("已保存", "编辑已提交审核"));
+          } else {
+            await api.apiFetch("/v1/admin/changes", {
+              method: "POST",
+              body: {
+                entity_kind: "node",
+                action: "create",
+                dim_type: payload.type,
+                payload,
+              },
+            });
+            const linkHint = (payload.industry_ids || payload.major_ids || payload.occupation_ids)
+              ? "（含关联）"
+              : "";
+            toast(actMsg(
+              "已新建" + linkHint + "（默认草稿，发布须过门禁）",
+              "新建已提交审核" + linkHint + "；通过前不会出现在已发布列表"
+            ));
+          }
+          closeModal();
+          // 留在当前维度列表（新建通过前列表可能仍无该行；编辑/删会显示待审）
+          if (DIMS.some((d) => d.type === payload.type)) {
+            state.view = DIMS.find((d) => d.type === payload.type).nav;
+            state.listType = payload.type;
+          }
+          render();
+        } catch (e) { toast(e.message || e, true); }
+      };
+    }
+
+    function openEdgeForm() {
+      openModal(`
+        <h2>新建关系边</h2>
+        <div class="form-row"><label>起点 src_id *</label><input id="e_src" placeholder="CN:major:…" /></div>
+        <div class="form-row"><label>终点 dst_id *</label><input id="e_dst" placeholder="CN:occupation:…" /></div>
+        <div class="form-row"><label>关系类型 *</label>
+          <select id="e_rel">
+            ${["prepares_for","requires","belongs_to","parent_of","related_to","taught_by"].map((r) =>
+              `<option value="${r}">${r}</option>`).join("")}
+          </select>
+        </div>
+        <div class="grid2">
+          <div class="form-row"><label>权重 0–1</label><input id="e_w" type="number" step="0.1" min="0" max="1" value="0.8" /></div>
+          <div class="form-row"><label>状态</label>
+            <select id="e_st"><option value="draft">draft</option><option value="published">published</option></select>
+          </div>
+        </div>
+        <div class="form-row"><label>证据</label><textarea id="e_ev"></textarea></div>
+        <div class="form-actions">
+          <button class="btn" type="button" id="f_cancel">取消</button>
+          <button class="btn primary" type="button" id="f_save">保存</button>
+        </div>
+      `);
+      $("f_cancel").onclick = closeModal;
+      $("f_save").onclick = async () => {
+        const body = {
+          src_id: $("e_src").value.trim(),
+          dst_id: $("e_dst").value.trim(),
+          rel_type: $("e_rel").value,
+          weight: Number($("e_w").value) || null,
+          status: $("e_st").value,
+          evidence: $("e_ev").value.trim() || null,
+          region: "CN",
+        };
+        if (!body.src_id || !body.dst_id) { toast("请填写 src/dst", true); return; }
+        try {
+          await api.apiFetch("/v1/admin/changes", {
+            method: "POST",
+            body: { entity_kind: "edge", action: "create", payload: body },
+          });
+          toast(actMsg("边已创建", "边已提交审核（留在本页）"));
+          closeModal();
+          render();
+        } catch (e) { toast(e.message || e, true); }
+      };
+    }
+
+    function openProposalForm() {
+      openModal(`
+        <h2>提交待审变更（JSON）</h2>
+        <div class="form-row"><label>entity_kind</label>
+          <select id="p_kind"><option value="node">node</option><option value="edge">edge</option></select>
+        </div>
+        <div class="form-row"><label>action</label>
+          <select id="p_act">
+            <option value="create">create</option>
+            <option value="update">update</option>
+            <option value="delete">delete</option>
+            <option value="disable">disable</option>
+            <option value="enable">enable</option>
+          </select>
+        </div>
+        <div class="form-row"><label>payload JSON</label>
+          <textarea id="p_payload" style="min-height:140px">{
+  "type": "occupation",
+  "name": "待审岗位",
+  "region": "CN"
+}</textarea>
+        </div>
+        <div class="form-actions">
+          <button class="btn" type="button" id="f_cancel">取消</button>
+          <button class="btn primary" type="button" id="f_save">提交</button>
+        </div>
+      `);
+      $("f_cancel").onclick = closeModal;
+      $("f_save").onclick = async () => {
+        let payload;
+        try { payload = JSON.parse($("p_payload").value); }
+        catch (_) { toast("payload 不是合法 JSON", true); return; }
+        try {
+          const r = await api.apiFetch("/v1/admin/changes", {
+            method: "POST",
+            body: {
+              entity_kind: $("p_kind").value,
+              action: $("p_act").value,
+              dim_type: payload.type || null,
+              target_id: payload.id || null,
+              payload,
+            },
+          });
+          toast(r && r.direct
+            ? actMsg("已直写生效", "已生效")
+            : ("已提交 #" + (r && r.id) + "（可稍后到审核发布处理）"));
+          closeModal();
+          render();
+        } catch (e) { toast(e.message || e, true); }
+      };
+    }
+
+    /* ---------- boot ---------- */
+    (async function () {
+      const ok = await bootAuth();
+      if (ok) render();
+    })();
+  </script>
+</body>
+</html>

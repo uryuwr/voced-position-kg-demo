@@ -1,0 +1,120 @@
+# 数据源合规登记册（启动前必读，采集前必更新）
+# 状态: allowed | restricted | review | forbidden
+
+version: "0.1.0"
+updated: "2026-03-25"
+
+policy:
+  prefer: official_bulk_or_api
+  crawling: last_resort_only
+  rules:
+    - 遵守 robots.txt 与服务条款
+    - 限速；标明 User-Agent 与项目联系方式
+    - 不绕过登录/验证码/付费墙
+    - 不采集个人隐私
+    - 每条数据写入 license + source_url + fetched_at
+
+sources:
+  - id: ONET
+    region: US
+    name: O*NET Database
+    home: https://www.onetcenter.org/database.html
+    download_page: https://www.onetcenter.org/database.html
+    # 生产库 30.3（以官网为准，脚本可配置版本）
+    bulk_urls:
+      excel_zip: https://www.onetcenter.org/dl_files/database/db_30_3_excel.zip
+      text_zip: https://www.onetcenter.org/dl_files/database/db_30_3_text.zip
+    license_url: https://www.onetcenter.org/license_db.html
+    license_summary: Creative Commons（见官网 Database license；使用须署名 O*NET）
+    method: official_bulk_download
+    status: allowed
+    notes:
+      - 首选 text/excel 官方 ZIP，禁止爬 OnLine 页面替代数据库
+      - 使用数据需按 license 署名 National Center for O*NET Development
+
+  - id: ESCO
+    region: EU
+    name: ESCO Classification
+    home: https://esco.ec.europa.eu/
+    download_page: https://esco.ec.europa.eu/en/use-esco/download
+    api_docs: https://esco.ec.europa.eu/en/use-esco/use-esco-services-api
+    web_api_base: https://ec.europa.eu/esco/api
+    license_summary: 欧盟开放数据（使用需按官网条款署名；下载页选择版本/语言/格式）
+    method: official_download_or_api
+    status: allowed
+    notes:
+      - CSV/ODS/RDF 从官方 Download 页获取；自动化优先 Web API 限速拉取
+      - 勿镜像整站静态资源；遵守 API 合理使用
+
+  - id: ISCO08
+    region: EU
+    name: ISCO-08 (ILO)
+    home: https://ilostat.ilo.org/methods/concepts-and-definitions/classification-occupation/
+    method: official_public_materials
+    status: allowed
+    notes:
+      - 作中美欧职业编码枢纽；以 ILO 公开分类材料为准
+
+  - id: MOE_CN
+    region: CN
+    name: 教育部专业目录（中职/高职/本科/研究生）
+    home: http://www.moe.gov.cn/
+    method: official_public_pages_or_files
+    status: review
+    notes:
+      - 仅使用教育部公开发布的专业目录文件/页面
+      - 采集前核对该页 robots 与转载说明；优先人工下载官方 PDF/Excel 再解析
+
+  - id: MOHRSS_CN
+    region: CN
+    name: 人社部职业分类大典及公开职业标准
+    home: http://www.mohrss.gov.cn/
+    method: official_pdf_or_public_pages
+    status: review
+    notes:
+      - 大典细类多在 PDF；允许官方公开文件解析，禁止灰产站点扒库
+      - 技能等级标准以国家职业技能标准公开文本为准
+
+  - id: ONE_PLUS_X
+    region: CN
+    name: 1+X 证书制度相关公开目录
+    method: official_public_lists
+    status: review
+    notes:
+      - 仅收录官方公布的证书名单与链接
+
+  - id: MANUAL_SEED
+    region: CN
+    name: 项目人工种子（HTML demo 等）
+    method: manual
+    status: allowed
+    license_summary: 内部种子；confidence=manual_seed
+    notes:
+      - 不可冒充 official
+
+  - id: BOSS_ZHIPIN
+    region: CN
+    name: BOSS直聘公开数据（行业分类树等）
+    home: https://www.zhipin.com/
+    method: public_api_or_playwright
+    status: review
+    license_summary: 平台公开筛选/接口数据；注明 zhipin.com；不作未授权转售
+    notes:
+      - 已用公开接口 /wapi/zpCommon/data/industry.json 拉行业树（无需登录）
+      - 职位详情/反爬页用 Playwright 人机协同，禁止绕过验证码
+      - 行业 taxonomy 为平台分类，≠ 国民经济行业分类国标
+
+  - id: ZHAOPIN
+    region: CN
+    name: 智联招聘公开页
+    home: https://www.zhaopin.com/
+    method: playwright_hitl
+    status: review
+    notes:
+      - 常遇安全验证；需 Playwright 人机协同，禁止绕过
+      - 优先公开列表/筛选项元数据，不爬简历
+
+forbidden_examples:
+  - 需登录的商业课程全文/题库
+  - 绕过反爬/验证码的招聘站点批量抓取
+  - 个人简历与未授权企业内训材料

@@ -1,0 +1,1820 @@
+[
+  {
+    "id": "edge:CN:major:MANUAL:m1|prepares_for|CN:occupation:MANUAL:j1",
+    "src_id": "CN:major:MANUAL:m1",
+    "dst_id": "CN:occupation:MANUAL:j1",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m1->j1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m1|prepares_for|CN:occupation:MANUAL:j2",
+    "src_id": "CN:major:MANUAL:m1",
+    "dst_id": "CN:occupation:MANUAL:j2",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m1->j2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m1|prepares_for|CN:occupation:MANUAL:j3",
+    "src_id": "CN:major:MANUAL:m1",
+    "dst_id": "CN:occupation:MANUAL:j3",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m1->j3",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m1|prepares_for|CN:occupation:MANUAL:j4",
+    "src_id": "CN:major:MANUAL:m1",
+    "dst_id": "CN:occupation:MANUAL:j4",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m1->j4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m1|prepares_for|CN:occupation:MANUAL:j7",
+    "src_id": "CN:major:MANUAL:m1",
+    "dst_id": "CN:occupation:MANUAL:j7",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m1->j7",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m1|prepares_for|CN:occupation:MANUAL:j8",
+    "src_id": "CN:major:MANUAL:m1",
+    "dst_id": "CN:occupation:MANUAL:j8",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m1->j8",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m2|prepares_for|CN:occupation:MANUAL:j1",
+    "src_id": "CN:major:MANUAL:m2",
+    "dst_id": "CN:occupation:MANUAL:j1",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m2->j1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m2|prepares_for|CN:occupation:MANUAL:j4",
+    "src_id": "CN:major:MANUAL:m2",
+    "dst_id": "CN:occupation:MANUAL:j4",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m2->j4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m2|prepares_for|CN:occupation:MANUAL:j5",
+    "src_id": "CN:major:MANUAL:m2",
+    "dst_id": "CN:occupation:MANUAL:j5",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m2->j5",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m2|prepares_for|CN:occupation:MANUAL:j3",
+    "src_id": "CN:major:MANUAL:m2",
+    "dst_id": "CN:occupation:MANUAL:j3",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m2->j3",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m3|prepares_for|CN:occupation:MANUAL:j9",
+    "src_id": "CN:major:MANUAL:m3",
+    "dst_id": "CN:occupation:MANUAL:j9",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m3->j9",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m3|prepares_for|CN:occupation:MANUAL:j4",
+    "src_id": "CN:major:MANUAL:m3",
+    "dst_id": "CN:occupation:MANUAL:j4",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m3->j4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m3|prepares_for|CN:occupation:MANUAL:j6",
+    "src_id": "CN:major:MANUAL:m3",
+    "dst_id": "CN:occupation:MANUAL:j6",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m3->j6",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m3|prepares_for|CN:occupation:MANUAL:j10",
+    "src_id": "CN:major:MANUAL:m3",
+    "dst_id": "CN:occupation:MANUAL:j10",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m3->j10",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m4|prepares_for|CN:occupation:MANUAL:j1",
+    "src_id": "CN:major:MANUAL:m4",
+    "dst_id": "CN:occupation:MANUAL:j1",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m4->j1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m4|prepares_for|CN:occupation:MANUAL:j4",
+    "src_id": "CN:major:MANUAL:m4",
+    "dst_id": "CN:occupation:MANUAL:j4",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m4->j4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m4|prepares_for|CN:occupation:MANUAL:j7",
+    "src_id": "CN:major:MANUAL:m4",
+    "dst_id": "CN:occupation:MANUAL:j7",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m4->j7",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m4|prepares_for|CN:occupation:MANUAL:j10",
+    "src_id": "CN:major:MANUAL:m4",
+    "dst_id": "CN:occupation:MANUAL:j10",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m4->j10",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m4|prepares_for|CN:occupation:MANUAL:j3",
+    "src_id": "CN:major:MANUAL:m4",
+    "dst_id": "CN:occupation:MANUAL:j3",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m4->j3",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m5|prepares_for|CN:occupation:MANUAL:j3",
+    "src_id": "CN:major:MANUAL:m5",
+    "dst_id": "CN:occupation:MANUAL:j3",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m5->j3",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m5|prepares_for|CN:occupation:MANUAL:j1",
+    "src_id": "CN:major:MANUAL:m5",
+    "dst_id": "CN:occupation:MANUAL:j1",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 1,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m5->j1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m6|prepares_for|CN:occupation:MANUAL:j5",
+    "src_id": "CN:major:MANUAL:m6",
+    "dst_id": "CN:occupation:MANUAL:j5",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m6->j5",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m6|prepares_for|CN:occupation:MANUAL:j2",
+    "src_id": "CN:major:MANUAL:m6",
+    "dst_id": "CN:occupation:MANUAL:j2",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m6->j2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m6|prepares_for|CN:occupation:MANUAL:j6",
+    "src_id": "CN:major:MANUAL:m6",
+    "dst_id": "CN:occupation:MANUAL:j6",
+    "rel_type": "prepares_for",
+    "region": "CN",
+    "weight": 1,
+    "evidence": "HTML seed edge label=培养",
+    "attrs": {
+      "html_label": "培养"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m6->j6",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j1|requires|CN:skill_level:MANUAL:s1|L1",
+    "src_id": "CN:occupation:MANUAL:j1",
+    "dst_id": "CN:skill_level:MANUAL:s1|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j1->s1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j1|requires|CN:skill_level:MANUAL:s2|L2",
+    "src_id": "CN:occupation:MANUAL:j1",
+    "dst_id": "CN:skill_level:MANUAL:s2|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j1->s2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j1|requires|CN:skill_level:MANUAL:s4|L3",
+    "src_id": "CN:occupation:MANUAL:j1",
+    "dst_id": "CN:skill_level:MANUAL:s4|L3",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j1->s4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j1|requires|CN:skill_level:MANUAL:s5|L3",
+    "src_id": "CN:occupation:MANUAL:j1",
+    "dst_id": "CN:skill_level:MANUAL:s5|L3",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j1->s5",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j1|requires|CN:skill_level:MANUAL:s3|L2",
+    "src_id": "CN:occupation:MANUAL:j1",
+    "dst_id": "CN:skill_level:MANUAL:s3|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j1->s3",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j2|requires|CN:skill_level:MANUAL:s6|L3",
+    "src_id": "CN:occupation:MANUAL:j2",
+    "dst_id": "CN:skill_level:MANUAL:s6|L3",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j2->s6",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j2|requires|CN:skill_level:MANUAL:s8|L4",
+    "src_id": "CN:occupation:MANUAL:j2",
+    "dst_id": "CN:skill_level:MANUAL:s8|L4",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j2->s8",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j2|requires|CN:skill_level:MANUAL:s9|L4",
+    "src_id": "CN:occupation:MANUAL:j2",
+    "dst_id": "CN:skill_level:MANUAL:s9|L4",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j2->s9",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j2|requires|CN:skill_level:MANUAL:s1|L1",
+    "src_id": "CN:occupation:MANUAL:j2",
+    "dst_id": "CN:skill_level:MANUAL:s1|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j2->s1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j2|requires|CN:skill_level:MANUAL:s2|L2",
+    "src_id": "CN:occupation:MANUAL:j2",
+    "dst_id": "CN:skill_level:MANUAL:s2|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j2->s2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j3|requires|CN:skill_level:MANUAL:s7|L3",
+    "src_id": "CN:occupation:MANUAL:j3",
+    "dst_id": "CN:skill_level:MANUAL:s7|L3",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j3->s7",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j3|requires|CN:skill_level:MANUAL:s4|L3",
+    "src_id": "CN:occupation:MANUAL:j3",
+    "dst_id": "CN:skill_level:MANUAL:s4|L3",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j3->s4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j3|requires|CN:skill_level:MANUAL:s2|L2",
+    "src_id": "CN:occupation:MANUAL:j3",
+    "dst_id": "CN:skill_level:MANUAL:s2|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j3->s2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j3|requires|CN:skill_level:MANUAL:s1|L1",
+    "src_id": "CN:occupation:MANUAL:j3",
+    "dst_id": "CN:skill_level:MANUAL:s1|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j3->s1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j4|requires|CN:skill_level:MANUAL:s5|L3",
+    "src_id": "CN:occupation:MANUAL:j4",
+    "dst_id": "CN:skill_level:MANUAL:s5|L3",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j4->s5",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j4|requires|CN:skill_level:MANUAL:s1|L1",
+    "src_id": "CN:occupation:MANUAL:j4",
+    "dst_id": "CN:skill_level:MANUAL:s1|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j4->s1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j4|requires|CN:skill_level:MANUAL:s2|L2",
+    "src_id": "CN:occupation:MANUAL:j4",
+    "dst_id": "CN:skill_level:MANUAL:s2|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j4->s2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j4|requires|CN:skill_level:MANUAL:s12|L3",
+    "src_id": "CN:occupation:MANUAL:j4",
+    "dst_id": "CN:skill_level:MANUAL:s12|L3",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j4->s12",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j4|requires|CN:skill_level:MANUAL:s13|L1",
+    "src_id": "CN:occupation:MANUAL:j4",
+    "dst_id": "CN:skill_level:MANUAL:s13|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j4->s13",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j5|requires|CN:skill_level:MANUAL:s14|L2",
+    "src_id": "CN:occupation:MANUAL:j5",
+    "dst_id": "CN:skill_level:MANUAL:s14|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j5->s14",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j5|requires|CN:skill_level:MANUAL:s15|L2",
+    "src_id": "CN:occupation:MANUAL:j5",
+    "dst_id": "CN:skill_level:MANUAL:s15|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j5->s15",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j5|requires|CN:skill_level:MANUAL:s16|L1",
+    "src_id": "CN:occupation:MANUAL:j5",
+    "dst_id": "CN:skill_level:MANUAL:s16|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j5->s16",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j5|requires|CN:skill_level:MANUAL:s9|L4",
+    "src_id": "CN:occupation:MANUAL:j5",
+    "dst_id": "CN:skill_level:MANUAL:s9|L4",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 1,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j5->s9",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j6|requires|CN:skill_level:MANUAL:s11|L1",
+    "src_id": "CN:occupation:MANUAL:j6",
+    "dst_id": "CN:skill_level:MANUAL:s11|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j6->s11",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j6|requires|CN:skill_level:MANUAL:s16|L1",
+    "src_id": "CN:occupation:MANUAL:j6",
+    "dst_id": "CN:skill_level:MANUAL:s16|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j6->s16",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j7|requires|CN:skill_level:MANUAL:s9|L4",
+    "src_id": "CN:occupation:MANUAL:j7",
+    "dst_id": "CN:skill_level:MANUAL:s9|L4",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j7->s9",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j7|requires|CN:skill_level:MANUAL:s10|L4",
+    "src_id": "CN:occupation:MANUAL:j7",
+    "dst_id": "CN:skill_level:MANUAL:s10|L4",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j7->s10",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j7|requires|CN:skill_level:MANUAL:s8|L4",
+    "src_id": "CN:occupation:MANUAL:j7",
+    "dst_id": "CN:skill_level:MANUAL:s8|L4",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j7->s8",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j7|requires|CN:skill_level:MANUAL:s1|L1",
+    "src_id": "CN:occupation:MANUAL:j7",
+    "dst_id": "CN:skill_level:MANUAL:s1|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j7->s1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j7|requires|CN:skill_level:MANUAL:s2|L2",
+    "src_id": "CN:occupation:MANUAL:j7",
+    "dst_id": "CN:skill_level:MANUAL:s2|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j7->s2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j8|requires|CN:skill_level:MANUAL:s4|L3",
+    "src_id": "CN:occupation:MANUAL:j8",
+    "dst_id": "CN:skill_level:MANUAL:s4|L3",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j8->s4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j8|requires|CN:skill_level:MANUAL:s14|L2",
+    "src_id": "CN:occupation:MANUAL:j8",
+    "dst_id": "CN:skill_level:MANUAL:s14|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j8->s14",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j8|requires|CN:skill_level:MANUAL:s15|L2",
+    "src_id": "CN:occupation:MANUAL:j8",
+    "dst_id": "CN:skill_level:MANUAL:s15|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j8->s15",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j9|requires|CN:skill_level:MANUAL:s5|L3",
+    "src_id": "CN:occupation:MANUAL:j9",
+    "dst_id": "CN:skill_level:MANUAL:s5|L3",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j9->s5",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j9|requires|CN:skill_level:MANUAL:s13|L1",
+    "src_id": "CN:occupation:MANUAL:j9",
+    "dst_id": "CN:skill_level:MANUAL:s13|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j9->s13",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j9|requires|CN:skill_level:MANUAL:s1|L1",
+    "src_id": "CN:occupation:MANUAL:j9",
+    "dst_id": "CN:skill_level:MANUAL:s1|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j9->s1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j9|requires|CN:skill_level:MANUAL:s16|L1",
+    "src_id": "CN:occupation:MANUAL:j9",
+    "dst_id": "CN:skill_level:MANUAL:s16|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j9->s16",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j10|requires|CN:skill_level:MANUAL:s12|L3",
+    "src_id": "CN:occupation:MANUAL:j10",
+    "dst_id": "CN:skill_level:MANUAL:s12|L3",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j10->s12",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j10|requires|CN:skill_level:MANUAL:s1|L1",
+    "src_id": "CN:occupation:MANUAL:j10",
+    "dst_id": "CN:skill_level:MANUAL:s1|L1",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j10->s1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j10|requires|CN:skill_level:MANUAL:s2|L2",
+    "src_id": "CN:occupation:MANUAL:j10",
+    "dst_id": "CN:skill_level:MANUAL:s2|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j10->s2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:occupation:MANUAL:j10|requires|CN:skill_level:MANUAL:s15|L2",
+    "src_id": "CN:occupation:MANUAL:j10",
+    "dst_id": "CN:skill_level:MANUAL:s15|L2",
+    "rel_type": "requires",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=需要",
+    "attrs": {
+      "html_label": "需要"
+    },
+    "source_system": "MANUAL",
+    "source_id": "j10->s15",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s5|L3|taught_by|CN:course:MANUAL:c1",
+    "src_id": "CN:skill_level:MANUAL:s5|L3",
+    "dst_id": "CN:course:MANUAL:c1",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c1->s5",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s1|L1|taught_by|CN:course:MANUAL:c1",
+    "src_id": "CN:skill_level:MANUAL:s1|L1",
+    "dst_id": "CN:course:MANUAL:c1",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c1->s1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s4|L3|taught_by|CN:course:MANUAL:c2",
+    "src_id": "CN:skill_level:MANUAL:s4|L3",
+    "dst_id": "CN:course:MANUAL:c2",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c2->s4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s2|L2|taught_by|CN:course:MANUAL:c2",
+    "src_id": "CN:skill_level:MANUAL:s2|L2",
+    "dst_id": "CN:course:MANUAL:c2",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c2->s2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s5|L3|taught_by|CN:course:MANUAL:c2",
+    "src_id": "CN:skill_level:MANUAL:s5|L3",
+    "dst_id": "CN:course:MANUAL:c2",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c2->s5",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s5|L3|taught_by|CN:course:MANUAL:c3",
+    "src_id": "CN:skill_level:MANUAL:s5|L3",
+    "dst_id": "CN:course:MANUAL:c3",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c3->s5",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s4|L3|taught_by|CN:course:MANUAL:c3",
+    "src_id": "CN:skill_level:MANUAL:s4|L3",
+    "dst_id": "CN:course:MANUAL:c3",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c3->s4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s1|L1|taught_by|CN:course:MANUAL:c3",
+    "src_id": "CN:skill_level:MANUAL:s1|L1",
+    "dst_id": "CN:course:MANUAL:c3",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c3->s1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s7|L3|taught_by|CN:course:MANUAL:c4",
+    "src_id": "CN:skill_level:MANUAL:s7|L3",
+    "dst_id": "CN:course:MANUAL:c4",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c4->s7",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s4|L3|taught_by|CN:course:MANUAL:c4",
+    "src_id": "CN:skill_level:MANUAL:s4|L3",
+    "dst_id": "CN:course:MANUAL:c4",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c4->s4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s6|L3|taught_by|CN:course:MANUAL:c5",
+    "src_id": "CN:skill_level:MANUAL:s6|L3",
+    "dst_id": "CN:course:MANUAL:c5",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c5->s6",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s4|L3|taught_by|CN:course:MANUAL:c5",
+    "src_id": "CN:skill_level:MANUAL:s4|L3",
+    "dst_id": "CN:course:MANUAL:c5",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c5->s4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s4|L3|taught_by|CN:course:MANUAL:c6",
+    "src_id": "CN:skill_level:MANUAL:s4|L3",
+    "dst_id": "CN:course:MANUAL:c6",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c6->s4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s2|L2|taught_by|CN:course:MANUAL:c6",
+    "src_id": "CN:skill_level:MANUAL:s2|L2",
+    "dst_id": "CN:course:MANUAL:c6",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c6->s2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s1|L1|taught_by|CN:course:MANUAL:c6",
+    "src_id": "CN:skill_level:MANUAL:s1|L1",
+    "dst_id": "CN:course:MANUAL:c6",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c6->s1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s10|L4|taught_by|CN:course:MANUAL:c7",
+    "src_id": "CN:skill_level:MANUAL:s10|L4",
+    "dst_id": "CN:course:MANUAL:c7",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c7->s10",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s9|L4|taught_by|CN:course:MANUAL:c7",
+    "src_id": "CN:skill_level:MANUAL:s9|L4",
+    "dst_id": "CN:course:MANUAL:c7",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c7->s9",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s8|L4|taught_by|CN:course:MANUAL:c7",
+    "src_id": "CN:skill_level:MANUAL:s8|L4",
+    "dst_id": "CN:course:MANUAL:c7",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c7->s8",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s9|L4|taught_by|CN:course:MANUAL:c8",
+    "src_id": "CN:skill_level:MANUAL:s9|L4",
+    "dst_id": "CN:course:MANUAL:c8",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c8->s9",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s2|L2|taught_by|CN:course:MANUAL:c9",
+    "src_id": "CN:skill_level:MANUAL:s2|L2",
+    "dst_id": "CN:course:MANUAL:c9",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c9->s2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s4|L3|taught_by|CN:course:MANUAL:c9",
+    "src_id": "CN:skill_level:MANUAL:s4|L3",
+    "dst_id": "CN:course:MANUAL:c9",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c9->s4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s5|L3|taught_by|CN:course:MANUAL:c10",
+    "src_id": "CN:skill_level:MANUAL:s5|L3",
+    "dst_id": "CN:course:MANUAL:c10",
+    "rel_type": "taught_by",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=覆盖",
+    "attrs": {
+      "html_label": "覆盖"
+    },
+    "source_system": "MANUAL",
+    "source_id": "c10->s5",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m1|related_to|CN:course:MANUAL:c2",
+    "src_id": "CN:major:MANUAL:m1",
+    "dst_id": "CN:course:MANUAL:c2",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=建议",
+    "attrs": {
+      "html_label": "建议"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m1->c2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m1|related_to|CN:course:MANUAL:c6",
+    "src_id": "CN:major:MANUAL:m1",
+    "dst_id": "CN:course:MANUAL:c6",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=建议",
+    "attrs": {
+      "html_label": "建议"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m1->c6",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m3|related_to|CN:course:MANUAL:c1",
+    "src_id": "CN:major:MANUAL:m3",
+    "dst_id": "CN:course:MANUAL:c1",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=建议",
+    "attrs": {
+      "html_label": "建议"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m3->c1",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m3|related_to|CN:course:MANUAL:c10",
+    "src_id": "CN:major:MANUAL:m3",
+    "dst_id": "CN:course:MANUAL:c10",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=建议",
+    "attrs": {
+      "html_label": "建议"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m3->c10",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m4|related_to|CN:course:MANUAL:c4",
+    "src_id": "CN:major:MANUAL:m4",
+    "dst_id": "CN:course:MANUAL:c4",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=建议",
+    "attrs": {
+      "html_label": "建议"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m4->c4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:major:MANUAL:m4|related_to|CN:course:MANUAL:c5",
+    "src_id": "CN:major:MANUAL:m4",
+    "dst_id": "CN:course:MANUAL:c5",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=建议",
+    "attrs": {
+      "html_label": "建议"
+    },
+    "source_system": "MANUAL",
+    "source_id": "m4->c5",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s5|L3|related_to|CN:skill_level:MANUAL:s4|L3",
+    "src_id": "CN:skill_level:MANUAL:s5|L3",
+    "dst_id": "CN:skill_level:MANUAL:s4|L3",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 3,
+    "evidence": "HTML seed edge label=基础",
+    "attrs": {
+      "html_label": "基础"
+    },
+    "source_system": "MANUAL",
+    "source_id": "s5->s4",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s1|L1|related_to|CN:skill_level:MANUAL:s2|L2",
+    "src_id": "CN:skill_level:MANUAL:s1|L1",
+    "dst_id": "CN:skill_level:MANUAL:s2|L2",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=工具",
+    "attrs": {
+      "html_label": "工具"
+    },
+    "source_system": "MANUAL",
+    "source_id": "s1->s2",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s1|L1|related_to|CN:skill_level:MANUAL:s3|L2",
+    "src_id": "CN:skill_level:MANUAL:s1|L1",
+    "dst_id": "CN:skill_level:MANUAL:s3|L2",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=工具",
+    "attrs": {
+      "html_label": "工具"
+    },
+    "source_system": "MANUAL",
+    "source_id": "s1->s3",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s4|L3|related_to|CN:skill_level:MANUAL:s6|L3",
+    "src_id": "CN:skill_level:MANUAL:s4|L3",
+    "dst_id": "CN:skill_level:MANUAL:s6|L3",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=应用",
+    "attrs": {
+      "html_label": "应用"
+    },
+    "source_system": "MANUAL",
+    "source_id": "s4->s6",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s4|L3|related_to|CN:skill_level:MANUAL:s7|L3",
+    "src_id": "CN:skill_level:MANUAL:s4|L3",
+    "dst_id": "CN:skill_level:MANUAL:s7|L3",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=应用",
+    "attrs": {
+      "html_label": "应用"
+    },
+    "source_system": "MANUAL",
+    "source_id": "s4->s7",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s8|L4|related_to|CN:skill_level:MANUAL:s9|L4",
+    "src_id": "CN:skill_level:MANUAL:s8|L4",
+    "dst_id": "CN:skill_level:MANUAL:s9|L4",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=相关",
+    "attrs": {
+      "html_label": "相关"
+    },
+    "source_system": "MANUAL",
+    "source_id": "s8->s9",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s8|L4|related_to|CN:skill_level:MANUAL:s10|L4",
+    "src_id": "CN:skill_level:MANUAL:s8|L4",
+    "dst_id": "CN:skill_level:MANUAL:s10|L4",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 2,
+    "evidence": "HTML seed edge label=相关",
+    "attrs": {
+      "html_label": "相关"
+    },
+    "source_system": "MANUAL",
+    "source_id": "s8->s10",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  },
+  {
+    "id": "edge:CN:skill_level:MANUAL:s12|L3|related_to|CN:skill_level:MANUAL:s15|L2",
+    "src_id": "CN:skill_level:MANUAL:s12|L3",
+    "dst_id": "CN:skill_level:MANUAL:s15|L2",
+    "rel_type": "related_to",
+    "region": "CN",
+    "weight": 1,
+    "evidence": "HTML seed edge label=相关",
+    "attrs": {
+      "html_label": "相关"
+    },
+    "source_system": "MANUAL",
+    "source_id": "s12->s15",
+    "source_url": "file://AI能力知识图谱可视化.html",
+    "license": "project manual seed (not official)",
+    "fetched_at": "2026-08-05T04:37:46+00:00",
+    "confidence": "manual_seed"
+  }
+]

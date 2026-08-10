@@ -1,0 +1,52 @@
+{
+  "hits": [
+    {
+      "url": "https://www.osta.org.cn/skillStandard",
+      "status": 200,
+      "ct": "text/html",
+      "len": 789,
+      "is_pdf": false
+    },
+    {
+      "url": "https://portal.fuyunfeng.top/api/files/download_file?file_name=SliderVerify.umd-v3.js",
+      "status": 403,
+      "ct": "application/octet-stream",
+      "len": 106759,
+      "is_pdf": false
+    },
+    {
+      "url": "https://www.osta.org.cn/api/public/skillStandardList?pageSize=10&pageNum=1&total=0&nameCode=&status=1",
+      "status": 200,
+      "ct": "application/json",
+      "len": 3772,
+      "is_pdf": false
+    },
+    {
+      "url": "https://www.osta.org.cn/api/sys/downloadFile/decrypt?fileName=4eNsZIOv3WFNDfbnldJHeA%2F2026%2F7%2F6%2Fdc19ce5903704dbfb3917b3da0a66fcc.pdf",
+      "status": 200,
+      "ct": "application/vnd.ms-excel;charset=utf-8",
+      "len": 1948385,
+      "is_pdf": true
+    }
+  ],
+  "dom": [
+    {
+      "tag": "DIV",
+      "src": null,
+      "id": "viewer",
+      "cls": "pdfViewer"
+    },
+    {
+      "tag": "CANVAS",
+      "src": null,
+      "id": "",
+      "cls": ""
+    },
+    {
+      "tag": "CANVAS",
+      "src": null,
+      "id": "",
+      "cls": ""
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+[
+  {
+    "industry": {
+      "id": "CN:industry:BOSS_ZHIPIN:boss:100015",
+      "name": "企业服务",
+      "status": "published"
+    },
+    "sample_majors": [
+      {
+        "id": "CN:major:MOE_CN:voc_bachelor:330304",
+        "name": "业财融合管理"
+      },
+      {
+        "id": "CN:major:MOE_CN:voc_associate:530604",
+        "name": "中小企业创业与经营"
+      },
+      {
+        "id": "CN:major:MOE_CN:ug_bachelor:120303TK",
+        "name": "乡村治理"
+      },
+      {
+        "id": "CN:major:MOE_CN:ug_bachelor:120407T",
+        "name": "交通管理"
+      },
+      {
+        "id": "CN:major:MOE_CN:voc_associate:500209",
+        "name": "交通运营管理"
+      }
+    ],
+    "sample_chains": [
+      {
+        "major_id": "CN:major:MOE_CN:voc_associate:530204",
+        "major_name": "信用管理",
+        "occupation_id": "CN:occupation:MOHRSS_CN:4-07-02-04",
+        "occupation_name": "信用管理师",
+        "skill_key_count": 14,
+        "sample_skill_key": "会议技术服务和文件编制管理",
+        "sample_skill_node_id": "CN:skill_level:MOHRSS_CN:4-05-06-02|会议技术服务和文件编制管理|L4"
+      },
+      {
+        "major_id": "CN:major:MOE_CN:ug_bachelor:020306T",
+        "major_name": "信用管理",
+        "occupation_id": "CN:occupation:MOHRSS_CN:4-07-02-04",
+        "occupation_name": "信用管理师",
+        "skill_key_count": 14,
+        "sample_skill_key": "会议技术服务和文件编制管理",
+        "sample_skill_node_id": "CN:skill_level:MOHRSS_CN:4-05-06-02|会议技术服务和文件编制管理|L4"
+      },
+      {
+        "major_id": "CN:major:MOE_CN:voc_bachelor:330204",
+        "major_name": "信用管理",
+        "occupation_id": "CN:occupation:MOHRSS_CN:4-07-02-04",
+        "occupation_name": "信用管理师",
+        "skill_key_count": 14,
+        "sample_skill_key": "会议技术服务和文件编制管理",
+        "sample_skill_node_id": "CN:skill_level:MOHRSS_CN:4-05-06-02|会议技术服务和文件编制管理|L4"
+      }
+    ],
+    "frontend_hints": {
+      "search": "/v1/search?q=企业&type=industry",
+      "explore_seed": "/v1/graph/explore?q=*&type=industry&depth=0",
+      "expand": "POST /v1/graph/expand  body: {\"node_id\": \"CN:industry:BOSS_ZHIPIN:boss:100015\", \"limit\": 25}",
+      "list_majors_via_nodes": "/v1/kg/nodes?type=major&scope=manage&q="
+    }
+  },
+  {
+    "industry": {
+      "id": "CN:industry:BOSS_ZHIPIN:boss:100021",
+      "name": "计算机软件",
+      "status": "published"
+    },
+    "sample_majors": [
+      {
+        "id": "CN:major:MOE_CN:voc_bachelor:310206",
+        "name": "云计算技术"
+      },
+      {
+        "id": "CN:major:MOE_CN:voc_associate:510206",
+        "name": "云计算技术应用"
+      },
+      {
+        "id": "CN:major:MOE_CN:voc_bachelor:310209",
+        "name": "人工智能工程技术"
+      },
+      {
+        "id": "CN:major:MOE_CN:voc_associate:510209",
+        "name": "人工智能技术应用"
+      },
+      {
+        "id": "CN:major:MOE_CN:ug_bachelor:080914TK",
+        "name": "保密技术"
+      }
+    ],
+    "sample_chains": [
+      {
+        "major_id": "CN:major:MOE_CN:ug_bachelor:080905",
+        "major_name": "物联网工程",
+        "occupation_id": "CN:occupation:MOHRSS_CN:6-25-04-09",
+        "occupation_name": "物联网安装调试员",
+        "skill_key_count": 20,
+        "sample_skill_key": "培训与指导",
+        "sample_skill_node_id": "CN:skill_level:MOHRSS_CN:2-02-10-10|感知控制开发|T1"
+      },
+      {
+        "major_id": "CN:major:MOE_CN:voc_secondary:710208",
+        "major_name": "网络安防系统安装与维护",
+        "occupation_id": "CN:occupation:MOHRSS_CN:4-07-05-04",
+        "occupation_name": "安全防范系统安装维护员",
+        "skill_key_count": 14,
+        "sample_skill_key": "培训指导",
+        "sample_skill_node_id": "CN:skill_level:MOHRSS_CN:4-07-05-04|培训指导|L1"
+      },
+      {
+        "major_id": "CN:major:MOE_CN:voc_secondary:710208",
+        "major_name": "网络安防系统安装与维护",
+        "occupation_id": "CN:occupation:MOHRSS_CN:4-07-05-01",
+        "occupation_name": "保安员",
+        "skill_key_count": 13,
+        "sample_skill_key": "保安业务管理",
+        "sample_skill_node_id": "CN:skill_level:MOHRSS_CN:4-07-05-01|保安业务管理|L1"
+      }
+    ],
+    "frontend_hints": {
+      "search": "/v1/search?q=计算&type=industry",
+      "explore_seed": "/v1/graph/explore?q=*&type=industry&depth=0",
+      "expand": "POST /v1/graph/expand  body: {\"node_id\": \"CN:industry:BOSS_ZHIPIN:boss:100021\", \"limit\": 25}",
+      "list_majors_via_nodes": "/v1/kg/nodes?type=major&scope=manage&q="
+    }
+  }
+]
