@@ -104,7 +104,7 @@ class ChangeOut(BaseModel):
 
 @router.get(
     "/dashboard/summary",
-    tags=["管理端 · 运营看板"],
+    tags=["管理台 · 运营看板"],
     response_model=AdminDashboardOut,
     summary="运营看板摘要",
 )
@@ -115,7 +115,7 @@ def dashboard(user: AuthUser = Depends(require_auth_user)) -> AdminDashboardOut:
 
 @router.get(
     "/ai-gateway",
-    tags=["管理端 · 运营看板"],
+    tags=["管理台 · 运营看板"],
     summary="AI 网关就绪态（非 UC）",
 )
 def ai_gateway_status(user: AuthUser = Depends(require_auth_user)) -> dict[str, Any]:
@@ -127,7 +127,7 @@ def ai_gateway_status(user: AuthUser = Depends(require_auth_user)) -> dict[str, 
 
 @router.get(
     "/edges/review",
-    tags=["管理端 · 审核"],
+    tags=["管理台 · 审核发布"],
     summary="低置信/AI 边抽检列表",
     description="默认 confidence=ai_inferred；可筛 prepares_for / requires。",
 )
@@ -153,7 +153,7 @@ def admin_edges_review(
 
 @router.get(
     "/changes",
-    tags=["管理端 · 审核"],
+    tags=["管理台 · 审核发布"],
     response_model=list[ChangeOut],
     summary="待审变更列表",
     description="队列内仅待审；通过/驳回后记录删除。",
@@ -172,7 +172,7 @@ def list_changes(
 
 @router.post(
     "/changes",
-    tags=["管理端 · 审核"],
+    tags=["管理台 · 审核发布"],
     response_model=ChangeOut,
     summary="提交变更（默认直写；REVIEW_REQUIRED=1 时进待审）",
     description=(
@@ -204,7 +204,7 @@ def submit_change(
 
 @router.post(
     "/changes/{change_id}/approve",
-    tags=["管理端 · 审核"],
+    tags=["管理台 · 审核发布"],
     summary="审核通过并生效",
 )
 def approve_change(
@@ -221,7 +221,7 @@ def approve_change(
 
 @router.post(
     "/changes/{change_id}/reject",
-    tags=["管理端 · 审核"],
+    tags=["管理台 · 审核发布"],
     summary="驳回（删除待审记录）",
 )
 def reject_change(
@@ -252,7 +252,7 @@ class PublishValidateBody(BaseModel):
 
 @router.post(
     "/publish/validate",
-    tags=["管理端 · 发布门禁"],
+    tags=["管理台 · 发布门禁"],
     summary="校验是否可发布（BR-02~06）",
     description=(
         "不写库。major→BR-02；occupation→BR-03；skill→BR-04+BR-05；"
@@ -277,7 +277,7 @@ def admin_publish_validate(
 
 @router.get(
     "/publish/validate",
-    tags=["管理端 · 发布门禁"],
+    tags=["管理台 · 发布门禁"],
     summary="校验是否可发布（query）",
 )
 def admin_publish_validate_get(
@@ -310,7 +310,7 @@ class PublishDemoteBody(BaseModel):
 
 @router.post(
     "/publish/demote",
-    tags=["管理端 · 发布门禁"],
+    tags=["管理台 · 发布门禁"],
     summary="扫描并降级不达标 published 节点为 draft",
     description=(
         "BR-07/08：不达标 major/occupation/skill 置 draft，"
@@ -412,7 +412,7 @@ class SkillBundleBody(BaseModel):
 
 @router.get(
     "/skills",
-    tags=["管理端 · 技能多档"],
+    tags=["管理台 · 技能多档"],
     summary="逻辑技能列表（管理端，含草稿）",
     description=(
         "按 skill_key 聚合。默认 scope=manage 可见 draft/disabled；"
@@ -449,7 +449,7 @@ def admin_list_skills(
 
 @router.post(
     "/skills",
-    tags=["管理端 · 技能多档"],
+    tags=["管理台 · 技能多档"],
     response_model=ChangeOut,
     summary="新建逻辑技能（一次多档，进待审）",
     description=(
@@ -489,7 +489,7 @@ def admin_create_skill_bundle(
 
 @router.patch(
     "/skills/{skill_key:path}",
-    tags=["管理端 · 技能多档"],
+    tags=["管理台 · 技能多档"],
     response_model=ChangeOut,
     summary="更新逻辑技能（多档/岗链，进待审）",
 )
@@ -540,7 +540,7 @@ def admin_patch_skill_bundle(
 
 @router.post(
     "/skills/preview",
-    tags=["管理端 · 技能多档"],
+    tags=["管理台 · 技能多档"],
     summary="预览多档拆分结果（不写库、不进审）",
 )
 def admin_preview_skill_bundle(
@@ -564,7 +564,7 @@ def admin_preview_skill_bundle(
 
 @router.get(
     "/skills/{skill_key:path}",
-    tags=["管理端 · 技能多档"],
+    tags=["管理台 · 技能多档"],
     summary="查询逻辑技能详情（聚合读）",
 )
 def admin_get_skill_bundle(
@@ -593,7 +593,7 @@ class PrereqSetBody(BaseModel):
 
 @router.get(
     "/skills/{skill_key:path}/prerequisites",
-    tags=["管理端 · 技能多档"],
+    tags=["管理台 · 技能多档"],
     summary="列出先修技能",
 )
 def admin_list_prereqs(
@@ -609,7 +609,7 @@ def admin_list_prereqs(
 
 @router.post(
     "/skills/{skill_key:path}/prerequisites",
-    tags=["管理端 · 技能多档"],
+    tags=["管理台 · 技能多档"],
     summary="添加先修（无环校验）",
 )
 def admin_add_prereq(
@@ -633,7 +633,7 @@ def admin_add_prereq(
 
 @router.put(
     "/skills/{skill_key:path}/prerequisites",
-    tags=["管理端 · 技能多档"],
+    tags=["管理台 · 技能多档"],
     summary="整体替换先修列表（无环）",
 )
 def admin_set_prereqs(
@@ -656,7 +656,7 @@ def admin_set_prereqs(
 
 @router.delete(
     "/skills/{skill_key:path}/prerequisites/{prereq_key:path}",
-    tags=["管理端 · 技能多档"],
+    tags=["管理台 · 技能多档"],
     summary="删除一条先修",
 )
 def admin_del_prereq(

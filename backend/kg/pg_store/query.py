@@ -12,7 +12,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.kg.pg_store.client import connect
-from backend.kg.pg_store.config import DEFAULT_REGION, edge_published
+from backend.kg.pg_store.config import (
+    ARCHIVED_STATUS,
+    DEFAULT_REGION,
+    edge_not_archived,
+    edge_published,
+    node_not_archived,
+)
 from backend.kg.pg_store.migrate import stats as pg_stats
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
@@ -140,6 +146,8 @@ def _default_region(region: str | None) -> str | None:
 _PUBLISHED_SQL = "COALESCE(status, 'published') = 'published'"
 # 边可见性：归档/草稿边不对外返回。节点过滤挡不住两端都正常的边（如 parent_of）。
 _EDGE_PUB = edge_published("e")
+_EDGE_ADMIN = edge_not_archived("e")      # 管理台：含 draft/disabled，不含 archived
+_NODE_ADMIN = node_not_archived()         # 同上（节点，无别名）
 _EDGE_PUB_BARE = "COALESCE(status, 'published') = 'published'"
 
 
@@ -986,11 +994,15 @@ def list_edges(
 
     where = ["1=1"]
     params: list[Any] = []
-    if st:
+    if st == ARCHIVED_STATUS:
+        where.append("1=0")          # 逻辑删除，任何接口都不返回
+    elif st:
         where.append("COALESCE(e.status, 'published') = %s")
         params.append(st)
-    elif not manage:
-        where.append(_EDGE_PUB)
+    elif manage:
+        where.append(_EDGE_ADMIN)    # 管理台：含 draft/disabled
+    else:
+        where.append(_EDGE_PUB)      # 前台：仅 published
     if rel:
         where.append("e.rel_type = %s")
         params.append(rel)
@@ -1118,12 +1130,17 @@ def list_nodes(
     if q_like:
         where.append("lower(name) LIKE lower(%s)")
         params.append(q_like)
-    if st:
+    if st == ARCHIVED_STATUS:
+        # archived 是逻辑删除：任何接口都不返回，恢复只能直接改库
+        where.append("1=0")
+    elif st:
         where.append("COALESCE(status, 'published') = %s")
         params.append(st)
     elif published_only:
         where.append(_PUBLISHED_SQL)
-    # scope=manage 且无 status：不限状态
+    else:
+        # scope=manage：可见 published/draft/disabled，但仍排除 archived
+        where.append(_NODE_ADMIN)
 
     where_sql = " AND ".join(where)
     offset = (page - 1) * page_size

@@ -24,6 +24,28 @@ API_DESCRIPTION = f"""
 - **学员产品**：Open-Q `frontend.html` → `/v1/student/**`（**仅已发布**数据）
 - **管理产品**：`/admin` 控制台 + `/v1/admin/**`
 
+## 接口分组与权限归属
+
+标签按 **前台 / 管理台** 一级归类，可直接对应权限边界：
+
+| 分组 | 面向 | 可见状态 |
+| --- | --- | --- |
+| **系统** | 公共 | — （`/health`、`/v1/config` 免登录） |
+| **前台 · ***（图检索、学员探索/诊断/学习/我的） | 学员与公开展示 | **仅 `published`** |
+| **管理台 · ***（数据列表/维护、技能多档、审核发布、发布门禁、运营看板） | 运营与维护 | `published` + `draft` + `disabled` |
+
+## 数据状态语义
+
+| status | 前台接口 | 管理台接口 | 说明 |
+| --- | --- | --- | --- |
+| `published` | ✅ 可见 | ✅ 可见 | 已发布 |
+| `draft` | ❌ | ✅ 可见 | 草稿，仅管理台 |
+| `disabled` | ❌ | ✅ 可见 | 停用，可再发布 |
+| `archived` | ❌ | ❌ | **逻辑删除：任何接口都不返回**，数据仍留库，恢复需直接改库 |
+
+管理台列表需显式传 `scope=manage` 才能看到 `draft` / `disabled`；
+不传时与前台一致，只返回 `published`。`status=archived` 一律返回空。
+
 ## 鉴权
 
 {USER_HEADER_NOTE}
@@ -70,31 +92,71 @@ API_DESCRIPTION = f"""
 """
 
 OPENAPI_TAGS = [
-    {"name": "系统", "description": "健康检查、UC 配置、当前用户（config 无需登录）"},
     {
-        "name": "图检索",
-        "description": "通用 KG 检索（保留，与业务审核流独立）",
+        "name": "系统",
+        "description": (
+            "健康检查、前端配置、当前登录用户。`/health` 与 `/v1/config` 无需登录，"
+            "其余 `/v1/*` 均需 `Authorization: MAC ...`。"
+        ),
+    },
+    # ── 前台：面向学员与公开展示，只返回发布态 ──
+    {
+        "name": "前台 · 图检索",
+        "description": (
+            "**可见状态：仅 published。** "
+            "行业 / 专业 / 岗位 / 技能的图谱检索与展示："
+            "行业三层关联图、岗位技能图谱、能力全景、search / expand 通用图探索。"
+        ),
     },
     {
-        "name": "管理端 · 数据列表",
-        "description": "四维节点分页 + 边列表（`GET /v1/kg/edges`，可按 node_id 核对删边）",
+        "name": "前台 · 学员探索",
+        "description": "**可见状态：仅 published。** 学员侧四维浏览与检索。",
     },
     {
-        "name": "管理端 · 数据维护",
-        "description": "底层写接口；产品操作请优先 /v1/admin/changes",
+        "name": "前台 · 学员诊断",
+        "description": "**可见状态：仅 published。** 简历解析 / 对话诊断 / 能力报告。",
     },
     {
-        "name": "管理端 · 审核",
-        "description": "待审变更：提交/通过生效/驳回删除",
+        "name": "前台 · 学员学习",
+        "description": "**可见状态：仅 published。** 学习路径与资源推荐。",
     },
     {
-        "name": "管理端 · 运营看板",
-        "description": "运营摘要",
+        "name": "前台 · 学员我的",
+        "description": "**可见状态：仅 published。** 个人画像、技能档案与徽章。",
     },
-    {"name": "学生端 · 探索", "description": "仅已发布数据"},
-    {"name": "学生端 · 诊断", "description": "简历/对话/报告"},
-    {"name": "学生端 · 学习", "description": "路径与资源"},
-    {"name": "学生端 · 我的", "description": "画像与徽章"},
+    # ── 管理台：可见 published/draft/disabled；archived 为逻辑删除，任何接口均不返回 ──
+    {
+        "name": "管理台 · 数据列表",
+        "description": (
+            "**可见状态：published + draft + disabled**（传 `scope=manage`）；"
+            "**archived 不返回**。"
+            "四维节点分页与边列表；边列表可按 `node_id` 核对某节点的关联边。"
+        ),
+    },
+    {
+        "name": "管理台 · 数据维护",
+        "description": (
+            "节点 / 边的底层写接口（新建、编辑、归档）。"
+            "归档 = 逻辑删除（`status='archived'`）：数据留在库里，但所有接口都不再返回，"
+            "恢复需直接操作数据库。"
+        ),
+    },
+    {
+        "name": "管理台 · 技能多档",
+        "description": "逻辑技能与等级档位维护（L1–L5）、技能先修关系。",
+    },
+    {
+        "name": "管理台 · 审核发布",
+        "description": "待审变更：提交 / 通过生效 / 驳回删除。",
+    },
+    {
+        "name": "管理台 · 发布门禁",
+        "description": "发布前的 BR 规则校验与不合规数据降级。",
+    },
+    {
+        "name": "管理台 · 运营看板",
+        "description": "图规模、业务量与待办摘要。",
+    },
 ]
 
 
