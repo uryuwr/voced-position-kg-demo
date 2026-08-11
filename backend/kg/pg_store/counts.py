@@ -30,6 +30,8 @@ def _empty_counts() -> dict[str, Any]:
         "level": 0,
         # 原型「岗位模型」列表的「权重和」列（国标权重是否配满 1.00）
         "weight_sum": 0.0,
+        # 专业：经岗位两跳聚合的技能数（参考值；「基础技能」列用 skill=直连数）
+        "skill_aggregated": 0,
     }
 
 
@@ -110,6 +112,24 @@ def counts_for_majors(ids: list[str]) -> dict[str, dict[str, int]]:
               AND pf.src_id = ANY(%s)
               AND COALESCE(pf.status, 'published') = 'published'
             GROUP BY pf.src_id
+            """,
+            (ids,),
+        ).fetchall()
+        for r in rows:
+            if r["id"] in out:
+                # 两跳聚合数另存：运营维护的是直连技能，这个仅作参考
+                out[r["id"]]["skill_aggregated"] = int(r["c"])
+
+        # 专业「基础技能」= **直连技能**（covers, E4），即运营在技能构成页维护的那批。
+        # 原先这一列取的是「经岗位两跳聚合」数，运营改不动它，数字也对不上构成页。
+        rows = conn.execute(
+            f"""
+            SELECT e.src_id AS id, count(DISTINCT ({SKILL_KEY_SQL})) AS c
+            FROM kg_edge e
+            JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level' AND {_PUB_N}
+            WHERE e.rel_type = 'covers' AND {EP_E}
+              AND e.src_id = ANY(%s)
+            GROUP BY e.src_id
             """,
             (ids,),
         ).fetchall()

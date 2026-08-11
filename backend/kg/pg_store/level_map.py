@@ -49,6 +49,15 @@ def product_level_int_from_attrs(attrs: dict[str, Any] | None, name: str | None 
             return max(1, min(5, int(a["product_level_int"])))
         except (TypeError, ValueError):
             pass
+    # 三级制（T1/T2/T3，level_zh 为 初级/中级/高级，共 625 个节点）：
+    # 与国标五级工是两套刻度，且「初级」不含「工」字，走不到下面的国标词表匹配，
+    # 此前一律返回 None → 这些档在管理端既选不了也显示不出。
+    # 均匀铺到产品五级：初级→L1(了解) / 中级→L3(熟练) / 高级→L5(专家)。
+    tcode = str(a.get("level_code") or "").upper()
+    m_t = re.match(r"^T([1-3])$", tcode)
+    if m_t:
+        return {1: 1, 2: 3, 3: 5}[int(m_t.group(1))]
+
     zh = str(a.get("level_zh") or a.get("level_label") or "")
     for k, code in MOHRSS_ZH_TO_PRODUCT_ORDERED:
         if k in zh:
