@@ -573,8 +573,10 @@
 
     /** 技能构成编辑页（专业 covers / 岗位 requires），交互对齐管理端原型：
      *  头部信息 + 每行 L1–L5 档位按钮 + 权重输入 + 底部搜索下拉添加 + 归一化 */
-    async function openComposition(nodeId) {
-      openModal(`<h2>技能构成</h2><div class="empty">加载中…</div>`);
+    async function openComposition(nodeId, opts) {
+      // silent：添加/改档/改权重后的刷新不再重弹「加载中」，避免每次操作都闪一下
+      const silent = !!(opts && opts.silent);
+      if (!silent) openModal(`<h2>技能构成</h2><div class="empty">加载中…</div>`);
       let d;
       try {
         d = await api.apiFetch("/v1/admin/composition?node_id=" + encodeURIComponent(nodeId));
@@ -670,16 +672,26 @@
       `, { wide: true });
       $("cpClose").onclick = closeModal;
 
-      const reload = () => openComposition(nodeId);
+      const reload = () => openComposition(nodeId, { silent: true });
 
       // 档位点选
       document.querySelectorAll("[data-setlv]").forEach((el) => {
         el.onclick = async () => {
+          if (el.disabled) return;
+          // 乐观高亮：同组按钮先切换选中态，网络失败再由刷新纠正
+          const group = el.parentElement;
+          if (group) group.querySelectorAll(".btn").forEach((b) => b.classList.remove("primary"));
+          el.classList.add("primary");
+          el.disabled = true;
           try {
             await api.apiFetch("/v1/admin/composition?node_id=" + encodeURIComponent(nodeId),
               { method: "PUT", body: { skill_key: el.dataset.setlv, level: Number(el.dataset.lv) } });
-            toast("已设为 L" + el.dataset.lv); reload();
-          } catch (e) { toast(e.message || e, true); }
+            toast("已设为 L" + el.dataset.lv);
+            await reload();
+          } catch (e) {
+            toast(e.message || e, true);
+            await reload();
+          }
         };
       });
       // 权重改动（失焦提交）
