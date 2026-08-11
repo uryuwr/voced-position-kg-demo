@@ -558,6 +558,15 @@
       return n && n.counts && typeof n.counts === "object" ? n.counts : {};
     }
 
+    /** 业务编码单元格：code 已提到顶层，attrs.code 仅作兼容回落 */
+    function codeCellHtml(n) {
+      const code = n.code || (n.attrs && n.attrs.code) || "";
+      if (!code) return `<span class="muted">—</span>`;
+      const pc = n.attrs && n.attrs.platform_code;
+      // 行业编码已重建为语义 slug，原平台码存 attrs.platform_code，hover 可查
+      return `<code title="${pc ? "原平台码 " + esc(pc) : ""}">${esc(code)}</code>`;
+    }
+
     /** 关联数展示文案（按维度） */
     function countsCellHtml(n, type) {
       const c = countsOf(n);
@@ -675,6 +684,7 @@
         const isOcc = dim.type === "occupation";
         return `<tr>
           <td class="name-cell">${esc(name)}<div class="id-cell">${esc(n.id)}</div></td>
+          <td>${codeCellHtml(n)}</td>
           <td>${nodeStatusCell(n)}</td>
           ${isOcc ? `<td class="name-cell">${industryCellHtml(n)}</td>` : ""}
           <td>${countsCellHtml(n, dim.type)}</td>
@@ -695,8 +705,8 @@
       const head = isSkillBundle
         ? `<tr><th>技能名 / key</th><th>状态</th><th>等级 L1–L5</th><th>关联</th><th>操作</th></tr>`
         : isOccList
-          ? `<tr><th>名称 / ID</th><th>状态</th><th>所属行业</th><th>关联数</th><th>来源</th><th>置信度</th><th>操作</th></tr>`
-          : `<tr><th>名称 / ID</th><th>状态</th><th>关联数</th><th>来源</th><th>置信度</th><th>操作</th></tr>`;
+          ? `<tr><th>名称 / ID</th><th>编码</th><th>状态</th><th>所属行业</th><th>关联数</th><th>来源</th><th>置信度</th><th>操作</th></tr>`
+          : `<tr><th>名称 / ID</th><th>编码</th><th>状态</th><th>关联数</th><th>来源</th><th>置信度</th><th>操作</th></tr>`;
       const skillNote = isSkillBundle
         ? " · 按 skill_key 聚合 · 状态为各档聚合"
         : isOccList
@@ -1430,6 +1440,10 @@
           </select>
         </div>
         <div class="form-row"><label>名称 *</label><input id="f_name" value="${esc(n.name || "")}" /></div>
+        <div class="form-row"><label>编码</label>
+          <input id="f_code" value="${esc(n.code || (n.attrs && n.attrs.code) || "")}"
+                 placeholder="同类型内唯一，如 internet-ecom / 580506K" />
+        </div>
         <div class="form-row"><label>区域</label><input id="f_region" value="${esc(n.region || "CN")}" /></div>
         <div class="form-row"><label>简介</label><textarea id="f_desc">${esc(n.description || "")}</textarea></div>
         <div class="form-row" id="linkRow" ${peerType ? "" : "style=\"display:none\""}>
@@ -1484,6 +1498,13 @@
           region: $("f_region").value.trim() || "CN",
           description: $("f_desc").value.trim() || null,
         };
+        // 编码：写进 attrs.code（服务端以此做同 region+type 唯一性校验）。
+        // 合并原有 attrs，避免编辑时把 parent_name/platform_code 等字段覆盖丢失。
+        const codeVal = ($("f_code") && $("f_code").value.trim()) || "";
+        const baseAttrs = (n && n.attrs && typeof n.attrs === "object") ? { ...n.attrs } : {};
+        if (codeVal) baseAttrs.code = codeVal;
+        else delete baseAttrs.code;
+        if (Object.keys(baseAttrs).length) payload.attrs = baseAttrs;
         const lk = $("linkRow").dataset.linkKey
           || ($("f_type").value === "major" ? "industry_ids"
             : $("f_type").value === "occupation" ? "major_ids"
@@ -1533,7 +1554,17 @@
             state.listType = payload.type;
           }
           render();
-        } catch (e) { toast(e.message || e, true); }
+        } catch (e) {
+          // 编码冲突 409：提示占用者并聚焦编码框，而非丢一句通用报错
+          const d = e && e.data && e.data.detail;
+          if (e && e.status === 409 && d && d.error === "code_conflict") {
+            toast(d.message || "编码已被占用", true);
+            const el = $("f_code");
+            if (el) { el.focus(); el.select(); el.style.borderColor = "#ef4444"; }
+            return;
+          }
+          toast(e.message || e, true);
+        }
       };
     }
 

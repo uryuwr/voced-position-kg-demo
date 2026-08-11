@@ -186,6 +186,8 @@ def submit_change(
     body: ChangeSubmitBody,
     user: AuthUser = Depends(require_auth_user),
 ) -> ChangeOut:
+    from backend.kg.pg_store.write import CodeConflictError
+
     try:
         row = rev.submit_change(
             entity_kind=body.entity_kind,
@@ -198,6 +200,19 @@ def submit_change(
             user_name=user.user_name,
         )
         return ChangeOut.model_validate(row)
+    except CodeConflictError as e:
+        # 必须在 ValueError 之前捕获（它是 ValueError 子类），否则会被压成 400，
+        # 前端就无法据此把错误定位到「编码」字段。
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "code_conflict",
+                "message": str(e),
+                "field": "attrs.code",
+                "code": e.code,
+                "existing": e.existing,
+            },
+        ) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 

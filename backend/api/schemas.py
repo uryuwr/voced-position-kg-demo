@@ -112,6 +112,17 @@ class KgNode(BaseModel):
         ),
         examples=["2026-08-11T08:04:39+00:00"],
     )
+    code: str | None = Field(
+        None,
+        description=(
+            "业务编码（**同 region + 同 type 内唯一**，可编辑，写入前校验，冲突返回 409）。"
+            "与 `id` 解耦：改 code 不影响 id 与已建的边。"
+            "各维度编码体系独立——行业为语义 slug（`internet-ecom`）、"
+            "专业为教育部专业码（`580506K`）、岗位为大典职业码（`6-18-01-10`）。"
+            "同时保留在 `attrs.code` 以兼容既有前端"
+        ),
+        examples=["internet-ecom"],
+    )
     level: int | None = Field(
         None, description="occupation 岗位层级 1..N；skill_level 可复用为 L 序"
     )

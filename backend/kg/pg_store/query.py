@@ -86,6 +86,9 @@ def _node_dict(row: dict[str, Any]) -> dict[str, Any]:
         "type": ntype,
         "name": name,
         "display_name": display_name,
+        # code 是业务主键（同 region+type 唯一、可编辑、有唯一性校验），
+        # 提到顶层与 level/category 一致；attrs.code 保留不动以兼容既有前端。
+        "code": (attrs or {}).get("code") if isinstance(attrs, dict) else None,
         "name_en": row.get("name_en"),
         "name_zh": row.get("name_zh"),
         "description": row.get("description"),
