@@ -255,9 +255,30 @@ class LearningStepOut(BaseModel):
 
 
 class LearningPathOut(BaseModel):
-    path: dict[str, Any]
-    steps: list[dict[str, Any]]
-    progress: dict[str, Any] | None = None
+    path: dict[str, Any] = Field(..., description="路径主体：目标岗位、状态、来源")
+    steps: list[dict[str, Any]] = Field(
+        ...,
+        description=(
+            "全部任务（扁平，按 seq）。每项含 stage/stage_title/category/weight/"
+            "duration_min/required_level/skill_name/status"
+        ),
+    )
+    stages: list[dict[str, Any]] | None = Field(
+        None,
+        description=(
+            "阶段任务树（原型「第一/二/三阶段」）：按技能大类分组，"
+            "阶段顺序沿用国标职业功能推进顺序。"
+            "每组含 stage/title/steps[]/stage_weight_pct（阶段权重%）/completed/total/duration_min"
+        ),
+    )
+    progress: dict[str, Any] | None = Field(
+        None,
+        description=(
+            "进度。completed/total/ratio 为按任务条数；"
+            "**weighted_pct 为按权重计的总进度**（原型顶部「35% 完成权重/总权重」用这个）；"
+            "duration_min_total 为建议总耗时"
+        ),
+    )
 
 
 class ResourceItem(BaseModel):

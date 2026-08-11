@@ -224,6 +224,13 @@ def assemble_bundle(
         if n.get("confidence"):
             conf = n["confidence"]
             break
+    # 技能大类（国标「职业功能」维度，见 backend/kg/pg_store/skill_taxonomy.py）。
+    # 同一 skill_key 的各等级节点分类一致，取第一个非空。
+    category = None
+    for n in nodes_sorted:
+        if n.get("category"):
+            category = n["category"]
+            break
     # 代表 description：优先 required 档
     desc = None
     if required_level:
@@ -253,6 +260,12 @@ def assemble_bundle(
         "missing_levels": missing,
         "required_level": required_level,
         "weight": weight,
+        # weight 为 0~1 小数（源自国标权重表 attrs.weight_pct/100）；
+        # 前端「权重」列直接用 weight_pct 展示百分比即可，不必自己乘 100。
+        "weight_pct": round(weight * 100) if isinstance(weight, (int, float)) else None,
+        # is_core：权重 >= 30% 视为该岗位的核心技能（原型「核心」标记）
+        "is_core": bool(isinstance(weight, (int, float)) and weight >= 0.3),
+        "category": category,
         "desc": desc,
         "description": desc,
         "counts": counts,

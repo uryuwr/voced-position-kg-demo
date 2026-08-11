@@ -323,6 +323,14 @@ def _mount_dev_ui() -> None:
             raise HTTPException(status_code=404, detail="admin-cytoscape.html missing")
         return FileResponse(page)
 
+    @app.get("/student", include_in_schema=False)
+    def student_page():
+        """学员端 E2E 演示页：岗位探索 / 岗位详情 / AI 诊断 / 自适应学习路径。"""
+        page = FRONTEND_DIR / "student.html"
+        if not page.exists():
+            raise HTTPException(status_code=404, detail="student.html missing")
+        return FileResponse(page)
+
     @app.get("/kg", include_in_schema=False)
     @app.get("/kg-explorer", include_in_schema=False)
     def kg_explorer_page():
@@ -356,7 +364,7 @@ _mount_dev_ui()
 
 @app.get(
     "/v1/stats",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=StatsResponse,
     summary="图规模统计",
     response_description="节点/边计数及分类型汇总（管理看板）",
@@ -372,7 +380,7 @@ def stats_api(user: TempUser = Depends(require_temp_user)) -> StatsResponse:
 
 @app.get(
     "/v1/search",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=list[KgNode],
     summary="search · 节点名称搜索（仅种子，不扩邻域）",
     description=(
@@ -429,7 +437,7 @@ def _node_detail_core(
 
 @app.get(
     "/v1/nodes/{node_id:path}",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=KgNode,
     summary="节点详情",
     description=(
@@ -461,7 +469,7 @@ def node_detail(
 
 @app.get(
     "/v1/node",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=KgNode,
     summary="节点详情（query id，推荐）",
     description=(
@@ -492,7 +500,7 @@ def node_detail_query(
 
 @app.get(
     "/v1/majors/occupations",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=list[KgNodeWithEdge],
     summary="专业 → 岗位列表",
     description="关系 prepares_for；可传 major_id 或专业名关键字 q。",
@@ -514,7 +522,7 @@ def api_major_occupations(
 
 @app.get(
     "/v1/occupations/skills",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     summary="岗位 → 技能列表",
     description=(
         "关系 requires。默认 `aggregate=true`：按 skill_key 聚合为逻辑技能 "
@@ -547,7 +555,7 @@ def api_occupation_skills(
 
 @app.get(
     "/v1/industries/tree",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=IndustryTreeResponse,
     summary="行业树",
     description="industry 节点 + parent_of 边（父→子）。",
@@ -563,7 +571,7 @@ def api_industry_tree(
 
 @app.get(
     "/v1/industries/{industry_id:path}/occupations",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=list[KgNodeWithEdge],
     summary="行业下岗位",
     description="occupation -belongs_to→ industry。",
@@ -580,7 +588,7 @@ def api_industry_occupations(
 
 @app.get(
     "/v1/graph/by-industry",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=GraphResponse,
     summary="行业闭包子图",
     description=(
@@ -629,7 +637,7 @@ def by_industry(
 
 @app.get(
     "/v1/graph/by-major",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=GraphResponse,
     summary="按专业展开子图",
     response_description="root/roots + nodes + edges + meta（管理 Graph / 旧工作台）",
@@ -656,7 +664,7 @@ def by_major(
 
 @app.get(
     "/v1/occupation/requires",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=list[OccupationRequiresRow],
     summary="岗位技能（名称匹配，扁平行）",
 )
@@ -673,7 +681,7 @@ def requires(
 
 @app.post(
     "/v1/graph/expand",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=GraphResponse,
     summary="expand · 节点 1 跳邻居（常规图探索）",
     description=(
@@ -703,7 +711,7 @@ def expand(
 
 @app.get(
     "/v1/graph/explore",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     response_model=GraphResponse,
     summary="search 种子列表（默认不扩边）/ 可选子图",
     description=(
@@ -754,7 +762,7 @@ def explore(
 
 @app.get(
     "/v1/capability",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     summary="能力全景（专业 → 行业/岗位(层级) → 技能，渐进式）",
     description=(
         "面向「能力体系结构化全景」的聚合读接口，一次返回（仅 published）：\n\n"
@@ -874,7 +882,7 @@ def capability(
 
 @app.get(
     "/v1/industries/search",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     summary="行业模糊搜索（平铺，供选择行业的下拉框）",
     description=(
         "行业**平铺**返回，不区分大类/子行业——交互上用户直接搜一个行业选中即可。\n\n"
@@ -895,7 +903,7 @@ def api_industries_search(
 
 @app.get(
     "/v1/industry-graph",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     summary="行业关联图（行业 → 专业 → 岗位，只到岗位层）",
     description=(
         "面向「选定一个行业 → 看三层关联图」的主视图接口。**只画到岗位层**，"
@@ -945,7 +953,7 @@ def api_industry_graph(
 
 @app.get(
     "/v1/occupation-skills-graph",
-    tags=["前台 · 图检索"],
+    tags=["前台 · 图谱检索"],
     summary="岗位技能图谱（按分类分区 + 前置关系）",
     description=(
         "点击岗位后的二级视图：技能按 `category` 分区，区内给出前置关系箭头。\n\n"

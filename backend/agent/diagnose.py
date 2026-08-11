@@ -16,7 +16,62 @@ from backend.agent.llm import gateway_info, get_chat_model, llm_ready
 from backend.agent.tools_kg import kg_tools
 
 
+def _kg_recall(text: str, limit: int = 12) -> list[dict[str, Any]]:
+    """从库内真实技能表召回：文本里直接出现的 skill_key 即算命中。
+
+    取代原先 10 条硬编码的互联网向正则（直播/投放/千川…）——那套词表与库内
+    国标口径的技能名（生产准备/设备维护与保养/安全风险辨识与管控…）完全对不上，
+    导致一份写满真实技能的简历也只能解析出「通用职业素养」。
+    """
+    t = (text or "").strip()
+    if not t:
+        return []
+    try:
+        from backend.kg.pg_store.client import connect
+        from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
+
+        with connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT ({SKILL_KEY_SQL}) AS k, n.category AS cat
+                FROM kg_node n
+                WHERE n.type='skill_level' AND COALESCE(n.status,'published')='published'
+                  AND length({SKILL_KEY_SQL}) >= 2
+                  AND position({SKILL_KEY_SQL} in %s) > 0
+                LIMIT %s
+                """,
+                (t, limit * 3),
+            ).fetchall()
+    except Exception:
+        return []
+    # 长名优先：命中「设备维护与保养」时不再重复计入其子串「设备维护」
+    hits = sorted(({"k": r["k"], "cat": r["cat"]} for r in rows), key=lambda x: -len(x["k"]))
+    out: list[dict[str, Any]] = []
+    taken: list[str] = []
+    for h in hits:
+        k = h["k"]
+        if any(k in t2 for t2 in taken):
+            continue
+        taken.append(k)
+        out.append(
+            {
+                "skill_name": k,
+                "level": 2,
+                "score": 40,
+                "evidence": f"简历文本命中技能库条目「{k}」"
+                + (f"（{h['cat']}）" if h["cat"] else ""),
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _rule_parse(text: str) -> list[dict[str, Any]]:
+    """规则兜底：先查技能库召回，再退化为粗粒度关键词。"""
+    hits = _kg_recall(text)
+    if hits:
+        return hits
     patterns = [
         (r"直播|带货|话术", "直播"),
         (r"投放|ROI|千川|广告", "投放"),
@@ -29,7 +84,6 @@ def _rule_parse(text: str) -> list[dict[str, Any]]:
         (r"汽车|维修|涂装", "汽车维修"),
         (r"航标|航海|海事", "航标作业"),
     ]
-    hits = []
     for pat, label in patterns:
         if re.search(pat, text or "", re.I):
             hits.append(

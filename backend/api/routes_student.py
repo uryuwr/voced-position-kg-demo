@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from backend.api.auth_temp import TempUser, require_temp_user
 from backend.api.schemas_biz import (
@@ -42,7 +42,7 @@ router = APIRouter(prefix="/v1/student", tags=[])
 
 @router.get(
     "/meta/skill-levels",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=list[SkillLevelMeta],
     summary="技能等级字典 L1–L5",
     description="对齐原型 SKILL_LEVEL_META：了解/掌握/熟练/精通/专家。",
@@ -54,7 +54,7 @@ def meta_levels(user: TempUser = Depends(require_temp_user)) -> list[SkillLevelM
 
 @router.get(
     "/meta/skill-categories",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=list[SkillCategory],
     summary="技能类目字典",
 )
@@ -68,7 +68,7 @@ def meta_cats(user: TempUser = Depends(require_temp_user)) -> list[SkillCategory
 
 @router.get(
     "/industries",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=IndustryListOut,
     summary="行业列表（分页）",
     description="探索筛选项；树形仍可用图检索 `GET /v1/industries/tree`。",
@@ -88,7 +88,7 @@ def student_industries(
 
 @router.get(
     "/professions",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=ProfessionListOut,
     summary="专业列表（探索首页）",
     description="对应原型「搜索专业 / 专业卡片列表」。底层 type=major。",
@@ -108,7 +108,7 @@ def student_professions(
 
 @router.get(
     "/professions/{profession_id:path}",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=ProfessionDetailOut,
     summary="专业详情 + 岗位 + 成长阶梯",
     description="对齐 vProfession：专业信息、对口岗位、ladder。",
@@ -130,7 +130,7 @@ def student_profession_detail(
 
 @router.get(
     "/positions",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=PositionListOut,
     summary="岗位列表",
 )
@@ -149,7 +149,7 @@ def student_positions(
 
 @router.get(
     "/positions/skill-composition",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     summary="岗位技能构成（query id，推荐）",
     description="逻辑技能 + weight_sum；权重只认 requires 边。id 含冒号时用本接口。",
 )
@@ -167,8 +167,34 @@ def student_position_skill_composition_q(
 
 
 @router.get(
+    "/positions/match",
+    tags=["前台 · 岗位探索与详情"],
+    summary="岗位匹配度（原型：88% 匹配得分）",
+    description=(
+        "用户技能画像 × 岗位 requires 的**加权**匹配度，供原型 4 处使用："
+        "岗位卡片匹配得分、顶部锁定目标、诊断页基准匹配度、学习路径活跃目标卡。\n\n"
+        "算法：单项达标率 = `min(用户等级 / 要求等级, 1)`；"
+        "总分 = `Σ(达标率 × 权重) / Σ权重 × 100`。权重取自国家职业技能标准的权重表。\n\n"
+        "返回 `strengths`（已达标）与 `gaps`（未达标，按权重倒序）可直接渲染"
+        "「优势精通 / 关键能力缺口」两栏；`radar` 按技能大类聚合达标率。\n\n"
+        "> 用户画像为空时匹配度为 0，属正常——需先做一次 AI 诊断。"
+    ),
+    response_description="{ occupation, match_score, items[], strengths[], gaps[], radar }",
+)
+def student_position_match(
+    position_id: str = Query(..., description="岗位节点 id（含冒号，用 query 传）"),
+    limit: int = Query(50, ge=1, le=200, description="参与比对的技能条数上限"),
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    try:
+        return biz.position_match(user.user_id, position_id, limit=limit)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@router.get(
     "/positions/{position_id:path}",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=PositionDetailOut,
     summary="岗位详情 + 技能要求",
     description=(
@@ -202,7 +228,7 @@ def student_position_detail(
 
 @router.get(
     "/skills",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=SkillListOut,
     summary="技能库列表（分页，默认逻辑技能聚合）",
     description=(
@@ -236,7 +262,7 @@ def student_skills(
 
 @router.get(
     "/skills/bundles/{skill_key:path}",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=SkillOut,
     summary="逻辑技能详情（L1–L5 聚合）",
     description="skill_key 或 bundle:{region}:{key}；返回 levels / level_descriptions / counts。",
@@ -255,7 +281,7 @@ def student_skill_bundle(
 
 @router.get(
     "/goal",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=GoalOut | None,
     summary="当前学习目标岗位",
     description="对齐 state.goal；未设置返回 null。",
@@ -267,7 +293,7 @@ def student_get_goal(user: TempUser = Depends(require_temp_user)) -> GoalOut | N
 
 @router.put(
     "/goal",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     response_model=GoalOut,
     summary="设定学习目标岗位",
     description="对齐 setGoal：锁定目标并记成就 first_goal。",
@@ -290,7 +316,7 @@ def student_set_goal(
 
 @router.delete(
     "/goal",
-    tags=["前台 · 学员探索"],
+    tags=["前台 · 岗位探索与详情"],
     summary="清除学习目标",
     description="对齐 clearGoal。",
 )
@@ -304,7 +330,7 @@ def student_clear_goal(user: TempUser = Depends(require_temp_user)) -> dict[str,
 
 @router.post(
     "/diagnosis/resume",
-    tags=["前台 · 学员诊断"],
+    tags=["前台 · AI 诊断"],
     summary="简历智能诊断",
     description="对齐 vDiagResume：粘贴简历 → 规则解析技能 → 可选对标岗位出报告。",
 )
@@ -325,8 +351,76 @@ def diag_resume(
 
 
 @router.post(
+    "/diagnosis/resume/upload",
+    tags=["前台 · AI 诊断"],
+    summary="上传简历文件诊断（PDF / DOCX / TXT）",
+    description=(
+        "对应原型「拖拽简历文件到此处」：`multipart/form-data` 上传，"
+        "服务端抽取文本后走与 `POST /diagnosis/resume` 相同的诊断流程。\n\n"
+        "- 支持 **PDF / DOCX / TXT**，单文件 ≤ 20MB\n"
+        "- PDF 优先 pypdf 抽取，失败回退 PyMuPDF；**扫描件/图片型 PDF 无法提取文字**，"
+        "此时返回 400 并提示改用文本粘贴\n"
+        "- 未显式传 `target_occupation_id` 时自动取当前锁定目标岗位\n\n"
+        "返回结构与 `POST /diagnosis/resume` 一致，额外带 `source_file`。"
+    ),
+)
+async def diag_resume_upload(
+    file: UploadFile = File(..., description="简历文件（PDF/DOCX/TXT，≤20MB）"),
+    target_occupation_id: str | None = Query(
+        None, description="对标岗位 id；缺省取当前锁定目标"
+    ),
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    from backend.api.resume_parse import ResumeParseError, parse_resume_bytes
+
+    data = await file.read()
+    try:
+        text = parse_resume_bytes(file.filename or "", data)
+    except ResumeParseError as e:
+        raise HTTPException(400, str(e)) from e
+
+    occ = target_occupation_id
+    if not occ:
+        g = biz.get_goal(user.user_id)
+        occ = (g or {}).get("occupation_id")
+    out = biz.create_resume_diagnosis(
+        user.user_id,
+        user.user_name,
+        content_text=text,
+        target_occupation_id=occ,
+    )
+    out["source_file"] = {
+        "filename": file.filename,
+        "size": len(data),
+        "chars": len(text),
+    }
+    return out
+
+
+@router.get(
+    "/diagnosis/resume/sample",
+    tags=["前台 · AI 诊断"],
+    summary="范例简历（一键体验用）",
+    description=(
+        "对应原型「使用标准范例简历一键体验解析」。"
+        "范例文本刻意使用库内真实存在的技能名（配料准备 / 搅拌操作 / 泵送操作 …），"
+        "因此解析后能命中技能库并算出有意义的匹配度。"
+    ),
+    response_description="{ content_text, note }",
+)
+def diag_resume_sample(user: TempUser = Depends(require_temp_user)) -> dict[str, Any]:
+    _ = user
+    from backend.api.resume_parse import SAMPLE_RESUME
+
+    return {
+        "content_text": SAMPLE_RESUME,
+        "note": "把 content_text 提交给 POST /v1/student/diagnosis/resume 即可体验",
+    }
+
+
+@router.post(
     "/diagnosis/chat/sessions",
-    tags=["前台 · 学员诊断"],
+    tags=["前台 · AI 诊断"],
     summary="开启对话测评会话",
     description="对齐 vDiagChat：创建会话并返回首问。",
 )
@@ -345,7 +439,7 @@ def diag_chat_start(
 
 @router.post(
     "/diagnosis/chat/sessions/{session_id}/messages",
-    tags=["前台 · 学员诊断"],
+    tags=["前台 · AI 诊断"],
     summary="提交对话回答",
     description="学员回复后规则打分并结束会话，返回报告。",
 )
@@ -362,7 +456,7 @@ def diag_chat_msg(
 
 @router.get(
     "/diagnosis/report",
-    tags=["前台 · 学员诊断"],
+    tags=["前台 · AI 诊断"],
     response_model=DiagnosisReportOut | None,
     summary="能力诊断报告",
     description="对齐 vDiagReport：匹配度、雷达、缺口。可按 session_id 或最近一次。",
@@ -386,7 +480,7 @@ def diag_report(
 
 @router.get(
     "/learn/path",
-    tags=["前台 · 学员学习"],
+    tags=["前台 · 学习路径"],
     response_model=LearningPathOut | None,
     summary="当前学习路径",
     description="对齐 vLearnPath / vLearnCenter 路径进度。",
@@ -398,7 +492,7 @@ def learn_path_get(user: TempUser = Depends(require_temp_user)) -> LearningPathO
 
 @router.post(
     "/learn/path/generate",
-    tags=["前台 · 学员学习"],
+    tags=["前台 · 学习路径"],
     response_model=LearningPathOut,
     summary="按目标/诊断生成学习路径",
     description="缺口技能优先；无 goal 时 body.occupation_id 必填。",
@@ -420,7 +514,7 @@ def learn_path_gen(
 
 @router.post(
     "/learn/steps/{step_id}/complete",
-    tags=["前台 · 学员学习"],
+    tags=["前台 · 学习路径"],
     response_model=LearningPathOut,
     summary="完成学习步骤",
     description="对齐「已标记学完」。",
@@ -438,7 +532,7 @@ def learn_step_done(
 
 @router.get(
     "/learn/resources",
-    tags=["前台 · 学员学习"],
+    tags=["前台 · 学习路径"],
     response_model=ResourceListOut,
     summary="学习资源列表",
     description="对齐资源卡片；当前映射 KG course 节点。",
@@ -461,7 +555,7 @@ def learn_resources(
 
 @router.get(
     "/me",
-    tags=["前台 · 学员我的"],
+    tags=["前台 · 我的"],
     response_model=MeOut,
     summary="我的主页摘要",
     description="对齐 vMe：目标、成长值、徽章、技能画像、当前路径。",
@@ -472,7 +566,7 @@ def me(user: TempUser = Depends(require_temp_user)) -> MeOut:
 
 @router.get(
     "/me/badges",
-    tags=["前台 · 学员我的"],
+    tags=["前台 · 我的"],
     response_model=list[BadgeDefOut],
     summary="成就定义列表",
     description="全部徽章配置；已解锁见 GET /me.badges。",
@@ -484,7 +578,7 @@ def me_badge_defs(user: TempUser = Depends(require_temp_user)) -> list[BadgeDefO
 
 @router.get(
     "/me/skills",
-    tags=["前台 · 学员我的"],
+    tags=["前台 · 我的"],
     summary="我的技能画像",
 )
 def me_skills(user: TempUser = Depends(require_temp_user)) -> list[dict[str, Any]]:

@@ -97,6 +97,11 @@ def _node_dict(row: dict[str, Any]) -> dict[str, Any]:
     }
     if row.get("status") is not None:
         out["status"] = row.get("status")
+    # 技能大类 / 岗位层级：前台卡片与胜任力图谱要用，需透传到读路径
+    if row.get("category") is not None:
+        out["category"] = row.get("category")
+    if row.get("level") is not None:
+        out["level"] = row.get("level")
     if row.get("updated_by"):
         out["updated_by"] = row.get("updated_by")
         out["updated_by_name"] = row.get("updated_by_name")

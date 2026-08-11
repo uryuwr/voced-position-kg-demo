@@ -144,6 +144,15 @@ CREATE TABLE IF NOT EXISTS biz_event (
   payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- 学习路径「阶段任务树」扩展（前台原型 4.8/4.9/4.10）
+-- CREATE TABLE IF NOT EXISTS 不会给既有表补列，故显式 ALTER。
+ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS stage INT;              -- 阶段序号 1..N
+ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS stage_title TEXT;       -- 阶段名（取技能大类）
+ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS category TEXT;          -- 技能大类
+ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS weight DOUBLE PRECISION;-- 任务权重（国标技能权重）
+ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS duration_min INT;       -- 建议耗时（分钟，按目标等级估算）
+ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS required_level INT;     -- 目标等级
 """
 
 ACHIEVEMENT_SEEDS = [

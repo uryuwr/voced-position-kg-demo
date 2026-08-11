@@ -57,14 +57,125 @@ def skill_level_meta() -> list[dict[str, Any]]:
 
 
 def skill_categories() -> list[dict[str, Any]]:
-    return [
-        {"id": "C1", "name": "运营策略"},
-        {"id": "C2", "name": "数据能力"},
-        {"id": "C3", "name": "内容创作"},
-        {"id": "C4", "name": "商业分析"},
-        {"id": "C5", "name": "技术工程"},
-        {"id": "C6", "name": "通用素养"},
+    """技能大类字典。
+
+    取自国家职业技能标准的「职业功能」维度（见 skill_taxonomy.CATEGORY_ORDER），
+    并与库内 kg_node.category 实际存量对齐——此前这里写死的是「运营策略/数据能力/
+    内容创作…」6 类互联网口径，与库里的分类对不上，导致诊断雷达图的轴是空的。
+    """
+    from backend.kg.pg_store.skill_taxonomy import CATEGORY_ORDER
+
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT category, count(*) n FROM kg_node "
+            "WHERE type='skill_level' AND category IS NOT NULL "
+            "AND COALESCE(status,'published')='published' GROUP BY 1"
+        ).fetchall()
+    counts = {r["category"]: int(r["n"]) for r in rows}
+    out = [
+        {"id": f"C{i + 1}", "name": name, "skill_count": counts.get(name, 0)}
+        for i, name in enumerate(CATEGORY_ORDER)
     ]
+    # 库里出现但不在标准序里的分类，兜底追加，避免字典漏项
+    for name, n in sorted(counts.items(), key=lambda x: -x[1]):
+        if name not in CATEGORY_ORDER:
+            out.append({"id": f"CX{len(out)}", "name": name, "skill_count": n})
+    return out
+
+
+def position_match(
+    user_id: str, occupation_id: str, *, limit: int = 50
+) -> dict[str, Any]:
+    """岗位匹配度：用户技能画像 × 岗位 requires，按国标权重加权。
+
+    单项达标率 = min(用户等级 / 要求等级, 1)；总分 = Σ(达标率 × 权重) / Σ权重 × 100。
+    比旧的「命中数 / 需求数」更准：既考虑等级差距，也让高权重技能影响更大。
+
+    名称对齐：用户技能名与 skill_key 先精确匹配，再退化为包含匹配
+    （用户画像里的技能名来自诊断解析，不保证与国标 skill_key 完全一致）。
+    """
+    occ = get_node(occupation_id)
+    if not occ or occ.get("type") != "occupation":
+        raise ValueError("occupation not found")
+    required = occupation_skill_bundles(occupation_id, limit=limit)
+
+    with connect() as conn:
+        urows = conn.execute(
+            "SELECT skill_name, level, score FROM biz_user_skill WHERE user_id=%s",
+            (user_id,),
+        ).fetchall()
+    user_levels: dict[str, int] = {}
+    for r in urows:
+        nm = (r["skill_name"] or "").strip()
+        if nm:
+            user_levels[nm] = max(user_levels.get(nm, 0), int(r["level"] or 0))
+
+    def _user_level_for(skill_key: str) -> tuple[int, str | None]:
+        if skill_key in user_levels:
+            return user_levels[skill_key], skill_key
+        k = (skill_key or "").lower()
+        for nm, lv in user_levels.items():
+            n = nm.lower()
+            if n and (n in k or k in n):
+                return lv, nm
+        return 0, None
+
+    items: list[dict[str, Any]] = []
+    total_w = 0.0
+    got_w = 0.0
+    for b in required:
+        w = b.get("weight")
+        w = float(w) if isinstance(w, (int, float)) else 0.0
+        req = b.get("required_level") or 0
+        ulv, via = _user_level_for(b.get("skill_key") or "")
+        if req:
+            ratio = min(ulv / req, 1.0) if ulv else 0.0
+        else:
+            ratio = 1.0 if ulv else 0.0
+        total_w += w
+        got_w += ratio * w
+        items.append(
+            {
+                "skill_key": b.get("skill_key"),
+                "category": b.get("category"),
+                "required_level": req,
+                "user_level": ulv,
+                "weight": w,
+                "weight_pct": b.get("weight_pct"),
+                "is_core": b.get("is_core"),
+                "ratio": round(ratio, 3),
+                "ok": ratio >= 1.0,
+                "matched_by": via,
+            }
+        )
+
+    score = round(100 * got_w / total_w, 1) if total_w else 0.0
+    strengths = [i for i in items if i["ok"]]
+    gaps = sorted(
+        (i for i in items if not i["ok"]), key=lambda x: -(x["weight"] or 0)
+    )
+    # 按技能大类聚合达标率 → 诊断雷达图的真实轴
+    by_cat: dict[str, list[float]] = {}
+    for i in items:
+        by_cat.setdefault(i["category"] or "未分类", []).append(i["ratio"])
+    radar = {
+        "categories": list(by_cat),
+        "scores": [round(100 * sum(v) / len(v)) for v in by_cat.values()],
+    }
+    return {
+        "occupation": {
+            "id": occ.get("id"),
+            "name": occ.get("name"),
+            "level": occ.get("level"),
+        },
+        "match_score": score,
+        "skill_total": len(items),
+        "matched_count": len(strengths),
+        "items": items,
+        "strengths": strengths,
+        "gaps": gaps,
+        "radar": radar,
+    }
 
 
 def _node_to_profession(n: dict[str, Any]) -> dict[str, Any]:
@@ -163,6 +274,10 @@ def _bundle_to_skill_out(b: dict[str, Any]) -> dict[str, Any]:
         "desc": b.get("desc") or b.get("description"),
         "required_level": req,
         "weight": b.get("weight"),
+        # 胜任力图谱的「权重」「类别」两列 + 核心技能标记（原型 2.4 / 2.5）
+        "weight_pct": b.get("weight_pct"),
+        "is_core": b.get("is_core"),
+        "category": b.get("category"),
         "source_url": b.get("source_url"),
         "attrs": {
             "skill_key": b.get("skill_key"),
@@ -674,6 +789,9 @@ def create_resume_diagnosis(
                 """,
                 (user_id, sid_key, s["skill_name"], s["level"], s["score"]),
             )
+        # 先提交技能画像：_build_report → position_match 另开连接读 biz_user_skill，
+        # 未提交则读不到本次解析结果，匹配度会恒为 0。
+        conn.commit()
         report = _build_report(user_id, target_occupation_id, skills, channel="resume")
         if agent_summary:
             report["summary"] = agent_summary
@@ -812,6 +930,8 @@ def post_chat_message(
                 ),
             ),
         )
+        # 同 resume 流程：先提交技能画像，否则 position_match 读不到本轮结果
+        conn.commit()
         # finish after user message
         report = _build_report(
             user_id, sess.get("target_occupation_id"), skills, channel="chat"
@@ -935,10 +1055,33 @@ def _build_report(
             )
     total_req = max(len(required), 1)
     match_score = round(100 * matched / total_req, 1) if required else 55.0
-    radar = {
-        "categories": [c["name"] for c in skill_categories()],
-        "scores": [min(100, 30 + 10 * len(user_skills))] * 6,
-    }
+    # 雷达图：按技能大类聚合真实达标率。
+    # 旧实现是「写死 6 类 + 每轴同一个占位分」，与库内 10 类分类对不上，图形没有信息量。
+    radar = {"categories": [], "scores": []}
+    if occupation_id:
+        try:
+            pm = position_match(user_id, occupation_id)
+            match_score = pm["match_score"]      # 加权匹配度，替代「命中数/需求数」
+            radar = pm["radar"]
+            gaps = [
+                {
+                    "skill_id": g.get("skill_key"),
+                    "skill_name": g.get("skill_key"),
+                    "category": g.get("category"),
+                    "required_level": g.get("required_level"),
+                    "user_level": g.get("user_level"),
+                    "required_weight": g.get("weight"),
+                    "weight_pct": g.get("weight_pct"),
+                    "is_core": g.get("is_core"),
+                    "suggestion": "建议通过课程/实操补齐该技能",
+                }
+                for g in pm["gaps"]
+            ]
+        except Exception:
+            pass
+    if not radar["categories"]:
+        cats = [c["name"] for c in skill_categories()]
+        radar = {"categories": cats, "scores": [0] * len(cats)}
     return {
         "user_id": user_id,
         "channel": channel,
@@ -1025,6 +1168,22 @@ def generate_path(
         return (is_gap, wf)
 
     ordered = sorted(skills, key=_prio)
+
+    # 阶段划分：按技能大类分组，阶段顺序沿用国标「职业功能」推进顺序
+    # （安全环保 → 作业准备 → 操作加工 → 检修/质检 → 技术管理 → 培训指导），
+    # 与技能前置关系、技能图谱的分区顺序同源，学员看到的先后是一致的。
+    from backend.kg.pg_store.skill_taxonomy import category_rank
+
+    ordered = ordered[:8]
+    stage_of: dict[str, int] = {}
+    for cat in sorted(
+        {(s.get("category") or "未分类") for s in ordered}, key=category_rank
+    ):
+        stage_of[cat] = len(stage_of) + 1
+
+    # 建议耗时：按目标等级估算（无真实课时数据，标注为估算值）
+    _DURATION_BY_LEVEL = {1: 30, 2: 45, 3: 60, 4: 90, 5: 120}
+
     with connect() as conn:
         conn.execute(
             "UPDATE biz_learning_path SET status='archived' WHERE user_id=%s AND status='active'",
@@ -1041,20 +1200,29 @@ def generate_path(
         ).fetchone()
         steps = []
         seq = 0
-        for s in ordered[:8]:
+        for s in ordered:
             sk = s.get("skill_key") or s.get("skill_name") or s.get("name") or "技能"
             seq += 1
+            req = s.get("required_level")
             title = f"补齐技能：{sk}"
-            if s.get("required_level"):
-                title += f"（目标 L{s['required_level']}）"
+            if req:
+                title += f"（目标 L{req}）"
+            cat = s.get("category") or "未分类"
             st = conn.execute(
                 """
                 INSERT INTO biz_learning_step
-                  (path_id, seq, kind, skill_id, skill_name, title, status)
-                VALUES (%s,%s,'skill',%s,%s,%s,'pending')
+                  (path_id, seq, kind, skill_id, skill_name, title, status,
+                   stage, stage_title, category, weight, duration_min, required_level)
+                VALUES (%s,%s,'skill',%s,%s,%s,'pending',%s,%s,%s,%s,%s,%s)
                 RETURNING *
                 """,
-                (path["id"], seq, s.get("id"), sk, title),
+                (
+                    path["id"], seq, s.get("id"), sk, title,
+                    stage_of.get(cat), cat, cat,
+                    s.get("weight"),
+                    _DURATION_BY_LEVEL.get(int(req or 0), 45),
+                    req,
+                ),
             ).fetchone()
             steps.append(dict(st))
             # 挂可学课程步骤（有边才有；无则跳过——HITL 资源不足）
@@ -1064,8 +1232,9 @@ def generate_path(
                 st2 = conn.execute(
                     """
                     INSERT INTO biz_learning_step
-                      (path_id, seq, kind, skill_id, skill_name, resource_id, resource_title, title, status)
-                    VALUES (%s,%s,'course',%s,%s,%s,%s,%s,'pending')
+                      (path_id, seq, kind, skill_id, skill_name, resource_id, resource_title, title, status,
+                       stage, stage_title, category, weight, duration_min, required_level)
+                    VALUES (%s,%s,'course',%s,%s,%s,%s,%s,'pending',%s,%s,%s,%s,%s,%s)
                     RETURNING *
                     """,
                     (
@@ -1076,6 +1245,13 @@ def generate_path(
                         course.get("id"),
                         course.get("name"),
                         ct,
+                        stage_of.get(cat),
+                        cat,
+                        cat,
+                        # 课程步骤不重复计权，避免同一技能被算两次
+                        0.0,
+                        _DURATION_BY_LEVEL.get(int(req or 0), 45),
+                        req,
                     ),
                 ).fetchone()
                 steps.append(dict(st2))
@@ -1111,13 +1287,49 @@ def get_active_path(user_id: str) -> dict[str, Any] | None:
             (path["id"],),
         ).fetchall()
     done = sum(1 for s in steps if s["status"] == "completed")
+    rows = [_row_jsonable(s) for s in steps]
+
+    # 阶段任务树（原型 4.8）：按 stage 分组，阶段权重 = 该阶段任务权重和 / 总权重
+    total_w = sum(float(s.get("weight") or 0) for s in rows)
+    done_w = sum(
+        float(s.get("weight") or 0) for s in rows if s.get("status") == "completed"
+    )
+    stages: dict[int, dict[str, Any]] = {}
+    for s in rows:
+        stg = s.get("stage") or 0
+        g = stages.setdefault(
+            stg,
+            {
+                "stage": stg,
+                "title": s.get("stage_title") or s.get("category") or "未分组",
+                "steps": [],
+                "weight": 0.0,
+                "duration_min": 0,
+            },
+        )
+        g["steps"].append(s)
+        g["weight"] += float(s.get("weight") or 0)
+        g["duration_min"] += int(s.get("duration_min") or 0)
+    stage_list = []
+    for g in sorted(stages.values(), key=lambda x: x["stage"]):
+        g_done = sum(1 for s in g["steps"] if s.get("status") == "completed")
+        g["stage_weight_pct"] = round(100 * g["weight"] / total_w) if total_w else 0
+        g["completed"] = g_done
+        g["total"] = len(g["steps"])
+        stage_list.append(g)
+
     return {
         "path": _row_jsonable(path),
-        "steps": [_row_jsonable(s) for s in steps],
+        "steps": rows,
+        "stages": stage_list,
         "progress": {
             "completed": done,
             "total": len(steps),
             "ratio": round(done / len(steps), 3) if steps else 0,
+            # 原型顶部「35%（完成权重/总权重）」用这个，而非按任务条数
+            "weighted_ratio": round(done_w / total_w, 3) if total_w else 0,
+            "weighted_pct": round(100 * done_w / total_w) if total_w else 0,
+            "duration_min_total": sum(int(s.get("duration_min") or 0) for s in rows),
         },
     }
 

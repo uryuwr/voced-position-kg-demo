@@ -99,30 +99,60 @@ OPENAPI_TAGS = [
             "其余 `/v1/*` 均需 `Authorization: MAC ...`。"
         ),
     },
-    # ── 前台：面向学员与公开展示，只返回发布态 ──
+    # ── 前台：按原型页面分组，只返回发布态 ──
     {
-        "name": "前台 · 图检索",
+        "name": "前台 · 岗位探索与详情",
         "description": (
-            "**可见状态：仅 published。** "
-            "行业 / 专业 / 岗位 / 技能的图谱检索与展示："
-            "行业三层关联图、岗位技能图谱、能力全景、search / expand 通用图探索。"
+            "**原型页：岗位探索学习页 (P1) + 岗位详情弹层 (P2)**　·　可见状态：仅 published\n\n"
+            "| 原型功能 | 接口 |\n| --- | --- |\n"
+            "| 行业领域 Tab | `GET /industries` |\n"
+            "| 岗位搜索 / 卡片列表 | `GET /positions` |\n"
+            "| 核心胜任力要求、胜任力图谱表（技能/等级/权重/类别） | `GET /positions/skill-composition` |\n"
+            "| **匹配得分 88%** | `GET /positions/match` |\n"
+            "| 锁定 / 已锁定目标 | `GET·PUT·DELETE /goal` |\n"
+            "| 岗位详情 | `GET /positions/{id}` |\n"
+            "| 等级与类目字典 | `GET /meta/skill-levels`、`/meta/skill-categories` |"
         ),
     },
     {
-        "name": "前台 · 学员探索",
-        "description": "**可见状态：仅 published。** 学员侧四维浏览与检索。",
+        "name": "前台 · AI 诊断",
+        "description": (
+            "**原型页：AI 智能诊断 (P3)**　·　可见状态：仅 published\n\n"
+            "三步流程：① 简历解析推断 ② 对话问答测评 ③ 综合能力报告。\n\n"
+            "| 原型功能 | 接口 |\n| --- | --- |\n"
+            "| 拖拽上传简历 (PDF/DOCX，≤20MB) | `POST /diagnosis/resume/upload` |\n"
+            "| 粘贴文本诊断 | `POST /diagnosis/resume` |\n"
+            "| 范例简历一键体验 | `GET /diagnosis/resume/sample` |\n"
+            "| 对话问答测评 | `POST /diagnosis/chat/sessions` + `/messages` |\n"
+            "| 综合能力报告（含 radar / gaps） | `GET /diagnosis/report` |\n\n"
+            "> 大模型解析需配置 AI 网关（`LLM_BASE_URL`/`GITHUB_TOKEN`/`LLM_MODEL`）；"
+            "未配置时自动降级为「技能库关键词召回」，接口契约不变。"
+        ),
     },
     {
-        "name": "前台 · 学员诊断",
-        "description": "**可见状态：仅 published。** 简历解析 / 对话诊断 / 能力报告。",
+        "name": "前台 · 学习路径",
+        "description": (
+            "**原型页：岗位自适应学习路径 (P4)**　·　可见状态：仅 published\n\n"
+            "| 原型功能 | 接口 / 字段 |\n| --- | --- |\n"
+            "| 生成自适应路径（避开已精通、优先攻关缺口） | `POST /learn/path/generate` |\n"
+            "| 阶段任务树（第一/二/三阶段 + 阶段权重） | `GET /learn/path` → `stages[]` |\n"
+            "| 任务项：关联技能 / 建议耗时 / 完成态 | `stages[].steps[]` |\n"
+            "| 路径总体进度（完成权重/总权重） | `progress.weighted_pct` |\n"
+            "| 完成任务 | `POST /learn/steps/{id}/complete` |\n"
+            "| 学习资源 | `GET /learn/resources` |"
+        ),
     },
     {
-        "name": "前台 · 学员学习",
-        "description": "**可见状态：仅 published。** 学习路径与资源推荐。",
-    },
-    {
-        "name": "前台 · 学员我的",
+        "name": "前台 · 我的",
         "description": "**可见状态：仅 published。** 个人画像、技能档案与徽章。",
+    },
+    {
+        "name": "前台 · 图谱检索",
+        "description": (
+            "**通用知识图谱检索**（管理端图谱页 `/kg` 与对外图谱能力共用）　·　可见状态：仅 published\n\n"
+            "行业三层关联图、岗位技能图谱（分类 + 前置关系）、能力全景、"
+            "search / expand 通用图探索。与上面按页面分组的学员端接口相互独立。"
+        ),
     },
     # ── 管理台：可见 published/draft/disabled；archived 为逻辑删除，任何接口均不返回 ──
     {

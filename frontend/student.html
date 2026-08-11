@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>学员端 · 岗位探索与自适应提升（E2E 演示）</title>
+  <script src="/js/api-client.js"></script>
+  <style>
+    :root { --bg:#0f172a; --panel:#1e293b; --line:#334155; --text:#e2e8f0; --muted:#94a3b8;
+            --primary:#6366f1; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-size:14px;
+           font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif; }
+    header { padding:14px 20px; background:var(--panel); border-bottom:1px solid var(--line); }
+    header h1 { margin:0 0 3px; font-size:18px; }
+    header .sub { color:var(--muted); font-size:12px; }
+    .tabs { display:flex; gap:6px; margin-top:12px; flex-wrap:wrap; }
+    .tabs button { background:#0b1220; color:var(--muted); border:1px solid var(--line);
+                   border-radius:8px; padding:7px 14px; cursor:pointer; font-size:13px; }
+    .tabs button.on { background:var(--primary); color:#fff; border-color:var(--primary); font-weight:600; }
+    main { padding:16px 20px 40px; }
+    .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+    input, select { background:#0b1220; color:var(--text); border:1px solid var(--line);
+                    border-radius:8px; padding:8px 11px; font-size:13px; }
+    input { min-width:220px; }
+    button.act { background:var(--primary); color:#fff; border:0; border-radius:8px;
+                 padding:8px 14px; cursor:pointer; font-size:13px; }
+    button.ghost { background:transparent; color:var(--text); border:1px solid var(--line);
+                   border-radius:8px; padding:7px 12px; cursor:pointer; font-size:13px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:12px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:13px 15px; }
+    .card h3 { margin:0 0 6px; font-size:15px; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .tag { font-size:11px; border-radius:999px; padding:2px 9px; background:#0b1220;
+           border:1px solid var(--line); color:var(--muted); }
+    .tag.lv { color:#a5b4fc; border-color:#4f46e5; }
+    .tag.core { color:#fca5a5; border-color:#b91c1c; }
+    .score { font-size:19px; font-weight:700; color:var(--ok); }
+    .muted { color:var(--muted); font-size:12px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+    th { color:var(--muted); font-weight:500; font-size:12px; }
+    .bar-wrap { background:#0b1220; border-radius:6px; height:8px; overflow:hidden; min-width:110px; }
+    .bar-in { height:100%; background:var(--ok); }
+    .stage { border-left:3px solid var(--primary); padding-left:12px; margin-bottom:16px; }
+    .step { display:flex; gap:10px; align-items:center; padding:7px 0; border-bottom:1px dashed var(--line); }
+    .step.done .t { text-decoration:line-through; color:var(--muted); }
+    .step .t { flex:1; }
+    textarea { width:100%; min-height:130px; background:#0b1220; color:var(--text);
+               border:1px solid var(--line); border-radius:8px; padding:10px; font-size:13px; }
+    .drop { border:2px dashed var(--line); border-radius:12px; padding:26px; text-align:center;
+            color:var(--muted); cursor:pointer; }
+    .drop.over { border-color:var(--primary); color:var(--text); }
+    .toast { position:fixed; left:50%; top:14px; transform:translateX(-50%); background:#000;
+             border:1px solid var(--line); padding:9px 16px; border-radius:8px; z-index:99; display:none; }
+    .empty { color:var(--muted); padding:26px; text-align:center; }
+    pre { background:#0b1220; border:1px solid var(--line); border-radius:8px; padding:10px;
+          font-size:11px; overflow:auto; max-height:240px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>岗位探索与自适应提升中心</h1>
+    <div class="sub">E2E 演示页：覆盖 岗位探索 / 岗位详情 / AI 诊断 / 自适应学习路径 四个模块（不还原视觉，重在打通功能）</div>
+    <div class="bar" style="margin-top:10px">
+      <span class="muted">当前锁定目标：</span><b id="goalName">未锁定</b>
+      <span id="goalMatch" class="score"></span>
+      <button class="ghost" id="btnClearGoal">清除目标</button>
+      <span class="muted" id="who"></span>
+    </div>
+    <div class="tabs">
+      <button data-tab="explore" class="on">① 岗位探索</button>
+      <button data-tab="detail">② 岗位详情</button>
+      <button data-tab="diag">③ AI 诊断</button>
+      <button data-tab="path">④ 学习路径</button>
+    </div>
+  </header>
+  <main>
+    <section id="tab-explore">
+      <div class="bar">
+        <input id="q" placeholder="搜索岗位名称，如 混凝土工 / 数据" />
+        <button class="act" id="btnSearch">搜索</button>
+        <span class="muted" id="exploreMeta"></span>
+      </div>
+      <div class="grid" id="posGrid"><div class="empty">点「搜索」加载岗位</div></div>
+    </section>
+
+    <section id="tab-detail" hidden>
+      <div class="bar"><span class="muted">从「岗位探索」点卡片进入，或先搜索再选一个岗位</span></div>
+      <div id="detailBox"><div class="empty">尚未选择岗位</div></div>
+    </section>
+
+    <section id="tab-diag" hidden>
+      <div class="card" style="margin-bottom:12px">
+        <h3>1. 简历解析推断</h3>
+        <div class="bar">
+          <button class="ghost" id="btnSample">使用范例简历一键体验</button>
+          <span class="muted">或粘贴文本 / 拖拽文件（PDF、DOCX、TXT，≤20MB）</span>
+        </div>
+        <div class="drop" id="drop">拖拽简历文件到此处，或点击选择</div>
+        <input type="file" id="file" accept=".pdf,.docx,.txt,.md" hidden />
+        <textarea id="resumeText" placeholder="粘贴简历文本…" style="margin-top:10px"></textarea>
+        <div class="bar" style="margin-top:8px">
+          <button class="act" id="btnDiagText">文本诊断</button>
+          <span class="muted" id="diagMeta"></span>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <h3>2. 对话问答测评</h3>
+        <div class="bar">
+          <button class="ghost" id="btnChatStart">开启会话</button>
+          <input id="chatMsg" placeholder="输入你的回答…" style="flex:1" />
+          <button class="act" id="btnChatSend">提交回答</button>
+        </div>
+        <div id="chatBox" class="muted">尚未开启会话</div>
+      </div>
+      <div class="card">
+        <h3>3. 综合能力报告</h3>
+        <button class="ghost" id="btnReport">刷新报告</button>
+        <div id="reportBox"><div class="empty">尚无报告</div></div>
+      </div>
+    </section>
+
+    <section id="tab-path" hidden>
+      <div class="bar">
+        <button class="act" id="btnGenPath">生成 / 重新生成自适应路径</button>
+        <span class="muted" id="pathMeta"></span>
+      </div>
+      <div id="pathBox"><div class="empty">尚无路径，先锁定目标并做一次诊断</div></div>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[m]));
+    const S = { positions: [], current: null, goal: null, session: null };
+
+    function toast(m) { const t=$("toast"); t.textContent=m; t.style.display="block"; setTimeout(()=>t.style.display="none", 2800); }
+    // UC MAC 签名基于完整 URL，同 URL 重复请求会被判重放 → 加自增序号
+    let _n = 0;
+    const api = (u, o) => window.VocedApi.apiFetch(u + (u.includes("?") ? "&" : "?") + "_n=" + (++_n), o || {});
+
+    document.querySelectorAll(".tabs button").forEach((b) => {
+      b.onclick = () => {
+        document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+        ["explore","detail","diag","path"].forEach((t) => { $("tab-" + t).hidden = t !== b.dataset.tab; });
+        if (b.dataset.tab === "path") loadPath();
+        if (b.dataset.tab === "diag") loadReport();
+      };
+    });
+
+    /* ── ① 岗位探索 ─────────────────────────────── */
+    async function search() {
+      const q = $("q").value.trim();
+      $("posGrid").innerHTML = '<div class="empty">加载中…</div>';
+      try {
+        const d = await api("/v1/student/positions?page_size=12" + (q ? "&q=" + encodeURIComponent(q) : ""));
+        S.positions = d.items || [];
+        $("exploreMeta").textContent = `共检索到 ${d.total ?? S.positions.length} 个岗位`;
+        renderPositions();
+      } catch (e) { $("posGrid").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
+    }
+    function renderPositions() {
+      if (!S.positions.length) { $("posGrid").innerHTML = '<div class="empty">无结果</div>'; return; }
+      $("posGrid").innerHTML = S.positions.map((p, i) => `
+        <div class="card">
+          <div class="row">
+            ${p.industry_name ? `<span class="tag">${esc(p.industry_name)}</span>` : ""}
+            ${p.level ? `<span class="tag lv">L${p.level}</span>` : ""}
+            ${p.salary ? `<span class="tag">${esc(p.salary)}</span>` : `<span class="tag muted">薪资待补</span>`}
+            <span style="flex:1"></span>
+            <span class="score" id="ms${i}">–</span>
+          </div>
+          <h3>${esc(p.name)}</h3>
+          <div class="muted">${esc((p.desc || "").slice(0, 60))}</div>
+          <div class="row" style="margin-top:10px">
+            <button class="ghost" data-detail="${i}">岗位详情</button>
+            <button class="ghost" data-lock="${i}">${S.goal && S.goal.occupation_id === p.id ? "已锁定" : "锁定目标"}</button>
+            <button class="act" data-diag="${i}">AI 智能诊断</button>
+          </div>
+        </div>`).join("");
+      $("posGrid").querySelectorAll("[data-detail]").forEach((el) => el.onclick = () => openDetail(S.positions[+el.dataset.detail]));
+      $("posGrid").querySelectorAll("[data-lock]").forEach((el) => el.onclick = () => lockGoal(S.positions[+el.dataset.lock]));
+      $("posGrid").querySelectorAll("[data-diag]").forEach((el) => el.onclick = () => {
+        lockGoal(S.positions[+el.dataset.diag]).then(() => document.querySelector('[data-tab="diag"]').click());
+      });
+      S.positions.forEach((p, i) => loadMatch(p.id, "ms" + i));  // 匹配得分逐个异步填
+    }
+    async function loadMatch(pid, elId) {
+      try {
+        const d = await api("/v1/student/positions/match?position_id=" + encodeURIComponent(pid));
+        const el = $(elId); if (el) el.textContent = (d.match_score ?? 0) + "%";
+      } catch (e) { const el = $(elId); if (el) el.textContent = "–"; }
+    }
+
+    /* ── 目标锁定 ─────────────────────────────── */
+    async function lockGoal(p) {
+      if (!p) return;
+      try {
+        await api("/v1/student/goal", { method: "PUT", body: { occupation_id: p.id } });
+        await loadGoal(); renderPositions(); toast("已锁定：" + p.name);
+      } catch (e) { toast("锁定失败：" + (e.message || e)); }
+    }
+    async function loadGoal() {
+      try {
+        const g = await api("/v1/student/goal");
+        S.goal = g && g.occupation_id ? g : null;
+        $("goalName").textContent = S.goal ? (S.goal.occupation_name || S.goal.occupation_id) : "未锁定";
+        $("goalMatch").textContent = "";
+        if (S.goal) {
+          const m = await api("/v1/student/positions/match?position_id=" + encodeURIComponent(S.goal.occupation_id));
+          $("goalMatch").textContent = (m.match_score ?? 0) + "% 匹配";
+        }
+      } catch (e) { S.goal = null; $("goalName").textContent = "未锁定"; }
+    }
+    $("btnClearGoal").onclick = async () => {
+      try { await api("/v1/student/goal", { method: "DELETE" }); await loadGoal(); renderPositions(); toast("已清除目标"); }
+      catch (e) { toast("失败：" + (e.message || e)); }
+    };
+
+    /* ── ② 岗位详情 ─────────────────────────────── */
+    async function openDetail(p) {
+      if (!p) return;
+      S.current = p;
+      document.querySelector('[data-tab="detail"]').click();
+      $("detailBox").innerHTML = '<div class="empty">加载中…</div>';
+      try {
+        const [comp, match] = await Promise.all([
+          api("/v1/student/positions/skill-composition?id=" + encodeURIComponent(p.id)),
+          api("/v1/student/positions/match?position_id=" + encodeURIComponent(p.id)).catch(() => null),
+        ]);
+        const skills = comp.skills || [];
+        $("detailBox").innerHTML = `
+          <div class="card">
+            <div class="row">
+              <h3 style="margin:0">${esc(p.name)}</h3>
+              ${p.level ? `<span class="tag lv">L${p.level}</span>` : ""}
+              <span style="flex:1"></span>
+              <span class="score">${match ? (match.match_score + "% 匹配") : ""}</span>
+            </div>
+            <div class="muted" style="margin-top:6px">${esc(p.desc || "（岗位职责描述待补充）")}</div>
+            <h3 style="margin-top:14px">岗位必备胜任力图谱</h3>
+            <table>
+              <tr><th>技能名称</th><th>要求等级</th><th>权重</th><th>类别</th><th>我的等级</th></tr>
+              ${skills.map((s) => {
+                const mi = match && (match.items || []).find((x) => x.skill_key === s.skill_key);
+                return `<tr>
+                  <td>${esc(s.skill_key || s.name)} ${s.is_core ? '<span class="tag core">核心</span>' : ""}</td>
+                  <td>L${s.required_level ?? "-"}</td>
+                  <td>${s.weight_pct != null ? s.weight_pct + "%" : "-"}</td>
+                  <td class="muted">${esc(s.category || "未分类")}</td>
+                  <td>${mi ? (mi.user_level ? "L" + mi.user_level : "—") : ""}</td>
+                </tr>`;
+              }).join("")}
+            </table>
+            <div class="muted" style="margin-top:8px">技能 ${comp.skill_count ?? skills.length} 项 · 权重合计 ${comp.weight_sum ?? "-"}</div>
+            <div class="row" style="margin-top:12px">
+              <button class="ghost" id="dLock">锁定目标</button>
+              <button class="act" id="dDiag">AI 智能诊断</button>
+            </div>
+          </div>`;
+        $("dLock").onclick = () => lockGoal(p);
+        $("dDiag").onclick = () => lockGoal(p).then(() => document.querySelector('[data-tab="diag"]').click());
+      } catch (e) { $("detailBox").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
+    }
+
+    /* ── ③ AI 诊断 ─────────────────────────────── */
+    $("btnSample").onclick = async () => {
+      try { const d = await api("/v1/student/diagnosis/resume/sample"); $("resumeText").value = d.content_text; toast("已填入范例简历"); }
+      catch (e) { toast("失败：" + (e.message || e)); }
+    };
+    $("btnDiagText").onclick = async () => {
+      const t = $("resumeText").value.trim();
+      if (!t) return toast("请先填写简历文本");
+      $("diagMeta").textContent = "诊断中…";
+      try {
+        const d = await api("/v1/student/diagnosis/resume", { method: "POST", body: { content_text: t } });
+        showDiag(d);
+      } catch (e) { $("diagMeta").textContent = "失败：" + (e.message || e); }
+    };
+    function showDiag(d) {
+      const eng = (d.agent_meta || {}).engine || "-";
+      $("diagMeta").textContent = `解析 ${(d.parsed_skills || []).length} 项技能 · 引擎 ${eng}`;
+      loadGoal(); loadReport();
+      toast("诊断完成，匹配度 " + ((d.report || {}).match_score ?? "-") + "%");
+    }
+    // 文件上传
+    const drop = $("drop");
+    drop.onclick = () => $("file").click();
+    drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+    drop.ondragleave = () => drop.classList.remove("over");
+    drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); };
+    $("file").onchange = (e) => { if (e.target.files[0]) upload(e.target.files[0]); };
+    async function upload(f) {
+      $("diagMeta").textContent = `上传解析中：${f.name}…`;
+      const fd = new FormData(); fd.append("file", f);
+      try {
+        const d = await api("/v1/student/diagnosis/resume/upload", { method: "POST", body: fd });
+        showDiag(d);
+      } catch (e) { $("diagMeta").textContent = "失败：" + (e.message || e); toast(e.message || e); }
+    }
+    // 对话测评
+    $("btnChatStart").onclick = async () => {
+      try {
+        const d = await api("/v1/student/diagnosis/chat/sessions", { method: "POST", body: {} });
+        S.session = d.session_id;
+        $("chatBox").innerHTML = `<div><b>Q：</b>${esc(d.first_question || "")}</div>`;
+      } catch (e) { toast("失败：" + (e.message || e)); }
+    };
+    $("btnChatSend").onclick = async () => {
+      if (!S.session) return toast("请先开启会话");
+      const m = $("chatMsg").value.trim(); if (!m) return;
+      try {
+        const d = await api(`/v1/student/diagnosis/chat/sessions/${S.session}/messages`, { method: "POST", body: { content: m } });
+        $("chatBox").innerHTML += `<div style="margin-top:8px"><b>我：</b>${esc(m)}</div>
+          <div><b>AI：</b>${esc(d.reply || "")} <span class="muted">(${(d.skills || []).length} 项技能线索)</span></div>`;
+        $("chatMsg").value = ""; loadReport();
+      } catch (e) { toast("失败：" + (e.message || e)); }
+    };
+    // 报告
+    $("btnReport").onclick = () => loadReport();
+    async function loadReport() {
+      try {
+        const d = await api("/v1/student/diagnosis/report");
+        if (!d) { $("reportBox").innerHTML = '<div class="empty">尚无报告</div>'; return; }
+        const radar = d.radar || { categories: [], scores: [] };
+        const gaps = d.gaps || [];
+        $("reportBox").innerHTML = `
+          <div class="row" style="margin:8px 0"><span class="score">${d.match_score ?? 0}%</span>
+            <span class="muted">${esc(d.summary || "")}</span></div>
+          <h3 style="font-size:14px">各维能力达标率</h3>
+          <table>${radar.categories.map((c, i) => `
+            <tr><td style="width:150px">${esc(c)}</td>
+              <td><div class="bar-wrap"><div class="bar-in" style="width:${radar.scores[i] || 0}%"></div></div></td>
+              <td style="width:50px">${radar.scores[i] || 0}%</td></tr>`).join("")}</table>
+          <h3 style="font-size:14px;margin-top:14px">关键能力缺口（按权重）</h3>
+          <table>${gaps.slice(0, 8).map((g) => `
+            <tr><td>${esc(g.skill_name || "")}</td>
+              <td class="muted">${esc(g.category || "")}</td>
+              <td>L${g.user_level ?? 0} → L${g.required_level ?? "-"}</td>
+              <td>${g.weight_pct != null ? g.weight_pct + "%" : ""}</td></tr>`).join("") || '<tr><td class="muted">无缺口</td></tr>'}</table>`;
+      } catch (e) { $("reportBox").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
+    }
+
+    /* ── ④ 学习路径 ─────────────────────────────── */
+    $("btnGenPath").onclick = async () => {
+      $("pathMeta").textContent = "生成中…";
+      try { await api("/v1/student/learn/path/generate", { method: "POST", body: {} }); await loadPath(); toast("路径已生成"); }
+      catch (e) { $("pathMeta").textContent = "失败：" + (e.message || e); }
+    };
+    async function loadPath() {
+      try {
+        const d = await api("/v1/student/learn/path");
+        if (!d || !d.path) { $("pathBox").innerHTML = '<div class="empty">尚无路径，先锁定目标并做一次诊断，再点上方生成</div>'; $("pathMeta").textContent=""; return; }
+        const pr = d.progress || {};
+        $("pathMeta").textContent = `目标：${d.path.occupation_name || ""} · 共 ${pr.total || 0} 个任务 · 建议 ${pr.duration_min_total || 0} 分钟`;
+        const stages = d.stages || [];
+        $("pathBox").innerHTML = `
+          <div class="card" style="margin-bottom:12px">
+            <div class="row"><b>路径总体进度</b>
+              <div class="bar-wrap" style="flex:1"><div class="bar-in" style="width:${pr.weighted_pct || 0}%"></div></div>
+              <span class="score">${pr.weighted_pct || 0}%</span>
+              <span class="muted">（完成权重/总权重；按条数为 ${pr.completed||0}/${pr.total||0}）</span>
+            </div>
+          </div>
+          ${stages.map((g) => `
+            <div class="stage">
+              <div class="row"><b>第 ${g.stage} 阶段：${esc(g.title)}</b>
+                <span class="tag">阶段权重 ${g.stage_weight_pct}%</span>
+                <span class="tag">${g.completed}/${g.total}</span>
+                <span class="tag">${g.duration_min} 分钟</span></div>
+              ${g.steps.map((s) => `
+                <div class="step ${s.status === "completed" ? "done" : ""}">
+                  <span class="t">${esc(s.title)}</span>
+                  <span class="muted">关联技能：${esc(s.skill_name || "-")} · ${s.duration_min || 0} 分钟</span>
+                  ${s.status === "completed" ? '<span class="tag">已完成</span>'
+                    : `<button class="ghost" data-step="${s.id}">完成</button>`}
+                </div>`).join("")}
+            </div>`).join("")}`;
+        $("pathBox").querySelectorAll("[data-step]").forEach((el) => el.onclick = async () => {
+          try { await api(`/v1/student/learn/steps/${el.dataset.step}/complete`, { method: "POST", body: {} }); await loadPath(); toast("已完成一步"); }
+          catch (e) { toast("失败：" + (e.message || e)); }
+        });
+      } catch (e) { $("pathBox").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
+    }
+
+    /* ── 启动 ─────────────────────────────── */
+    (async function boot() {
+      try {
+        if (!window.VocedApi) throw new Error("api-client.js 未加载");
+        const r = await window.VocedApi.initAuth();
+        if (r && r.redirecting) return;
+        const u = window.VocedApi.getUser();
+        $("who").textContent = "· 已登录 " + (u.name || u.id || "");
+      } catch (e) {
+        document.querySelector("main").innerHTML = `<div class="empty">需要 UC 登录：${esc(e.message || e)}</div>`;
+        return;
+      }
+      $("btnSearch").onclick = search;
+      $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+      await loadGoal();
+      await search();
+    })();
+  </script>
+</body>
+</html>
