@@ -1043,6 +1043,15 @@ def api_list_nodes(
         False,
         description="True 时联读附加 counts（行业/专业/岗位）；岗位另带 industries",
     ),
+    order_by: str | None = Query(
+        None,
+        description=(
+            "排序：`created_desc` 按创建时间倒序（**新建的排最前**，scope=manage 时的默认）"
+            " | `sort_order` 人工序（前台/图谱默认）| `name` 按名称。"
+            "注意：新建节点 sort_order 为空，用人工序会被排到最后一页"
+        ),
+        examples=["created_desc"],
+    ),
     user: TempUser = Depends(require_temp_user),
 ) -> NodeListResponse:
     _ = user
@@ -1051,6 +1060,7 @@ def api_list_nodes(
         region=region,
         q=q,
         status=status,
+        order_by=order_by,
         page=page,
         page_size=page_size,
         scope=scope,
@@ -1072,6 +1082,8 @@ def api_create_node(
     body: NodeCreate,
     user: TempUser = Depends(require_temp_user),
 ) -> KgNode:
+    from backend.kg.pg_store.write import CodeConflictError
+
     try:
         n = create_node(
             body.model_dump(exclude_none=True),
@@ -1079,6 +1091,18 @@ def api_create_node(
             user_name=user.user_name,
         )
         return KgNode.model_validate(n)
+    except CodeConflictError as e:
+        # 编码冲突用 409 而非 400：前端可据此定位到「编码」字段并展示占用者
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "code_conflict",
+                "message": str(e),
+                "field": "attrs.code",
+                "code": e.code,
+                "existing": e.existing,
+            },
+        ) from e
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -1095,6 +1119,8 @@ def api_patch_node(
     body: NodePatch,
     user: TempUser = Depends(require_temp_user),
 ) -> KgNode:
+    from backend.kg.pg_store.write import CodeConflictError
+
     try:
         n = patch_node(
             node_id,
@@ -1102,6 +1128,17 @@ def api_patch_node(
             user_id=user.user_id,
             user_name=user.user_name,
         )
+    except CodeConflictError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "code_conflict",
+                "message": str(e),
+                "field": "attrs.code",
+                "code": e.code,
+                "existing": e.existing,
+            },
+        ) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not n:

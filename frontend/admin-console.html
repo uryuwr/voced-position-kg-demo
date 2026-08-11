@@ -635,6 +635,7 @@
         region: "CN",
         scope: "manage",
         include_counts: "1",
+        order_by: "created_desc",   // 新建的排最前，否则 sort_order 为空会被甩到末页
       });
       if (state.q) params.set("q", state.q);
       if (state.statusFilter) params.set("status", state.statusFilter);

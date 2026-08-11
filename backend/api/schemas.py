@@ -104,6 +104,21 @@ class KgNode(BaseModel):
     )
     updated_by: str | None = Field(None, description="最近修改人 user-id")
     updated_by_name: str | None = Field(None, description="最近修改人姓名")
+    created_at: str | None = Field(
+        None,
+        description=(
+            "创建时间 ISO8601。管理台列表默认按它倒序（`order_by=created_desc`），"
+            "新建的数据排最前；历史数据用采集时间 fetched_at 回填"
+        ),
+        examples=["2026-08-11T08:04:39+00:00"],
+    )
+    level: int | None = Field(
+        None, description="occupation 岗位层级 1..N；skill_level 可复用为 L 序"
+    )
+    category: str | None = Field(
+        None,
+        description="skill_level 技能大类（国标职业功能维度：安全与环保/作业准备/…）",
+    )
     # 管理列表 scope=manage：有待审变更时附带（库内 status 仍为 published/disabled，前台不受影响）
     pending_change_id: int | None = Field(
         None, description="待审变更 id；有值表示有未审完的操作，但生效状态仍以 status 为准"

@@ -156,6 +156,75 @@ def apply_node_links(
     return created
 
 
+class CodeConflictError(ValueError):
+    """业务编码 attrs.code 在同 region+type 内重复。"""
+
+    def __init__(self, code: str, node_type: str, region: str, existing: dict[str, Any]):
+        self.code = code
+        self.node_type = node_type
+        self.region = region
+        self.existing = existing
+        super().__init__(
+            f"编码 {code} 已被占用：{region}/{node_type} 下已存在"
+            f"「{existing.get('name')}」（id={existing.get('id')}）"
+        )
+
+
+def find_by_code(
+    code: str,
+    node_type: str,
+    region: str = "CN",
+    *,
+    exclude_id: str | None = None,
+    conn: Any = None,
+) -> dict[str, Any] | None:
+    """按 (region, type, attrs.code) 查占用者；归档节点不算占用。
+
+    写入前校验用：这样冲突能返回可读的 409，而不是等数据库唯一索引抛
+    IntegrityError（那种报错前端无法解释给运营看）。
+    """
+    code = (code or "").strip()
+    if not code:
+        return None
+    sql = """
+        SELECT id, name, status FROM kg_node
+        WHERE region = %s AND type = %s
+          AND attrs::json->>'code' = %s
+          AND COALESCE(status, 'published') <> 'archived'
+    """
+    params: list[Any] = [region or "CN", node_type, code]
+    if exclude_id:
+        sql += " AND id <> %s"
+        params.append(exclude_id)
+    sql += " LIMIT 1"
+    if conn is not None:
+        row = conn.execute(sql, params).fetchone()
+    else:
+        with connect() as c:
+            row = c.execute(sql, params).fetchone()
+    return dict(row) if row else None
+
+
+def _assert_code_free(
+    attrs: Any,
+    node_type: str,
+    region: str,
+    *,
+    exclude_id: str | None = None,
+    conn: Any = None,
+) -> None:
+    if not isinstance(attrs, dict):
+        return
+    code = str(attrs.get("code") or "").strip()
+    if not code:
+        return
+    hit = find_by_code(
+        code, node_type, region or "CN", exclude_id=exclude_id, conn=conn
+    )
+    if hit:
+        raise CodeConflictError(code, node_type, region or "CN", hit)
+
+
 def create_node(
     data: dict[str, Any],
     *,
@@ -167,6 +236,10 @@ def create_node(
     body = _strip_link_fields(data)
     nid = (body.get("id") or "").strip() or f"CN:manual:{body['type']}:{uuid.uuid4().hex[:12]}"
     status = body.get("status") or "draft"
+    # 写入前校验业务编码唯一性（同 region+type 内），冲突直接抛给上层转 409
+    _assert_code_free(
+        body.get("attrs"), body["type"], body.get("region") or "CN", exclude_id=nid
+    )
     # 直写 published 须过 BR 门禁；先落 draft 再在调用方升权，或此处拦截
     if str(status).lower() == "published":
         ntype = (body.get("type") or "").lower()
@@ -310,6 +383,16 @@ def patch_node(
         fields.append("aliases = %(aliases)s")
         params["aliases"] = _json_or_none(body["aliases"])
     if "attrs" in body:
+        # 改 code 也要过唯一性校验：排除自身，避免「保存自己」被误判冲突
+        from backend.kg.pg_store.query import get_node as _get_node
+
+        _cur = _get_node(node_id) or {}
+        _assert_code_free(
+            body["attrs"],
+            _cur.get("type") or body.get("type") or "",
+            body.get("region") or _cur.get("region") or "CN",
+            exclude_id=node_id,
+        )
         fields.append("attrs = %(attrs)s")
         params["attrs"] = _json_or_none(body["attrs"])
     if fields:

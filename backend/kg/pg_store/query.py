@@ -102,6 +102,10 @@ def _node_dict(row: dict[str, Any]) -> dict[str, Any]:
         out["category"] = row.get("category")
     if row.get("level") is not None:
         out["level"] = row.get("level")
+    # 创建时间：管理台列表按它倒序，也要能显示「创建于」
+    ca = row.get("created_at")
+    if ca is not None:
+        out["created_at"] = ca.isoformat() if hasattr(ca, "isoformat") else str(ca)
     if row.get("updated_by"):
         out["updated_by"] = row.get("updated_by")
         out["updated_by_name"] = row.get("updated_by_name")
@@ -1104,6 +1108,7 @@ def list_nodes(
     page_size: int = 20,
     published_only: bool = True,
     scope: str | None = None,
+    order_by: str | None = None,
 ) -> dict[str, Any]:
     """
     默认仅 published（图 Table / 探索 / 学员端）。
@@ -1151,6 +1156,16 @@ def list_nodes(
     where_sql = " AND ".join(where)
     offset = (page - 1) * page_size
 
+    # 排序：管理台要「最新建的排最前」，前台/图谱保持人工序 sort_order。
+    # 旧实现一律按 sort_order NULLS LAST，而新建节点 sort_order 为 NULL，
+    # 会被甩到最后一页——运营建完数看不到。
+    if order_by == "created_desc" or (manage and not order_by):
+        order_sql = "created_at DESC NULLS LAST, sort_order NULLS LAST, name, id"
+    elif order_by == "name":
+        order_sql = "name, id"
+    else:
+        order_sql = "sort_order NULLS LAST, name, id"
+
     with connect() as conn:
         total = conn.execute(
             f"SELECT COUNT(*) AS c FROM kg_node WHERE {where_sql}",
@@ -1160,7 +1175,7 @@ def list_nodes(
             f"""
             SELECT * FROM kg_node
             WHERE {where_sql}
-            ORDER BY sort_order NULLS LAST, name, id
+            ORDER BY {order_sql}
             LIMIT %s OFFSET %s
             """,
             params + [page_size, offset],

@@ -9,7 +9,7 @@ from psycopg.rows import dict_row
 
 from backend.kg.pg_store.config import DATABASE_URL
 
-SCHEMA_SQL = """
+SCHEMA_SQL = r"""
 CREATE TABLE IF NOT EXISTS kg_node (
   id TEXT PRIMARY KEY,
   region TEXT NOT NULL,
@@ -73,6 +73,28 @@ ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS category TEXT;     -- skill: 技能
 ALTER TABLE kg_edge ADD COLUMN IF NOT EXISTS structure_layer TEXT; -- tree(归属) | net(关联) | chain(进阶)
 CREATE INDEX IF NOT EXISTS idx_kg_edge_layer ON kg_edge(structure_layer);
 CREATE INDEX IF NOT EXISTS idx_kg_node_category ON kg_node(type, category);
+
+-- 创建时间：管理台列表要「最新建的排最前」。
+-- 原先只能按 sort_order/name 排，而新建节点 sort_order 为 NULL，
+-- 配合 NULLS LAST 会被甩到最后一页，运营看不到刚建的数据。
+ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE kg_edge ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+-- 历史数据用采集时间回填（fetched_at 为 TEXT ISO8601，转换失败则留空）
+UPDATE kg_node SET created_at = NULLIF(fetched_at, '')::timestamptz
+ WHERE created_at IS NULL AND fetched_at ~ '^\d{4}-\d{2}-\d{2}';
+UPDATE kg_edge SET created_at = NULLIF(fetched_at, '')::timestamptz
+ WHERE created_at IS NULL AND fetched_at ~ '^\d{4}-\d{2}-\d{2}';
+CREATE INDEX IF NOT EXISTS idx_kg_node_created ON kg_node(type, created_at DESC);
+
+-- 业务编码 attrs.code 唯一性：同 region+同 type 内不得重复（跨区域/跨类型允许重复，
+-- 因为教育部专业码、大典职业码、BOSS 行业码是三套独立体系）。
+-- 应用层在写入前已校验并返回 409；这里是并发兜底，避免两个请求同时通过检查。
+-- 归档节点不参与占用，便于「归档后用同一编码重建」。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kg_node_region_type_code
+  ON kg_node(region, type, (attrs::json->>'code'))
+  WHERE attrs::json->>'code' IS NOT NULL
+    AND attrs::json->>'code' <> ''
+    AND COALESCE(status, 'published') <> 'archived';
 
 CREATE TABLE IF NOT EXISTS kg_proposal (
   id BIGSERIAL PRIMARY KEY,
