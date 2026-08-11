@@ -881,6 +881,43 @@ def capability(
 
 
 @app.get(
+    "/v1/kg/node-detail",
+    tags=["管理台 · 数据列表"],
+    summary="四维详情（行业 / 专业 / 岗位 / 技能）",
+    description=(
+        "管理台详情面板一站式取数，按节点 `type` 返回对应结构。"
+        "字段对齐 `backend.html` 管理端原型，逐项依据见 "
+        "`docs/管理台详情接口-原型对照.md`。\n\n"
+        "| type | 返回段 |\n"
+        "| --- | --- |\n"
+        "| `industry` | `majors[]`（含各专业的岗位数）、`occupations[]`（直连岗位）、`counts` |\n"
+        "| `major` | `industries[]`、`occupations[]`（含 level / skill_count / weight_sum）、"
+        "`aggregated_skills[]`（**按被引用岗位数倒序**，含 required_level 与 used_by[]） |\n"
+        "| `occupation` | `industries[]`、`majors[]`、`skills[]`（含 required_level / weight_pct / "
+        "prereqs 先修 / levels 五档格）、`weight_sum` |\n"
+        "| `skill_level` | `levels[]`、`level_completeness`、`occupations[]`（引用它的岗位）、"
+        "`prereqs[]` 先修、`unlocks[]` 后继 |\n\n"
+        "**可见状态**：published + draft + disabled；archived 不返回。\n\n"
+        "> 聚合技能的 `used_by` 按岗位去重——同一技能在一个岗位下有 L1–L5 多个节点，"
+        "只保留该岗位的最高要求档，避免同名岗位重复出现。"
+    ),
+    response_description="{ node, …（按类型的段）, counts, meta }",
+    operation_id="kg_node_detail",
+)
+def api_kg_node_detail(
+    id: str = Query(..., description="节点全局 id（含冒号，故用 query 传）"),
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    _ = user
+    from backend.kg.pg_store.node_detail import node_detail
+
+    data = node_detail(id)
+    if not data.get("node"):
+        raise HTTPException(status_code=404, detail="node not found")
+    return data
+
+
+@app.get(
     "/v1/industries/search",
     tags=["前台 · 图谱检索"],
     summary="行业模糊搜索（平铺，供选择行业的下拉框）",

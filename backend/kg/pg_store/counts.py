@@ -20,7 +20,7 @@ _PUB_S = "COALESCE(s.status, 'published') = 'published'"
 _PUB_I = "COALESCE(i.status, 'published') = 'published'"
 
 
-def _empty_counts() -> dict[str, int]:
+def _empty_counts() -> dict[str, Any]:
     return {
         "major": 0,
         "occupation": 0,
@@ -28,6 +28,8 @@ def _empty_counts() -> dict[str, int]:
         "industry": 0,
         "course": 0,
         "level": 0,
+        # 原型「岗位模型」列表的「权重和」列（国标权重是否配满 1.00）
+        "weight_sum": 0.0,
     }
 
 
@@ -138,6 +140,22 @@ def counts_for_occupations(ids: list[str]) -> dict[str, dict[str, int]]:
         for r in rows:
             if r["id"] in out:
                 out[r["id"]]["skill"] = int(r["c"])
+
+        # 权重和：原型「岗位模型」列表有此列，用于核对国标权重是否配满 1.00
+        rows = conn.execute(
+            f"""
+            SELECT e.src_id AS id, COALESCE(sum(e.weight), 0) AS w
+            FROM kg_edge e
+            JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level' AND {_PUB_N}
+            WHERE e.rel_type = 'requires' AND {EP_E}
+              AND e.src_id = ANY(%s)
+            GROUP BY e.src_id
+            """,
+            (ids,),
+        ).fetchall()
+        for r in rows:
+            if r["id"] in out:
+                out[r["id"]]["weight_sum"] = round(float(r["w"] or 0), 2)
 
         rows = conn.execute(
             f"""

@@ -112,6 +112,16 @@ class KgNode(BaseModel):
         ),
         examples=["2026-08-11T08:04:39+00:00"],
     )
+    version: int | None = Field(
+        None, description="发布版本号，从 1 起，每次成功发布（status→published）+1"
+    )
+    version_label: str | None = Field(
+        None, description="版本展示文案，如 `V3`（原型「版本」列）", examples=["V3"]
+    )
+    owner: str | None = Field(None, description="业务负责人 user-id")
+    owner_name: str | None = Field(
+        None, description="业务负责人姓名（原型「负责人」列）；新建时默认取创建人"
+    )
     code: str | None = Field(
         None,
         description=(

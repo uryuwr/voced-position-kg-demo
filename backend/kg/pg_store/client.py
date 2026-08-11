@@ -86,6 +86,13 @@ UPDATE kg_edge SET created_at = NULLIF(fetched_at, '')::timestamptz
  WHERE created_at IS NULL AND fetched_at ~ '^\d{4}-\d{2}-\d{2}';
 CREATE INDEX IF NOT EXISTS idx_kg_node_created ON kg_node(type, created_at DESC);
 
+-- 原型「专业管理 / 技能库」列表有「版本」「负责人」两列，库内此前没有对应字段。
+-- version：发布版本号，从 1 起，每次成功发布（status → published）+1
+-- owner / owner_name：业务负责人，新建时默认取创建人，可在编辑页改
+ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 1;
+ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS owner TEXT;
+ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS owner_name TEXT;
+
 -- 业务编码 attrs.code 唯一性：同 region+同 type 内不得重复（跨区域/跨类型允许重复，
 -- 因为教育部专业码、大典职业码、BOSS 行业码是三套独立体系）。
 -- 应用层在写入前已校验并返回 409；这里是并发兜底，避免两个请求同时通过检查。

@@ -266,6 +266,9 @@ def create_node(
         "status": status,
         "updated_by": user_id,
         "updated_by_name": user_name,
+        # 负责人默认取创建人（原型「负责人」列），可在编辑页改
+        "owner": body.get("owner") or user_id,
+        "owner_name": body.get("owner_name") or user_name,
     }
     with connect() as conn:
         conn.execute(
@@ -273,12 +276,12 @@ def create_node(
             INSERT INTO kg_node (
               id, region, type, name, name_en, name_zh, aliases, description, attrs,
               source_system, source_id, source_url, license, fetched_at, confidence,
-              status, updated_by, updated_by_name
+              status, updated_by, updated_by_name, owner, owner_name
             ) VALUES (
               %(id)s, %(region)s, %(type)s, %(name)s, %(name_en)s, %(name_zh)s, %(aliases)s,
               %(description)s, %(attrs)s, %(source_system)s, %(source_id)s, %(source_url)s,
               %(license)s, %(fetched_at)s, %(confidence)s, %(status)s, %(updated_by)s,
-              %(updated_by_name)s
+              %(updated_by_name)s, %(owner)s, %(owner_name)s
             )
             ON CONFLICT (id) DO UPDATE SET
               name = EXCLUDED.name,
@@ -375,6 +378,8 @@ def patch_node(
         "confidence",
         "status",
         "region",
+        "owner",
+        "owner_name",
     ):
         if key in body and body[key] is not None:
             fields.append(f"{key} = %({key})s")
@@ -396,6 +401,9 @@ def patch_node(
         fields.append("attrs = %(attrs)s")
         params["attrs"] = _json_or_none(body["attrs"])
     if fields:
+        # 发布即发版：status 改为 published 时 version+1（原型「版本 V3」）
+        if str(body.get("status") or "").lower() == "published":
+            fields.append("version = COALESCE(version, 1) + 1")
         fields.append("updated_by = %(updated_by)s")
         fields.append("updated_by_name = %(updated_by_name)s")
         sql = f"UPDATE kg_node SET {', '.join(fields)} WHERE id = %(id)s"

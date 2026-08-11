@@ -109,6 +109,13 @@ def _node_dict(row: dict[str, Any]) -> dict[str, Any]:
     ca = row.get("created_at")
     if ca is not None:
         out["created_at"] = ca.isoformat() if hasattr(ca, "isoformat") else str(ca)
+    # 版本 / 负责人：原型「专业管理」「技能库」列表列
+    if row.get("version") is not None:
+        out["version"] = int(row.get("version") or 1)
+        out["version_label"] = f"V{int(row.get('version') or 1)}"
+    if row.get("owner_name") or row.get("owner"):
+        out["owner"] = row.get("owner")
+        out["owner_name"] = row.get("owner_name") or row.get("owner")
     if row.get("updated_by"):
         out["updated_by"] = row.get("updated_by")
         out["updated_by_name"] = row.get("updated_by_name")

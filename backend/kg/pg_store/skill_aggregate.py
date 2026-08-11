@@ -258,6 +258,9 @@ def assemble_bundle(
         "level_descriptions": ld,
         "available_levels": available,
         "missing_levels": missing,
+        # 原型「技能库」列表的「等级完整度」列：L1–L5 配齐几档
+        "level_completeness": f"{len(available)}/5",
+        "level_complete": len(available) >= 5,
         "required_level": required_level,
         "weight": weight,
         # weight 为 0~1 小数（源自国标权重表 attrs.weight_pct/100）；
