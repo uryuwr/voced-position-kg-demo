@@ -606,6 +606,158 @@ class PrereqSetBody(BaseModel):
     region: str = "CN"
 
 
+class CompositionSkillBody(BaseModel):
+    """技能构成：添加/更新一项技能。"""
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [{"skill_key": "搅拌操作", "level": 3, "weight": 0.3}]
+        }
+    }
+
+    skill_key: str = Field(..., description="逻辑技能名（从 /composition/options 里选）")
+    level: int | None = Field(
+        None,
+        ge=1,
+        le=5,
+        description="要求等级 1–5（对应 L1–L5）。留空取该技能最高档；"
+        "该技能未配齐此档时返回 400 并列出可用档位",
+    )
+    weight: float | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="权重 0–1，**仅岗位生效**；专业技能不带权重（不参与归一化）",
+    )
+
+
+@router.get(
+    "/composition/options",
+    tags=["管理台 · 数据列表"],
+    summary="技能构成 · 可选技能（支持按名称搜索）",
+    description=(
+        "技能构成抽屉底部下拉的数据源：按 `skill_key` 聚合的已有技能。\n\n"
+        "- `q` 按**技能名模糊搜索**（技能上千条，下拉必须能搜）\n"
+        "- 每项附 `available_levels`（该技能已配齐的档位）与 `level_completeness`，"
+        "前端据此决定 L1–L5 哪些档可选"
+    ),
+)
+def composition_options(
+    q: str | None = Query(None, description="技能名关键字，模糊匹配"),
+    region: str = Query("CN", description="区域，默认 CN"),
+    limit: int = Query(50, ge=1, le=200),
+    user: AuthUser = Depends(require_auth_user),
+) -> list[dict[str, Any]]:
+    _ = user
+    from backend.kg.pg_store.skill_composition import list_skill_options
+
+    return list_skill_options(q=q, region=region, limit=limit)
+
+
+@router.get(
+    "/composition",
+    tags=["管理台 · 数据列表"],
+    summary="技能构成（专业直连技能 / 岗位技能）",
+    description=(
+        "同时服务**专业**与**岗位**的技能构成页，字段对齐管理端原型。\n\n"
+        "| 节点类型 | 关系 | 权重 |\n| --- | --- | --- |\n"
+        "| `occupation` | `requires` | 有，可归一化 |\n"
+        "| `major` | `covers`（E4） | **无**，专业技能不做归一化 |\n\n"
+        "`node` 段为页面头部：所属行业 / 关联专业 / 职级 / 薪资 / 状态 / 版本 / 编码。\n"
+        "每项技能返回 `available_levels`（该技能全部档）与 `selected_level`（当前选中档），"
+        "前端即可渲染 L1–L5 档位按钮并高亮选中项。"
+    ),
+    response_description="{ node（头部）, relation, weighted, items[], weight_sum, normalized, can_normalize }",
+)
+def get_skill_composition(
+    node_id: str = Query(..., description="专业或岗位的节点 id（含冒号，用 query 传）"),
+    user: AuthUser = Depends(require_auth_user),
+) -> dict[str, Any]:
+    _ = user
+    from backend.kg.pg_store.skill_composition import CompositionError, get_composition
+
+    try:
+        return get_composition(node_id)
+    except CompositionError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.put(
+    "/composition",
+    tags=["管理台 · 数据列表"],
+    summary="技能构成 · 添加或改档（幂等）",
+    description=(
+        "从已有技能中选一项加入构成，或改已有项的等级/权重。\n\n"
+        "「选中等级」由**边指向哪个等级节点**表达，因此改档实现为"
+        "先删该 skill_key 的旧边再建新边——对同一 skill_key 重复调用是幂等的。"
+    ),
+)
+def put_skill_composition(
+    body: CompositionSkillBody,
+    node_id: str = Query(..., description="专业或岗位的节点 id"),
+    user: AuthUser = Depends(require_auth_user),
+) -> dict[str, Any]:
+    from backend.kg.pg_store.skill_composition import CompositionError, set_skill
+
+    try:
+        return set_skill(
+            node_id,
+            body.skill_key,
+            level=body.level,
+            weight=body.weight,
+            user_id=user.user_id,
+            user_name=user.user_name,
+        )
+    except CompositionError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.delete(
+    "/composition",
+    tags=["管理台 · 数据列表"],
+    summary="技能构成 · 移除一项技能",
+)
+def delete_skill_composition(
+    node_id: str = Query(..., description="专业或岗位的节点 id"),
+    skill_key: str = Query(..., description="要移除的逻辑技能名"),
+    user: AuthUser = Depends(require_auth_user),
+) -> dict[str, Any]:
+    from backend.kg.pg_store.skill_composition import CompositionError, remove_skill
+
+    try:
+        return remove_skill(
+            node_id, skill_key, user_id=user.user_id, user_name=user.user_name
+        )
+    except CompositionError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post(
+    "/composition/normalize",
+    tags=["管理台 · 数据列表"],
+    summary="技能构成 · 权重归一化（仅岗位）",
+    description=(
+        "把该岗位所有技能权重**等比缩放**到和为 1.00 —— 等比而非均分，"
+        "保留运营已设定的相对重要性；末位吸收舍入误差以保证精确为 1.00。\n\n"
+        "原权重全为空/0 时退化为均分（此时无从推断相对重要性）。\n"
+        "**专业技能不带权重，调用会返回 400。**"
+    ),
+    response_description="归一化后的构成，附 normalized_from（归一前权重和）",
+)
+def normalize_skill_composition(
+    node_id: str = Query(..., description="岗位节点 id"),
+    user: AuthUser = Depends(require_auth_user),
+) -> dict[str, Any]:
+    from backend.kg.pg_store.skill_composition import CompositionError, normalize_weights
+
+    try:
+        return normalize_weights(
+            node_id, user_id=user.user_id, user_name=user.user_name
+        )
+    except CompositionError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 @router.get(
     "/skills/{skill_key:path}/prerequisites",
     tags=["管理台 · 技能多档"],

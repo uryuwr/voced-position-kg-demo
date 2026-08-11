@@ -129,8 +129,32 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
         (mid,),
     ).fetchall()
 
+    # 专业直连技能（covers, E4）：需求变更后专业以此管理技能，
+    # 不再展示「经岗位聚合」的技能——后者是间接推导，且无法被运营直接维护。
+    direct = conn.execute(
+        f"""
+        SELECT ({SKILL_KEY_SQL}) AS skill_key, n.category,
+               (n.attrs::json->>'level_code') AS level_code
+        FROM kg_edge e
+        JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level' AND {_NODE_VISIBLE}
+        WHERE e.src_id = %s AND e.rel_type='covers' AND {_EP}
+        ORDER BY 1
+        """,
+        (mid,),
+    ).fetchall()
+    from backend.kg.pg_store.level_map import product_level_int_from_attrs as _plv
+
+    direct_skills = [
+        {
+            "skill_key": r["skill_key"],
+            "category": r["category"],
+            "selected_level": _plv({"level_code": r["level_code"]}),
+        }
+        for r in direct
+    ]
+
     occ_ids = [o["id"] for o in occs]
-    # 聚合技能：该专业下所有岗位要求的技能，按被引用岗位数倒序
+    # 仍保留经岗位聚合的结果供图谱/统计用（前端详情不再展示）
     agg: dict[str, dict[str, Any]] = {}
     if occ_ids:
         rows = conn.execute(
@@ -195,8 +219,15 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
             }
             for o in occs
         ],
+        # skills = 专业直连技能（covers），详情页展示这个
+        "skills": direct_skills,
+        # aggregated_skills = 经岗位间接汇总，保留供统计/图谱，详情页不再展示
         "aggregated_skills": aggregated,
-        "counts": {"occupation": len(occs), "skill": len(aggregated)},
+        "counts": {
+            "occupation": len(occs),
+            "skill": len(direct_skills),
+            "skill_aggregated": len(aggregated),
+        },
     }
 
 

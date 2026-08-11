@@ -129,6 +129,19 @@
       max-height: 90vh; overflow: auto; padding: 18px 18px 14px;
       box-shadow: 0 20px 50px rgba(15,23,42,.25);
     }
+    /* 技能构成 / 四维详情：表格列多，520px 挤不下，改用宽版 */
+    .modal.wide { width: min(1080px, 100%); }
+    .modal.wide .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+    .modal.wide .form-row > label { width: 92px; flex: none; margin: 0; }
+    .modal.wide .form-row > div { flex: 1; }
+    /* 头部信息紧凑成两列，避免一项占一行把表格挤到屏外 */
+    .modal.wide .kv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 18px; margin-bottom: 12px; }
+    .modal.wide .kv-grid .kv { display: flex; gap: 8px; font-size: 13px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+    .modal.wide .kv-grid .kv b { color: var(--muted); font-weight: 500; min-width: 68px; }
+    .modal.wide table.data { table-layout: auto; }
+    .modal.wide table.data td, .modal.wide table.data th { white-space: nowrap; }
+    .lv-btns { display: flex; gap: 4px; }
+    .lv-btns .btn { padding: 3px 9px; font-size: 12px; min-width: 34px; }
     .modal h2 { margin: 0 0 12px; font-size: 16px; }
     .form-row { margin-bottom: 10px; }
     .form-row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
@@ -558,6 +571,159 @@
       return n && n.counts && typeof n.counts === "object" ? n.counts : {};
     }
 
+    /** 技能构成编辑页（专业 covers / 岗位 requires），交互对齐管理端原型：
+     *  头部信息 + 每行 L1–L5 档位按钮 + 权重输入 + 底部搜索下拉添加 + 归一化 */
+    async function openComposition(nodeId) {
+      openModal(`<h2>技能构成</h2><div class="empty">加载中…</div>`);
+      let d;
+      try {
+        d = await api.apiFetch("/v1/admin/composition?node_id=" + encodeURIComponent(nodeId));
+      } catch (e) {
+        openModal(`<h2>技能构成</h2><div class="empty">加载失败：${esc(e.message || e)}</div>
+          <div class="form-actions"><button class="btn" type="button" id="cpClose">关闭</button></div>`);
+        $("cpClose").onclick = closeModal;
+        return;
+      }
+      const h = d.node || {};
+      const weighted = !!d.weighted;
+
+      // 头部：所属行业 / 关联专业 / 职级 / 薪资 / 状态（原型构成页上方）
+      const headRows = `<div class="kv-grid">` + [
+        ["名称", esc(h.name || "—")],
+        ["所属行业", esc(h.industry_name || "—")],
+        h.type === "occupation" ? ["关联专业", esc(h.major_name || "—")] : null,
+        h.type === "occupation" ? ["职级", esc(h.level_label || "—")] : null,
+        h.type === "occupation" ? ["薪资", esc(h.salary || "—")] : null,
+        ["状态", nodeStatusCell(h)],
+        ["编码", `<code>${esc(h.code || "—")}</code>`],
+        ["版本", esc(h.version_label || "V1")],
+      ].filter(Boolean).map(([k, v]) => `<div class="kv"><b>${k}</b><span>${v}</span></div>`).join("") + `</div>`;
+
+      const rows = (d.items || []).map((it) => {
+        const avail = it.available_levels || [];
+        // L1–L5 档位按钮：该技能没配齐的档禁用，选中档高亮
+        const btns = `<div class="lv-btns">` + [1, 2, 3, 4, 5].map((lv) => {
+          const has = avail.includes("L" + lv);
+          const on = it.selected_level === lv;
+          return `<button class="btn ${on ? "primary" : ""}" type="button"
+            ${has ? "" : 'disabled title="该技能未配齐此档"'}
+            data-setlv="${esc(it.skill_key)}" data-lv="${lv}">L${lv}</button>`;
+        }).join("") + `</div>`;
+        const wCell = weighted
+          ? `<input style="width:78px" type="number" step="0.01" min="0" max="1"
+               value="${it.weight != null ? it.weight : ""}" data-w="${esc(it.skill_key)}" />`
+          : `<span class="muted">—</span>`;
+        return `<tr>
+          <td>${esc(it.skill_key)}<div class="muted">${esc(it.category || "未分类")}</div></td>
+          <td>${btns}</td>
+          <td>${wCell}</td>
+          <td><button class="btn danger" type="button" data-rmsk="${esc(it.skill_key)}">移除</button></td>
+        </tr>`;
+      }).join("");
+
+      const wsumLine = weighted
+        ? `<span class="muted">权重和 </span><b>${(d.weight_sum ?? 0).toFixed ? d.weight_sum.toFixed(2) : d.weight_sum}</b>
+           ${d.normalized ? '<span class="tag pub">已归一</span>' : '<span class="tag">未归一</span>'}
+           <button class="btn" type="button" id="cpNorm">归一化</button>`
+        : `<span class="muted">专业技能不带权重，无需归一化</span>`;
+
+      openModal(`
+        <h2>技能构成 · ${esc(h.name || "")}</h2>
+        ${headRows}
+        <div class="form-row"><label>技能（${(d.items || []).length}）</label><div>${wsumLine}</div></div>
+        <table class="data">
+          <thead><tr><th>技能 / 分类</th><th>要求等级（点选）</th><th>权重</th><th>操作</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="4" class="empty">还没有技能，用下方搜索添加</td></tr>`}</tbody>
+        </table>
+        <div class="form-row"><label>添加技能</label>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <!-- 可输入即搜索的下拉：input + datalist，边打字边从服务端拉候选 -->
+            <input id="cpSel" list="cpList" placeholder="输入技能名搜索并选择…"
+                   style="min-width:280px" autocomplete="off" />
+            <datalist id="cpList"></datalist>
+            <select id="cpLv" style="width:130px">
+              <option value="">默认最高档</option>
+              <option value="1">L1</option><option value="2">L2</option><option value="3">L3</option>
+              <option value="4">L4</option><option value="5">L5</option>
+            </select>
+            <button class="btn primary" type="button" id="cpAdd">添加</button>
+            <span class="muted" id="cpHint"></span>
+          </div>
+        </div>
+        <div class="form-actions"><button class="btn" type="button" id="cpClose">关闭</button></div>
+      `, { wide: true });
+      $("cpClose").onclick = closeModal;
+
+      const reload = () => openComposition(nodeId);
+
+      // 档位点选
+      document.querySelectorAll("[data-setlv]").forEach((el) => {
+        el.onclick = async () => {
+          try {
+            await api.apiFetch("/v1/admin/composition?node_id=" + encodeURIComponent(nodeId),
+              { method: "PUT", body: { skill_key: el.dataset.setlv, level: Number(el.dataset.lv) } });
+            toast("已设为 L" + el.dataset.lv); reload();
+          } catch (e) { toast(e.message || e, true); }
+        };
+      });
+      // 权重改动（失焦提交）
+      document.querySelectorAll("[data-w]").forEach((el) => {
+        el.onchange = async () => {
+          try {
+            await api.apiFetch("/v1/admin/composition?node_id=" + encodeURIComponent(nodeId),
+              { method: "PUT", body: { skill_key: el.dataset.w, weight: Number(el.value || 0) } });
+            toast("权重已更新"); reload();
+          } catch (e) { toast(e.message || e, true); }
+        };
+      });
+      // 移除
+      document.querySelectorAll("[data-rmsk]").forEach((el) => {
+        el.onclick = async () => {
+          try {
+            await api.apiFetch("/v1/admin/composition?node_id=" + encodeURIComponent(nodeId)
+              + "&skill_key=" + encodeURIComponent(el.dataset.rmsk), { method: "DELETE" });
+            toast("已移除"); reload();
+          } catch (e) { toast(e.message || e, true); }
+        };
+      });
+      // 归一化
+      if ($("cpNorm")) {
+        $("cpNorm").onclick = async () => {
+          try {
+            const r = await api.apiFetch(
+              "/v1/admin/composition/normalize?node_id=" + encodeURIComponent(nodeId), { method: "POST" });
+            toast(`已归一：${r.normalized_from} → ${r.weight_sum}`); reload();
+          } catch (e) { toast(e.message || e, true); }
+        };
+      }
+      // 技能搜索 → 填充下拉
+      let cpTimer = null;
+      let cpOpts = [];
+      const doSearch = async () => {
+        const q = $("cpSel").value.trim();
+        try {
+          cpOpts = await api.apiFetch(
+            "/v1/admin/composition/options?limit=50" + (q ? "&q=" + encodeURIComponent(q) : ""));
+          // datalist 的 option 只能放纯值，档位信息放 label 里提示
+          $("cpList").innerHTML = cpOpts.map((x) =>
+            `<option value="${esc(x.skill_key)}" label="${esc(x.level_completeness)} ${esc(x.category || "")}"></option>`).join("");
+          $("cpHint").textContent = cpOpts.length ? `${cpOpts.length} 个匹配` : "无匹配";
+        } catch (e) { toast(e.message || e, true); }
+      };
+      $("cpSel").oninput = () => { clearTimeout(cpTimer); cpTimer = setTimeout(doSearch, 260); };
+      doSearch();
+      $("cpAdd").onclick = async () => {
+        const key = $("cpSel").value.trim();
+        if (!key) { toast("请先输入并选择技能", true); return; }
+        const lv = $("cpLv").value;
+        try {
+          await api.apiFetch("/v1/admin/composition?node_id=" + encodeURIComponent(nodeId),
+            { method: "PUT", body: { skill_key: key, level: lv ? Number(lv) : null } });
+          toast("已添加 " + key); reload();
+        } catch (e) { toast(e.message || e, true); }
+      };
+    }
+
     /** 四维详情弹层：字段对齐 backend.html 原型，取数走 /v1/kg/node-detail */
     async function openNodeDetail(nodeId) {
       openModal(`<h2>详情</h2><div class="empty">加载中…</div>`);
@@ -596,16 +762,13 @@
                    <td>${o.level != null ? "L" + o.level : "—"}</td>
                    <td>${o.skill_count}</td><td>${weightSumCell(o.weight_sum)}</td></tr>`).join("") +
             `</table>` : `<div class="muted">无</div>`);
-        const ags = d.aggregated_skills || [];
-        body += `<h3>聚合技能（${ags.length}）<span class="muted"> · 按被引用次数排序</span></h3>`;
-        body += ags.length ? ags.slice(0, 60).map((a) =>
-          `<div style="margin:5px 0">
-             <span class="cap-sk">${esc(a.skill_key)}</span>
-             <b>${a.required_level ? "L" + a.required_level : ""}</b>
-             <span class="muted"> ×${a.used_count} · ${
-               a.used_by.map((u) => esc(u.occupation_name) + (u.level ? " L" + u.level : "")).join("、")
-             }</span>
-           </div>`).join("") : `<div class="muted">无</div>`;
+        // 需求变更：专业详情不再展示「聚合技能」（那是经岗位间接汇总的），
+        // 改为直连技能构成，在专用编辑页管理
+        const dsk = d.skills || [];
+        body += `<h3>技能构成（${dsk.length}）<span class="muted"> · 专业直连技能</span></h3>`;
+        body += dsk.length
+          ? dsk.map((sk) => `<span class="cap-sk">${esc(sk.skill_key)}${sk.selected_level ? " L" + sk.selected_level : ""}</span>`).join("")
+          : `<div class="muted">还没有直连技能</div>`;
       } else if (n.type === "occupation") {
         body += kv("所属行业", (d.industries || []).map((i) => esc(i.name)).join("、") || "—");
         body += kv("关联专业", (d.majors || []).map((i) => esc(i.name)).join("、") || "—");
@@ -636,9 +799,12 @@
       openModal(`<h2>${esc(TYPE_ZH[n.type] || "")}详情 · ${esc(n.display_name || n.name || "")}</h2>
         ${body}
         <div class="form-actions">
+          ${(n.type === "major" || n.type === "occupation")
+            ? `<button class="btn primary" type="button" id="dtComp">技能构成</button>` : ""}
           <button class="btn" type="button" id="dtEdit">编辑</button>
           <button class="btn" type="button" id="dtClose">关闭</button>
-        </div>`);
+        </div>`, { wide: true });
+      if ($("dtComp")) $("dtComp").onclick = () => openComposition(nodeId);
       $("dtClose").onclick = closeModal;
       $("dtEdit").onclick = async () => {
         try {
@@ -779,7 +945,8 @@
             </td>
           </tr>`;
         }
-        const extraBtn = dim.type === "occupation"
+        // 专业与岗位都有技能构成：岗位=requires(带权重)，专业=covers(直连、无权重)
+        const extraBtn = (dim.type === "occupation" || dim.type === "major")
           ? `<button class="btn" type="button" data-comp="${esc(n.id)}">技能构成</button>`
           : "";
         const isOcc = dim.type === "occupation";
@@ -932,27 +1099,7 @@
         };
       });
       main.querySelectorAll("[data-comp]").forEach((b) => {
-        b.onclick = async () => {
-          try {
-            const data = await api.apiFetch(
-              "/v1/student/positions/skill-composition?id=" + encodeURIComponent(b.dataset.comp)
-            );
-            const rows = (data.skills || []).map((s) => `<tr>
-              <td>${esc(s.skill_key || s.name)}</td>
-              <td>${s.required_level != null ? "L" + s.required_level : "—"}</td>
-              <td>${s.weight != null ? (Number(s.weight) * 100).toFixed(1) + "%" : "—"}</td>
-              <td class="muted">${esc((s.available_levels || []).join("/") || "—")}</td>
-            </tr>`).join("");
-            openModal(`
-              <h2>技能构成 · ${esc(data.occupation?.name || "")}</h2>
-              <p class="muted">权重和 ${data.weight_sum ?? 0}（${data.weight_sum_ok ? "合理" : "需检查"}）· 只认 requires 边</p>
-              <table class="data"><thead><tr><th>技能</th><th>要求档</th><th>权重</th><th>已有档</th></tr></thead>
-              <tbody>${rows || `<tr><td colspan="4" class="empty">无技能边</td></tr>`}</tbody></table>
-              <div class="form-actions"><button class="btn" type="button" id="btnCloseComp">关闭</button></div>
-            `);
-            $("btnCloseComp").onclick = closeModal;
-          } catch (e) { toast(e.message || e, true); }
-        };
+        b.onclick = () => openComposition(b.dataset.comp);
       });
       main.querySelectorAll("[data-detail]").forEach((b) => {
         b.onclick = () => openNodeDetail(b.dataset.detail);
@@ -1306,8 +1453,10 @@
     }
 
     /* ---------- forms ---------- */
-    function openModal(html) {
+    function openModal(html, opts) {
       $("modal").innerHTML = html;
+      // wide：技能构成/详情等多列表格用宽版，否则挤在 520px 里看不全
+      $("modal").classList.toggle("wide", !!(opts && opts.wide));
       $("modalMask").classList.add("on");
     }
     function closeModal() { $("modalMask").classList.remove("on"); }
