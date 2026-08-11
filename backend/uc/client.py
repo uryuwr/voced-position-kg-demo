@@ -42,8 +42,14 @@ async def validate_uc_token(
     http_method: str,
     request_uri: str,
     host: str,
+    sdp_app_id: str | None = None,
 ) -> dict[str, Any]:
-    """验证 MAC token，返回至少含 user_id；若响应有 nick_name/user_name 一并返回。"""
+    """验证 MAC token，返回至少含 user_id；若响应有 nick_name/user_name 一并返回。
+
+    sdp_app_id：优先用调用方（前端请求头 `sdp-app-id`）透传的值，
+    缺失时回落 settings.SDP_APP_ID。多应用共用本服务时，前端各自带自己的
+    app-id，避免服务端配置写死某一个。
+    """
     url = f"{settings.UC_API_HOST.rstrip('/')}/v1.1/tokens/{access_token}/actions/valid"
     body = {
         "mac": mac,
@@ -52,16 +58,16 @@ async def validate_uc_token(
         "request_uri": request_uri,
         "host": host,
     }
+    app_id = (sdp_app_id or "").strip() or settings.SDP_APP_ID
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    if app_id:
+        headers["sdp-app-id"] = app_id
     try:
         async with httpx.AsyncClient(timeout=10, verify=False) as client:
-            resp = await client.post(
-                url,
-                json=body,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                },
-            )
+            resp = await client.post(url, json=body, headers=headers)
     except httpx.HTTPError as e:
         logger.exception("UC token 验证请求失败: %s", e)
         raise UCAuthError("UC 服务不可用，请稍后重试") from e

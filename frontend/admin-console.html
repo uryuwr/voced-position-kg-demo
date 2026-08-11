@@ -558,6 +558,104 @@
       return n && n.counts && typeof n.counts === "object" ? n.counts : {};
     }
 
+    /** 四维详情弹层：字段对齐 backend.html 原型，取数走 /v1/kg/node-detail */
+    async function openNodeDetail(nodeId) {
+      openModal(`<h2>详情</h2><div class="empty">加载中…</div>`);
+      let d;
+      try {
+        d = await api.apiFetch("/v1/kg/node-detail?id=" + encodeURIComponent(nodeId));
+      } catch (e) {
+        openModal(`<h2>详情</h2><div class="empty">加载失败：${esc(e.message || e)}</div>
+          <div class="form-actions"><button class="btn" type="button" id="dtClose">关闭</button></div>`);
+        $("dtClose").onclick = closeModal;
+        return;
+      }
+      const n = d.node || {};
+      const kv = (k, v) => `<div class="form-row"><label>${esc(k)}</label><div>${v}</div></div>`;
+      let body = "";
+      body += kv("编码", `<code>${esc(n.code || "—")}</code>`);
+      body += kv("状态", nodeStatusCell(n));
+      if (n.version_label) body += kv("版本", esc(n.version_label));
+      if (n.owner_name) body += kv("负责人", esc(n.owner_name));
+      if (n.description) body += kv("简介", `<div class="muted">${esc(String(n.description).slice(0, 400))}</div>`);
+
+      if (n.type === "industry") {
+        body += `<h3>关联专业（${(d.majors || []).length}）</h3>` + ((d.majors || []).length
+          ? `<table class="data"><tr><th>专业</th><th>状态</th><th>岗位数</th></tr>` +
+            d.majors.slice(0, 50).map((m) =>
+              `<tr><td>${esc(m.name)}</td><td>${esc(m.status || "")}</td><td>${m.occupation_count}</td></tr>`).join("") +
+            `</table>` : `<div class="muted">无</div>`);
+        body += `<h3>直连岗位（${(d.occupations || []).length}）</h3>` +
+          ((d.occupations || []).map((o) => `<span class="cap-sk">${esc(o.name)}</span>`).join("") || `<div class="muted">无</div>`);
+      } else if (n.type === "major") {
+        body += kv("所属行业", (d.industries || []).map((i) => esc(i.name)).join("、") || "—");
+        body += `<h3>关联岗位（${(d.occupations || []).length}）</h3>` + ((d.occupations || []).length
+          ? `<table class="data"><tr><th>岗位</th><th>状态</th><th>层级</th><th>技能项</th><th>权重和</th></tr>` +
+            d.occupations.map((o) =>
+              `<tr><td>${esc(o.name)}</td><td>${esc(o.status || "")}</td>
+                   <td>${o.level != null ? "L" + o.level : "—"}</td>
+                   <td>${o.skill_count}</td><td>${weightSumCell(o.weight_sum)}</td></tr>`).join("") +
+            `</table>` : `<div class="muted">无</div>`);
+        const ags = d.aggregated_skills || [];
+        body += `<h3>聚合技能（${ags.length}）<span class="muted"> · 按被引用次数排序</span></h3>`;
+        body += ags.length ? ags.slice(0, 60).map((a) =>
+          `<div style="margin:5px 0">
+             <span class="cap-sk">${esc(a.skill_key)}</span>
+             <b>${a.required_level ? "L" + a.required_level : ""}</b>
+             <span class="muted"> ×${a.used_count} · ${
+               a.used_by.map((u) => esc(u.occupation_name) + (u.level ? " L" + u.level : "")).join("、")
+             }</span>
+           </div>`).join("") : `<div class="muted">无</div>`;
+      } else if (n.type === "occupation") {
+        body += kv("所属行业", (d.industries || []).map((i) => esc(i.name)).join("、") || "—");
+        body += kv("关联专业", (d.majors || []).map((i) => esc(i.name)).join("、") || "—");
+        body += kv("层级", n.level != null ? "L" + n.level : "—");
+        body += `<h3>技能构成（${(d.skills || []).length}）<span class="muted"> · 权重和 ${d.weight_sum}</span></h3>`;
+        body += (d.skills || []).length
+          ? `<table class="data"><tr><th>技能</th><th>要求等级</th><th>权重</th><th>类别</th><th>先修</th><th>L1–L5</th></tr>` +
+            d.skills.map((sk) =>
+              `<tr><td>${esc(sk.skill_key)}${sk.is_core ? ' <span class="tag">核心</span>' : ""}</td>
+                   <td>L${sk.required_level ?? "-"}</td>
+                   <td>${sk.weight_pct != null ? sk.weight_pct + "%" : "—"}</td>
+                   <td class="muted">${esc(sk.category || "未分类")}</td>
+                   <td class="muted">${(sk.prereqs || []).length ? esc(sk.prereqs.join("、")) : "无先修"}</td>
+                   <td>${(sk.levels || []).map((g) => g.required ? "■" : (g.exists ? "□" : "·")).join("")}</td>
+               </tr>`).join("") + `</table>`
+          : `<div class="muted">无</div>`;
+      } else if (n.type === "skill_level") {
+        body += kv("技能 key", esc(d.skill_key || ""));
+        body += kv("分类", esc(d.category || "未分类"));
+        body += kv("等级完整度", esc(d.level_completeness || "—") + " " +
+          (d.levels || []).map((g) => g.exists ? "■" : "·").join(""));
+        body += kv("先修", (d.prereqs || []).map((x) => esc(x.prereq_skill_key)).join("、") || "无");
+        body += kv("解锁", (d.unlocks || []).map((x) => esc(x.skill_key)).join("、") || "无");
+        body += `<h3>引用岗位（${(d.occupations || []).length}）</h3>` +
+          ((d.occupations || []).map((o) => `<span class="cap-sk">${esc(o.name)}</span>`).join("") || `<div class="muted">无</div>`);
+      }
+
+      openModal(`<h2>${esc(TYPE_ZH[n.type] || "")}详情 · ${esc(n.display_name || n.name || "")}</h2>
+        ${body}
+        <div class="form-actions">
+          <button class="btn" type="button" id="dtEdit">编辑</button>
+          <button class="btn" type="button" id="dtClose">关闭</button>
+        </div>`);
+      $("dtClose").onclick = closeModal;
+      $("dtEdit").onclick = async () => {
+        try {
+          const full = await api.apiFetch("/v1/node?id=" + encodeURIComponent(nodeId) + "&scope=manage");
+          openNodeForm(full, true);
+        } catch (e) { toast(e.message || e, true); }
+      };
+    }
+
+    /** 权重和：国标权重应配满 1.00，偏离则标色提示 */
+    function weightSumCell(w) {
+      const v = Number(w || 0);
+      if (!v) return `<span class="muted">—</span>`;
+      const ok = v >= 0.85 && v <= 1.15;
+      return `<span style="color:${ok ? "#16a34a" : "#f59e0b"}" title="${ok ? "接近 1.00" : "偏离 1.00，建议核对各档权重"}">${v.toFixed(2)}</span>`;
+    }
+
     /** 业务编码单元格：code 已提到顶层，attrs.code 仅作兼容回落 */
     function codeCellHtml(n) {
       const code = n.code || (n.attrs && n.attrs.code) || "";
@@ -664,11 +762,14 @@
         const idShow = isSkillBundle ? (n.skill_key || n.id) : n.id;
         if (isSkillBundle) {
           const st = n.status || "draft";
+          // 原型技能库列：技能 / 分类 / 状态 / 版本 / 负责人 / 等级完整度
           return `<tr>
             <td class="name-cell">${esc(name)}<div class="id-cell">${esc(idShow)}</div></td>
+            <td class="muted">${esc(n.category || "未分类")}</td>
             <td>${nodeStatusCell(n)}</td>
-            <td>${levelsCellHtml(n)}</td>
-            <td>${countsCellHtml(n, "skill_bundle")}</td>
+            <td>${esc(n.version_label || "V1")}</td>
+            <td class="muted">${esc(n.owner_name || n.updated_by_name || "—")}</td>
+            <td>${esc(n.level_completeness || "—")} ${levelsCellHtml(n)}</td>
             <td class="row-actions">
               <button class="btn" type="button" data-edit="${esc(n.skill_key || n.name || "")}" title="编辑逻辑技能">编辑</button>
               <button class="btn" type="button" data-expand-skill="${esc(n.skill_key || n.name || "")}">档位明细</button>
@@ -682,18 +783,31 @@
           ? `<button class="btn" type="button" data-comp="${esc(n.id)}">技能构成</button>`
           : "";
         const isOcc = dim.type === "occupation";
+        const c = n.counts || {};
+        // 按原型逐类型出列：行业=关联专业/关联岗位，专业=版本/岗位数/基础技能，
+        // 岗位=所属行业/层级/技能项/权重和
+        const mid = dim.type === "industry"
+          ? `<td>${c.major ?? 0}</td><td>${c.occupation ?? 0}</td>`
+          : dim.type === "major"
+            ? `<td>${esc(n.version_label || "V1")}</td><td>${c.occupation ?? 0}</td><td>${c.skill ?? 0}</td>`
+            : isOcc
+              ? `<td class="name-cell">${industryCellHtml(n)}</td>
+                 <td>${n.level != null ? "L" + n.level : '<span class="muted">—</span>'}</td>
+                 <td>${nodeStatusCell(n)}</td>
+                 <td>${c.skill ?? 0}</td>
+                 <td>${weightSumCell(c.weight_sum)}</td>`
+              : `<td>${countsCellHtml(n, dim.type)}</td>
+                 <td class="muted">${esc(n.source_system || "—")}</td>
+                 <td class="muted">${esc(n.confidence || "—")}</td>`;
         return `<tr>
           <td class="name-cell">${esc(name)}<div class="id-cell">${esc(n.id)}</div></td>
           <td>${codeCellHtml(n)}</td>
-          <td>${nodeStatusCell(n)}</td>
-          ${isOcc ? `<td class="name-cell">${industryCellHtml(n)}</td>` : ""}
-          <td>${countsCellHtml(n, dim.type)}</td>
-          <td class="muted">${esc(n.source_system || "—")}</td>
-          <td class="muted">${esc(n.confidence || "—")}</td>
+          ${isOcc ? "" : `<td>${nodeStatusCell(n)}</td>`}
+          ${mid}
           <td class="row-actions">
             ${n.pending_action
               ? `<span class="muted">审核中 #${esc(n.pending_change_id)}</span>`
-              : `${extraBtn}<button class="btn" type="button" data-edit="${esc(n.id)}">编辑</button>
+              : `<button class="btn" type="button" data-detail="${esc(n.id)}">详情</button>${extraBtn}<button class="btn" type="button" data-edit="${esc(n.id)}">编辑</button>
             ${(n.status || "published") === "published"
               ? `<button class="btn" type="button" data-dis="${esc(n.id)}">停用</button>`
               : `<button class="btn ok" type="button" data-en="${esc(n.id)}">发布</button>`}
@@ -702,11 +816,16 @@
         </tr>`;
       }).join("");
       const isOccList = !isSkillBundle && dim.type === "occupation";
+      // 表头按 backend.html 原型逐类型对齐（见 docs/管理台详情接口-原型对照.md）
       const head = isSkillBundle
-        ? `<tr><th>技能名 / key</th><th>状态</th><th>等级 L1–L5</th><th>关联</th><th>操作</th></tr>`
-        : isOccList
-          ? `<tr><th>名称 / ID</th><th>编码</th><th>状态</th><th>所属行业</th><th>关联数</th><th>来源</th><th>置信度</th><th>操作</th></tr>`
-          : `<tr><th>名称 / ID</th><th>编码</th><th>状态</th><th>关联数</th><th>来源</th><th>置信度</th><th>操作</th></tr>`;
+        ? `<tr><th>技能</th><th>分类</th><th>状态</th><th>版本</th><th>负责人</th><th>等级完整度</th><th>操作</th></tr>`
+        : dim.type === "industry"
+          ? `<tr><th>行业名称</th><th>编码</th><th>状态</th><th>关联专业</th><th>关联岗位</th><th>操作</th></tr>`
+          : dim.type === "major"
+            ? `<tr><th>专业</th><th>编码</th><th>状态</th><th>版本</th><th>岗位数</th><th>基础技能</th><th>操作</th></tr>`
+            : isOccList
+              ? `<tr><th>岗位</th><th>编码</th><th>所属行业</th><th>层级</th><th>状态</th><th>技能项</th><th>权重和</th><th>操作</th></tr>`
+              : `<tr><th>名称 / ID</th><th>编码</th><th>状态</th><th>关联数</th><th>来源</th><th>置信度</th><th>操作</th></tr>`;
       const skillNote = isSkillBundle
         ? " · 按 skill_key 聚合 · 状态为各档聚合"
         : isOccList
@@ -834,6 +953,9 @@
             $("btnCloseComp").onclick = closeModal;
           } catch (e) { toast(e.message || e, true); }
         };
+      });
+      main.querySelectorAll("[data-detail]").forEach((b) => {
+        b.onclick = () => openNodeDetail(b.dataset.detail);
       });
       main.querySelectorAll("[data-edit]").forEach((b) => {
         b.onclick = async () => {
@@ -1444,6 +1566,9 @@
           <input id="f_code" value="${esc(n.code || (n.attrs && n.attrs.code) || "")}"
                  placeholder="同类型内唯一，如 internet-ecom / 580506K" />
         </div>
+        <div class="form-row"><label>负责人</label>
+          <input id="f_owner" value="${esc(n.owner_name || "")}" placeholder="留空则取当前登录人" />
+        </div>
         <div class="form-row"><label>区域</label><input id="f_region" value="${esc(n.region || "CN")}" /></div>
         <div class="form-row"><label>简介</label><textarea id="f_desc">${esc(n.description || "")}</textarea></div>
         <div class="form-row" id="linkRow" ${peerType ? "" : "style=\"display:none\""}>
@@ -1500,6 +1625,8 @@
         };
         // 编码：写进 attrs.code（服务端以此做同 region+type 唯一性校验）。
         // 合并原有 attrs，避免编辑时把 parent_name/platform_code 等字段覆盖丢失。
+        const ownerVal = ($("f_owner") && $("f_owner").value.trim()) || "";
+        if (ownerVal) payload.owner_name = ownerVal;
         const codeVal = ($("f_code") && $("f_code").value.trim()) || "";
         const baseAttrs = (n && n.attrs && typeof n.attrs === "object") ? { ...n.attrs } : {};
         if (codeVal) baseAttrs.code = codeVal;

@@ -173,6 +173,11 @@
       if (auth) h["Authorization"] = auth;
       const u = getUser();
       if (u.name) h["X-User-Name"] = headerVal(u.name);
+      // sdp-app-id 由前端透传：服务端优先用它，缺失才回落 .env 的 SDP_APP_ID。
+      // 多应用共用同一后端时，各前端带自己的 app-id。
+      // 可用 window.__SDP_APP_ID__ 覆盖，默认取 /v1/config 下发的值。
+      const appId = String(window.__SDP_APP_ID__ || cfg.sdp_app_id || "").trim();
+      if (appId) h["sdp-app-id"] = appId;
     }
 
     let body = opts.body;

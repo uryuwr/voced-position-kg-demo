@@ -168,6 +168,7 @@ class UCAuthMiddleware(BaseHTTPMiddleware):
                 qs = request.scope.get("query_string") or b""
                 if qs:
                     request_uri = f"{request_uri}?{qs.decode('latin-1')}"
+                # sdp-app-id：优先取前端透传的请求头，缺失才回落 .env 配置
                 info = await validate_uc_token(
                     access_token=mac_fields["id"],
                     mac=mac_fields["mac"],
@@ -175,6 +176,7 @@ class UCAuthMiddleware(BaseHTTPMiddleware):
                     http_method=request.method,
                     request_uri=request_uri,
                     host=host_header,
+                    sdp_app_id=request.headers.get("sdp-app-id"),
                 )
                 uname = info["user_name"]
                 # 前端可用 X-User-Name 补展示名（getAccountInfo）
