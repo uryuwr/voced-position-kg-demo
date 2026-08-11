@@ -598,7 +598,7 @@ class NodeCreate(BaseModel):
         description=(
             "扩展属性 JSON（可选）。随 type 变化，例如专业："
             "`code` 专业代码、`level`/`level_zh` 办学层次；"
-            "技能：`skill_name`、`level_code`"
+            "技能：`skill_name`、`level`（产品档 1–5，1 了解 → 5 专家）"
         ),
     )
     source_system: str | None = Field(

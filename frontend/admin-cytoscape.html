@@ -552,7 +552,8 @@
       code: "专业代码", level: "层次代码", level_zh: "办学层次", category: "门类/类",
       catalog: "所属目录", discipline: "学科门类", source_file: "原始文件",
       table_index: "表序号", is_supplement: "是否增补", skill_name: "技能名",
-      scale: "等级标尺", level_code: "等级码", uri: "URI", skillType: "技能类型",
+      scale: "来源等级标尺", level: "能力档位(L1–L5)", level_label: "档位文案",
+      source_level_code: "来源等级码", uri: "URI", skillType: "技能类型",
       from_relation: "来自关系", className: "类名",
     };
     function parseAttrs(n) {
@@ -639,13 +640,14 @@
           out.push(arr[0]);
           continue;
         }
+        // 档位统一为 int 1–5（越大越强）；attrs.level 缺失时从 name 的「· L3」后缀兜底
         const levels = [];
         arr.forEach((n) => {
           const a = parseAttrs(n);
-          const code = a.level_code || (String(n.name || "").match(/·\s*(L\d)/i) || [])[1];
-          if (code && !levels.includes(String(code).toUpperCase())) levels.push(String(code).toUpperCase());
+          const lv = Number(a.level) || Number((String(n.name || "").match(/·\s*L(\d)/i) || [])[1]);
+          if (lv && !levels.includes(lv)) levels.push(lv);
         });
-        levels.sort();
+        levels.sort((x, y) => x - y);
         out.push({
           id: `bundle:CN:${key}`,
           type: "skill_level",
@@ -694,12 +696,12 @@
       } else if (n.type === "skill_level") {
         if (a.aggregated || n.skill_key) {
           const av = n.available_levels || a.available_levels || [];
-          if (av.length) chips.push({ cls: "lv", t: av.join("/") });
+          if (av.length) chips.push({ cls: "lv", t: av.map((v) => "L" + v).join("/") });
           else chips.push({ cls: "lv", t: "聚合技能" });
           if (c.occupation != null) chips.push({ cls: "", t: `岗位 ${c.occupation}` });
           if (c.level != null) chips.push({ cls: "", t: `${c.level} 档` });
         } else {
-          if (a.level_code) chips.push({ cls: "lv", t: a.level_code });
+          if (a.level) chips.push({ cls: "lv", t: "L" + a.level + (a.level_label ? " " + a.level_label : "") });
           if (a.scale) chips.push({ cls: "", t: a.scale });
         }
       } else if (n.type === "course") {

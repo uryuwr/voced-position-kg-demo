@@ -113,7 +113,7 @@ def _header(conn, node: dict[str, Any]) -> dict[str, Any]:
 
 
 def _levels_of(conn, keys: list[str], region: str = "CN") -> dict[str, list[dict[str, Any]]]:
-    """取每个 skill_key 的档位明细：产品等级 + 原始码 + 中文名 + 要求描述。
+    """取每个 skill_key 的档位明细：产品等级 + 档位文案 + 要求描述。
 
     描述用于管理端「选档时看要求」，故一并带出，前端不必再逐档发请求。
     """
@@ -122,8 +122,6 @@ def _levels_of(conn, keys: list[str], region: str = "CN") -> dict[str, list[dict
     rows = conn.execute(
         f"""
         SELECT ({SKILL_KEY_SQL}) AS k,
-               (n.attrs::json->>'level_code') AS level_code,
-               (n.attrs::json->>'level_zh') AS level_zh,
                n.attrs, n.description, n.id
         FROM kg_node n
         WHERE n.type='skill_level' AND n.region=%s AND ({SKILL_KEY_SQL}) = ANY(%s)
@@ -131,8 +129,10 @@ def _levels_of(conn, keys: list[str], region: str = "CN") -> dict[str, list[dict
         """,
         (region, keys),
     ).fetchall()
-    from backend.kg.pg_store.level_map import product_level_int_from_attrs
+    from backend.kg.pg_store.skill_aggregate import level_from_node
+    from backend.kg.pg_store.skill_level_meta import label_map
 
+    labels = label_map()
     out: dict[str, list[dict[str, Any]]] = {}
     for r in rows:
         import json as _json
@@ -141,7 +141,7 @@ def _levels_of(conn, keys: list[str], region: str = "CN") -> dict[str, list[dict
             a = _json.loads(r["attrs"]) if isinstance(r["attrs"], str) else (r["attrs"] or {})
         except Exception:
             a = {}
-        lv = product_level_int_from_attrs(a, r.get("k"))
+        lv = level_from_node({"attrs": a})
         desc = (r["description"] or "").strip()
         bucket = out.setdefault(r["k"], {})
         # 同一技能名被多个岗位共用，各岗位都有独立的 skill_level 节点，
@@ -152,8 +152,8 @@ def _levels_of(conn, keys: list[str], region: str = "CN") -> dict[str, list[dict
         if prev is None or (looks_req and not prev.get("_looks_req")):
             bucket[lv] = {
                 "level": lv,
-                "level_code": r["level_code"],
-                "level_zh": r["level_zh"],
+                # 产品档文案（了解/掌握/熟练/精通/专家），取自 skill_level_meta
+                "level_label": labels.get(lv) if lv else None,
                 "node_id": r["id"],
                 # 档位要求说明（截断，避免灌入整段国标正文）
                 "requirement": desc[:300] or None,
@@ -178,8 +178,7 @@ def list_skill_options(
         rows = conn.execute(
             f"""
             SELECT ({SKILL_KEY_SQL}) AS skill_key,
-                   min(n.category) AS category,
-                   array_agg(DISTINCT (n.attrs::json->>'level_code')) AS levels
+                   min(n.category) AS category
             FROM kg_node n
             WHERE n.type='skill_level' AND n.region=%s
               AND COALESCE(n.status,'published') <> 'archived'
@@ -195,17 +194,15 @@ def list_skill_options(
 
     out = []
     for r in rows:
-        lv = sorted({x for x in (r["levels"] or []) if x})
         levels = detail.get(r["skill_key"], [])
-        # 产品等级集合（去掉映射不出的），前端据此生成档位选项
+        # 该技能已配齐的产品档，前端据此决定 L1–L5 哪些按钮可选
         plv = sorted({x["level"] for x in levels if x["level"]})
         out.append(
             {
                 "skill_key": r["skill_key"],
                 "category": r["category"],
-                "available_levels": [f"L{x}" for x in plv],
-                "raw_level_codes": lv,
-                "levels": levels,          # 含每档 requirement
+                "available_levels": plv,
+                "levels": levels,          # 含每档 level_label 与 requirement
                 "level_completeness": f"{len(plv)}/5",
             }
         )
@@ -221,8 +218,7 @@ def get_composition(node_id: str) -> dict[str, Any]:
             f"""
             SELECT e.id AS edge_id, e.weight, e.dst_id,
                    ({SKILL_KEY_SQL}) AS skill_key,
-                   n.category, n.attrs, n.name AS skill_node_name,
-                   (n.attrs::json->>'level_code') AS level_code
+                   n.category, n.attrs, n.name AS skill_node_name
             FROM kg_edge e
             JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level'
             WHERE e.src_id=%s AND e.rel_type=%s AND {_EP}
@@ -235,10 +231,10 @@ def get_composition(node_id: str) -> dict[str, Any]:
         # 档位明细（含每档要求描述），供前端选档时展示
         level_detail = _levels_of(conn, keys, node["region"] or "CN")
         all_levels = {
-            k: [f"L{x['level']}" for x in v if x["level"]] for k, v in level_detail.items()
+            k: sorted({x["level"] for x in v if x["level"]}) for k, v in level_detail.items()
         }
 
-    from backend.kg.pg_store.level_map import product_level_int_from_attrs
+    from backend.kg.pg_store.skill_aggregate import level_from_node
 
     items = []
     wsum = 0.0
@@ -247,14 +243,11 @@ def get_composition(node_id: str) -> dict[str, Any]:
     for r in rows:
         w = float(r["weight"] or 0)
         wsum += w
-        # 必须传**完整 attrs**：只给 level_code 会让国标码被当成产品码，
-        # 例如 level_code=L5 且 level_zh=五级/初级工，产品侧其实是 L1（了解），
-        # 只传 code 会误判成 L5（专家），与 available_levels 自相矛盾。
         try:
             _a = _json.loads(r["attrs"]) if isinstance(r["attrs"], str) else (r["attrs"] or {})
         except Exception:
-            _a = {"level_code": r["level_code"]}
-        sel = product_level_int_from_attrs(_a, r.get("skill_node_name"))
+            _a = {}
+        sel = level_from_node({"attrs": _a})
         avail = all_levels.get(r["skill_key"], [])
         items.append(
             {
@@ -262,13 +255,12 @@ def get_composition(node_id: str) -> dict[str, Any]:
                 "skill_key": r["skill_key"],
                 "category": r["category"],
                 "skill_level_id": r["dst_id"],
-                # 该技能配齐的全部档（用于渲染 L1–L5 按钮的可选性）
+                # 该技能配齐的全部档 int 1–5（用于渲染档位按钮的可选性）
                 "available_levels": avail,
                 # 各档要求说明：选档时给运营看「这一档要求什么」
                 "levels": level_detail.get(r["skill_key"], []),
                 # 用户选中的档（边指向哪个等级节点）
                 "selected_level": sel,
-                "selected_level_code": r["level_code"],
                 "weight": w if weighted else None,
                 "weight_pct": round(w * 100) if weighted and w else None,
             }
@@ -295,7 +287,7 @@ def _find_level_node(conn, skill_key: str, level: int | None, region: str) -> di
     """
     rows = conn.execute(
         f"""
-        SELECT n.id, (n.attrs::json->>'level_code') AS level_code, n.attrs
+        SELECT n.id, (n.attrs::json->>'level')::int AS level, n.attrs
         FROM kg_node n
         WHERE n.type='skill_level' AND n.region=%s AND ({SKILL_KEY_SQL})=%s
           AND COALESCE(n.status,'published') <> 'archived'
@@ -304,13 +296,8 @@ def _find_level_node(conn, skill_key: str, level: int | None, region: str) -> di
     ).fetchall()
     if not rows:
         raise CompositionError(f"技能不存在：{skill_key}")
-    from backend.kg.pg_store.level_map import product_level_int_from_attrs
 
-    cand = []
-    for r in rows:
-        lv = product_level_int_from_attrs({"level_code": r["level_code"]})
-        cand.append((lv or 0, dict(r)))
-    cand.sort(key=lambda x: -x[0])
+    cand = sorted(((r["level"] or 0, dict(r)) for r in rows), key=lambda x: -x[0])
     if level:
         for lv, r in cand:
             if lv == int(level):

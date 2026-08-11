@@ -28,29 +28,10 @@ COALESCE(
 )
 """
 
-LEVEL_INT_SQL = f"""
-COALESCE(
-  NULLIF(trim(both FROM ({_ATTRS_JSON}->>'level_int')), '')::int,
-  CASE upper(trim(both FROM COALESCE({_ATTRS_JSON}->>'level_code', '')))
-    WHEN 'L1' THEN 1 WHEN 'L2' THEN 2 WHEN 'L3' THEN 3
-    WHEN 'L4' THEN 4 WHEN 'L5' THEN 5
-    ELSE NULL
-  END,
-  CASE
-    WHEN ({_ATTRS_JSON}->>'level_zh') LIKE '%%五级%%'
-      OR ({_ATTRS_JSON}->>'level_zh') LIKE '%%初级工%%' THEN 1
-    WHEN ({_ATTRS_JSON}->>'level_zh') LIKE '%%四级%%'
-      OR ({_ATTRS_JSON}->>'level_zh') LIKE '%%中级工%%' THEN 2
-    WHEN ({_ATTRS_JSON}->>'level_zh') LIKE '%%三级%%'
-      OR ({_ATTRS_JSON}->>'level_zh') LIKE '%%高级工%%' THEN 3
-    WHEN (({_ATTRS_JSON}->>'level_zh') LIKE '%%二级%%'
-      OR (({_ATTRS_JSON}->>'level_zh') LIKE '%%技师%%'
-          AND ({_ATTRS_JSON}->>'level_zh') NOT LIKE '%%高级技师%%')) THEN 4
-    WHEN ({_ATTRS_JSON}->>'level_zh') LIKE '%%一级%%'
-      OR ({_ATTRS_JSON}->>'level_zh') LIKE '%%高级技师%%' THEN 5
-    ELSE NULL
-  END
-)
+# attrs.level 是产品等级（1 了解 → 5 专家）的唯一真源，由采集端直接写入，
+# 库内历史数据已由 scripts/migrate_skill_level_to_product.py 迁移到位。
+LEVEL_SQL = f"""
+NULLIF(trim(both FROM ({_ATTRS_JSON}->>'level')), '')::int
 """
 
 def _level_labels() -> dict[int, str]:
@@ -94,29 +75,15 @@ def skill_key_from_node(n: dict[str, Any]) -> str:
     return name or (n.get("id") or "")
 
 
-def level_int_from_node(n: dict[str, Any]) -> int | None:
-    """产品侧 L1–L5（了解→专家）；国标五级经 level_map 对齐。"""
+def level_from_node(n: dict[str, Any]) -> int | None:
+    """产品等级 1–5（了解→专家）。直读 attrs.level，不做任何刻度换算。"""
     a = n.get("attrs") if isinstance(n.get("attrs"), dict) else _maybe_json(n.get("attrs")) or {}
     if not isinstance(a, dict):
         a = {}
     try:
-        from backend.kg.pg_store.level_map import product_level_int_from_attrs
-
-        pi = product_level_int_from_attrs(a, n.get("name"))
-        if pi is not None:
-            return pi
-    except Exception:
-        pass
-    if a.get("level_int") is not None:
-        try:
-            return int(a["level_int"])
-        except (TypeError, ValueError):
-            pass
-    code = str(a.get("level_code") or "").strip().upper()
-    m = re.match(r"L([1-5])$", code)
-    if m:
-        return int(m.group(1))
-    return None
+        return max(1, min(5, int(a["level"])))
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def bundle_id(region: str | None, skill_key: str) -> str:
@@ -124,22 +91,20 @@ def bundle_id(region: str | None, skill_key: str) -> str:
     return f"bundle:{reg}:{skill_key}"
 
 
-def _level_entry(n: dict[str, Any], level_int: int | None) -> dict[str, Any]:
+def _level_entry(n: dict[str, Any], level: int | None) -> dict[str, Any]:
     a = n.get("attrs") if isinstance(n.get("attrs"), dict) else {}
-    li = level_int
-    code = a.get("level_code") or (f"L{li}" if li else None)
-    label = a.get("level_zh") or a.get("level_label")
-    if not label and li:
-        label = _LEVEL_LABELS.get(li)
+    li = level
+    # 档位文案只认产品语义（了解/掌握/…）；国标「四级/中级工」那套已在数据层剥离
+    label = (_level_labels().get(li) if li else None) or a.get("level_label")
     desc = None
+    # level_descriptions 的 key 是产品档 L 码（"L4"），与 level 同源
     ld = a.get("level_descriptions")
-    if isinstance(ld, dict) and code and ld.get(code):
-        desc = ld.get(code)
+    if isinstance(ld, dict) and li and ld.get(f"L{li}"):
+        desc = ld.get(f"L{li}")
     if not desc:
         desc = n.get("description")
     return {
-        "level_code": code,
-        "level_int": li,
+        "level": li,
         "level_label": label,
         "node_id": n.get("id"),
         "description": desc,
@@ -159,8 +124,8 @@ def merge_level_descriptions(nodes: list[dict[str, Any]]) -> dict[str, str]:
             for k, v in ld.items():
                 if v and str(v).strip():
                     out[str(k)] = str(v)
-        li = level_int_from_node(n)
-        code = (a.get("level_code") or (f"L{li}" if li else None) or "").upper()
+        li = level_from_node(n)
+        code = f"L{li}" if li else ""
         if code and n.get("description") and code not in out:
             # 避免把纯拼接短句当能力描述；过短则跳过
             d = str(n["description"]).strip()
@@ -198,25 +163,13 @@ def assemble_bundle(
 ) -> dict[str, Any]:
     nodes_sorted = sorted(
         nodes,
-        key=lambda n: (level_int_from_node(n) is None, level_int_from_node(n) or 99),
+        key=lambda n: (level_from_node(n) is None, level_from_node(n) or 99),
     )
-    levels = []
-    available: list[str] = []
-    for n in nodes_sorted:
-        li = level_int_from_node(n)
-        entry = _level_entry(n, li)
-        levels.append(entry)
-        code = entry.get("level_code")
-        if code and code not in available:
-            available.append(str(code).upper() if str(code).upper().startswith("L") else str(code))
-    # normalize available to L1..L5 codes when possible
-    avail_set = set()
-    for n in nodes_sorted:
-        li = level_int_from_node(n)
-        if li:
-            avail_set.add(f"L{li}")
-    available = [f"L{i}" for i in range(1, 6) if f"L{i}" in avail_set]
-    missing = [f"L{i}" for i in range(1, 6) if f"L{i}" not in avail_set]
+    levels = [_level_entry(n, level_from_node(n)) for n in nodes_sorted]
+    # 档位一律用 int 1–5 对外，前端按 skill_level_meta 渲染文案，不再传 "L3" 这类码
+    avail_set = {lv["level"] for lv in levels if lv["level"]}
+    available = [i for i in range(1, 6) if i in avail_set]
+    missing = [i for i in range(1, 6) if i not in avail_set]
     ld = merge_level_descriptions(nodes_sorted)
     reg = region or (nodes_sorted[0].get("region") if nodes_sorted else DEFAULT_REGION)
     conf = None
@@ -235,7 +188,7 @@ def assemble_bundle(
     desc = None
     if required_level:
         for lv in levels:
-            if lv.get("level_int") == required_level and lv.get("description"):
+            if lv.get("level") == required_level and lv.get("description"):
                 desc = lv["description"]
                 break
     if not desc and levels:
@@ -294,7 +247,7 @@ def group_nodes_to_bundles(
             order.append(key)
             buckets[key] = []
         buckets[key].append(n)
-        li = level_int_from_node(n)
+        li = level_from_node(n)
         edge = n.get("edge") if isinstance(n.get("edge"), dict) else {}
         w = edge.get("weight")
         if w is not None:
@@ -351,7 +304,7 @@ def list_skill_bundles(
         st = None
 
     key_expr = SKILL_KEY_SQL
-    li_expr = LEVEL_INT_SQL
+    li_expr = LEVEL_SQL
 
     # 节点级 status 条件（聚合前）
     if st and st != "mixed":

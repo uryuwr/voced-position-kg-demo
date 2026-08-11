@@ -19,9 +19,9 @@ sys.path.insert(0, str(ROOT))
 
 from backend.kg.paths import RAW, REPORTS, ensure_dirs
 from backend.kg.pg_store.client import connect
-from backend.kg.pg_store.level_map import product_level_int_from_attrs
 
-# 国标等级词 → 产品 L（了解→专家）
+# 国标 PDF 里的等级节标题 → **产品**档 L 码（注意：五级/初级工 是最低档 → L1）。
+# 抽出的 descriptions 因此以产品码为 key，与 attrs.level_descriptions 同源。
 LEVEL_MARKERS = [
     ("五级/初级工", "L1"),
     ("四级/中级工", "L2"),
@@ -136,23 +136,19 @@ def apply_to_db(by_file: list[dict], *, dry_run: bool) -> dict:
                     except json.JSONDecodeError:
                         attrs = {}
                 attrs = dict(attrs or {})
-                # 产品档
-                pi = product_level_int_from_attrs(attrs, r["name"])
-                code = f"L{pi}" if pi else (attrs.get("level_code") or "").upper()
+                # 产品档直读，不再做刻度换算
+                pi = attrs.get("level")
+                if not pi:
+                    continue
+                code = f"L{int(pi)}"
                 if code not in descs:
-                    # 管道历史 L 码反转时再试
-                    raw = str(attrs.get("level_code") or "").upper()
-                    if raw in descs:
-                        code = raw
-                    else:
-                        continue
+                    continue
                 new_desc = descs[code]
                 ld = attrs.get("level_descriptions")
                 if not isinstance(ld, dict):
                     ld = {}
                 ld[code] = new_desc
                 attrs["level_descriptions"] = ld
-                attrs["product_level_int"] = pi or int(code[1]) if code.startswith("L") else None
                 attrs["desc_source"] = "pdf_professional_ability"
                 attrs["desc_source_file"] = fname
                 # 占位短描述才覆盖

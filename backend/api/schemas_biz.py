@@ -79,9 +79,8 @@ class PositionOut(BaseModel):
 
 
 class SkillLevelItem(BaseModel):
-    level_code: str | None = None
-    level_int: int | None = None
-    level_label: str | None = None
+    level: int | None = Field(None, description="产品等级 1–5（1 了解 → 5 专家），唯一判定依据")
+    level_label: str | None = Field(None, description="档位文案，取自 skill_level_meta")
     node_id: str | None = None
     description: str | None = None
     status: str | None = None
@@ -111,8 +110,8 @@ class SkillOut(BaseModel):
     level_descriptions: dict[str, str] = Field(
         default_factory=dict, description="L1–L5 能力描述文案"
     )
-    available_levels: list[str] = Field(default_factory=list)
-    missing_levels: list[str] = Field(default_factory=list)
+    available_levels: list[int] = Field(default_factory=list, description="已配齐的档位 1–5")
+    missing_levels: list[int] = Field(default_factory=list, description="尚缺的档位 1–5")
     counts: RelationCounts | None = None
 
 

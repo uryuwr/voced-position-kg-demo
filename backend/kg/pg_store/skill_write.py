@@ -190,10 +190,9 @@ def build_level_node_body(
         {
             "skill_key": skill_key,
             "skill_name": skill_key,
+            # scale 记录数据源使用的原刻度，仅溯源；判定一律用 level
             "scale": base.get("scale") or "l1_l5",
-            "level_code": level_code,
-            "level_int": li,
-            "level_zh": label,
+            "level": li,
             "level_label": label,
             "level_payload": level_obj,
         }
@@ -400,7 +399,7 @@ def apply_skill_bundle_update(
             if not code:
                 continue
             levels[code] = a.get("level_payload") or {
-                "label": a.get("level_zh") or a.get("level_label"),
+                "label": a.get("level_label"),
                 "description": n.get("description"),
             }
         payload["levels"] = levels

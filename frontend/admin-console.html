@@ -607,13 +607,13 @@
         const lvMap = {};
         (it.levels || []).forEach((x) => { if (x.level) lvMap[x.level] = x; });
         const btns = `<div class="lv-btns">` + [1, 2, 3, 4, 5].map((lv) => {
-          const has = avail.includes("L" + lv);
+          const has = avail.includes(lv);
           const on = it.selected_level === lv;
           const info = lvMap[lv];
           // 档位要求写进 title：选档时 hover 就能看到这一档要求什么
-          const zhPart = info && info.level_zh ? "（" + info.level_zh + "）" : "";
+          const labPart = info && info.level_label ? " " + info.level_label : "";
           const reqPart = info && info.requirement ? " — " + info.requirement : "";
-          const tip = has ? `L${lv}${zhPart}${reqPart}` : "该技能未配齐此档";
+          const tip = has ? `L${lv}${labPart}${reqPart}` : "该技能未配齐此档";
           return `<button class="btn ${on ? "primary" : ""}" type="button"
             ${has ? "" : "disabled"} title="${esc(tip)}"
             data-setlv="${esc(it.skill_key)}" data-lv="${lv}">L${lv}</button>`;
@@ -622,7 +622,7 @@
         const selInfo = lvMap[it.selected_level];
         const reqLine = selInfo && selInfo.requirement
           ? `<div class="muted" style="max-width:420px;white-space:normal;font-size:12px;margin-top:3px">
-               L${selInfo.level}${selInfo.level_zh ? "（" + esc(selInfo.level_zh) + "）" : ""}要求：${esc(selInfo.requirement.slice(0, 120))}${selInfo.requirement.length > 120 ? "…" : ""}
+               L${selInfo.level}${selInfo.level_label ? " " + esc(selInfo.level_label) : ""} 要求：${esc(selInfo.requirement.slice(0, 120))}${selInfo.requirement.length > 120 ? "…" : ""}
              </div>`
           : "";
         const wCell = weighted
@@ -744,18 +744,25 @@
         const key = $("cpSel").value.trim();
         const hit = cpOpts.find((x) => x.skill_key === key);
         const sel = $("cpLv");
+        // 重建 options 会把 value 冲回第一项，而本函数也挂在 cpSel 的 change 上：
+        // 点「添加」时输入框失焦 → change → 重建 → 用户刚选的档被静默换成默认最高档。
+        // 故先记住已选档，重建后按值还原。
+        const keep = sel.value;
         if (!hit) {
           sel.innerHTML = `<option value="">先选技能</option>`;
           return;
         }
-        const lvs = (hit.available_levels || []).map((c) => Number(String(c).replace(/^L/i, ""))).filter(Boolean).sort();
+        // available_levels 已是 int 1–5，无需再从 "L3" 里抠数字
+        const lvs = (hit.available_levels || []).map(Number).filter(Boolean).sort();
         const lmap = {};
         (hit.levels || []).forEach((x) => { if (x.level) lmap[x.level] = x; });
         sel.innerHTML = `<option value="">默认最高档（L${lvs[lvs.length - 1] ?? "?"}）</option>`
           + lvs.map((n) => {
-              const zh = lmap[n] && lmap[n].level_zh ? "（" + lmap[n].level_zh + "）" : "";
-              return `<option value="${n}">L${n}${zh}</option>`;
+              const info = lmap[n] || {};
+              const lab = info.level_label ? " " + info.level_label : "";
+              return `<option value="${n}">L${n}${lab}</option>`;
             }).join("");
+        if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
         $("cpHint").textContent = `已配齐 ${hit.level_completeness}`;
         // 各档要求展开在下方，选之前就能看清差异
         const box = $("cpLvDesc");
@@ -764,7 +771,7 @@
             ? lvs.map((n) => {
                 const x = lmap[n] || {};
                 return `<div style="font-size:12px;margin:3px 0">
-                  <b>L${n}</b>${x.level_zh ? `<span class="muted">（${esc(x.level_zh)}）</span>` : ""}
+                  <b>L${n}</b>${x.level_label ? `<span class="muted">（${esc(x.level_label)}）</span>` : ""}
                   <span class="muted">${esc((x.requirement || "无要求说明").slice(0, 140))}</span></div>`;
               }).join("")
             : "";
@@ -919,9 +926,10 @@
     }
 
     function levelsCellHtml(n) {
+      // available_levels 是 int 1–5（越大越强）；L 前缀只是展示文案
       const av = n.available_levels || (n.attrs && n.attrs.available_levels) || [];
-      return ["L1", "L2", "L3", "L4", "L5"]
-        .map((lv) => `<span class="tag ${av.includes(lv) ? "pub" : ""}">${esc(lv)}</span>`)
+      return [1, 2, 3, 4, 5]
+        .map((lv) => `<span class="tag ${av.includes(lv) ? "pub" : ""}">L${lv}</span>`)
         .join(" ");
     }
 
@@ -1126,7 +1134,7 @@
             const body = levels.length
               ? `<table class="data"><thead><tr><th>等级</th><th>状态</th><th>节点 ID</th><th>描述</th><th></th></tr></thead><tbody>${
                   levels.map((lv) => `<tr>
-                    <td><span class="tag pub">${esc(lv.level_code || "L?")}</span> ${esc(lv.level_label || "")}</td>
+                    <td><span class="tag pub">${lv.level ? "L" + lv.level : "L?"}</span> ${esc(lv.level_label || "")}</td>
                     <td>${statusTag(lv.status || detail.status || "draft")}</td>
                     <td class="id-cell">${esc(lv.node_id || "—")}</td>
                     <td class="muted">${esc((lv.description || "").slice(0, 80))}</td>
@@ -1140,7 +1148,7 @@
               : `<p class="muted">先修：无</p>`;
             openModal(`
               <h2>技能档位 · ${esc(detail.name || key)} ${statusTag(detail.status || "draft")}</h2>
-              <p class="muted">关联岗位 ${detail.counts?.occupation ?? 0} · 已有 ${detail.available_levels?.join(" / ") || "—"}</p>
+              <p class="muted">关联岗位 ${detail.counts?.occupation ?? 0} · 已有 ${(detail.available_levels || []).map((v) => "L" + v).join(" / ") || "—"}</p>
               ${preHtml}
               ${body}
               <div class="form-actions">
@@ -1581,7 +1589,8 @@
       const descByLv = {};
       const labelByLv = {};
       (detail?.levels || []).forEach((lv) => {
-        const code = (lv.level_code || "").toUpperCase();
+        // 档位以 int level 为准；这里的 "L3" 只是 LEVEL_META 的行 key
+        const code = lv.level ? "L" + lv.level : "";
         if (code) {
           descByLv[code] = lv.description || "";
           labelByLv[code] = lv.level_label || "";

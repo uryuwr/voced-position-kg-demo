@@ -257,11 +257,14 @@ def _node_to_skill(n: dict[str, Any]) -> dict[str, Any]:
 def _bundle_to_skill_out(b: dict[str, Any]) -> dict[str, Any]:
     """逻辑技能 bundle → 学生端 SkillOut 兼容字段。"""
     req = b.get("required_level")
+    avail = b.get("available_levels") or []
+    # 无要求档时退到该技能最高档；文案统一取自 skill_level_meta（BR-01）
+    lv = req or (avail[-1] if avail else None)
     level_label = None
-    if req:
-        level_label = f"L{req}"
-    elif b.get("available_levels"):
-        level_label = b["available_levels"][-1]
+    if lv:
+        from backend.kg.pg_store.skill_level_meta import label_map
+
+        level_label = label_map().get(int(lv))
     return {
         "id": b.get("id"),
         "name": b.get("name") or b.get("skill_key"),

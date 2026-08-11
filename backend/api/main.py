@@ -800,7 +800,7 @@ def explore(
                                 "name": "大数据工程技术人员", "level": 2,
                                 "skill_count": 19,
                                 "skills": [
-                                    {"id": "CN:skill_level:...:Hadoop|L3", "type": "skill_level", "name": "Hadoop · 高级", "attrs": {"level_code": "L3", "level_zh": "高级"}}
+                                    {"id": "CN:skill_level:...:Hadoop|L3", "type": "skill_level", "name": "Hadoop · L5", "attrs": {"level": 5, "level_label": "专家"}}
                                 ]
                             }
                         ],

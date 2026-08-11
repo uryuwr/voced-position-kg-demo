@@ -636,7 +636,7 @@
                 name: (s.skill_key || s.name) + (s.required_level ? " · L" + s.required_level : ""),
                 skill_key: s.skill_key,
                 weight: s.weight,
-                attrs: { skill_name: s.skill_key, level_code: s.required_level ? "L" + s.required_level : null },
+                attrs: { skill_name: s.skill_key, level: s.required_level || null },
               });
             }
             edges.push({
