@@ -278,6 +278,34 @@ def main() -> int:
               return on ? Number(on.dataset.lv) : null;
             }""", skill)
             check("D1b 添加技能并选 L3 成功", added == 3, f"实际 L{added}")
+
+            # D4 判重：同一技能不得添加两次（高级档天然含低级，重复会让前后台权重对不上）
+            page.fill("#cpSel", skill)
+            page.wait_for_timeout(1800)
+            page.locator("#cpAdd").click()
+            page.wait_for_timeout(2000)
+            occurrences = page.evaluate(
+                """k => new Set([...document.querySelectorAll(
+                     `[data-setlv="${CSS.escape(k)}"]`)].map(b => b.dataset.setlv)).size""", skill)
+            # 只数构成弹层内的行：背景列表页（技能库）也可能有同名行，会误判
+            rows_of_skill = page.evaluate(
+                """k => [...document.querySelectorAll('#modal table.data tbody tr')]
+                     .filter(tr => tr.innerText.includes(k)).length""", skill)
+            check("D4 重复添加被拦且不产生第二行",
+                  occurrences == 1 and rows_of_skill == 1,
+                  f"该技能行数={rows_of_skill}")
+
+            # D5 后端也判重（防绕过前端直接调接口）：mode=add 应回 409
+            st409 = page.evaluate("""async ({b, id, k}) => {
+              const r = await fetch(`${b}/v1/admin/composition?mode=add&node_id=`
+                + encodeURIComponent(id), {
+                method: 'PUT', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({skill_key: k, level: 5}) });
+              return { s: r.status, t: (await r.text()).slice(0, 160) };
+            }""", {"b": BASE, "id": maj_id, "k": skill})
+            check("D5 后端 mode=add 重复返回 409", st409["s"] == 409,
+                  f"HTTP {st409['s']} {st409['t'][:90]}")
+
             page.evaluate("""k => {
               const b = document.querySelector(`[data-rmsk="${CSS.escape(k)}"]`);
               if (b) b.click();
@@ -286,6 +314,33 @@ def main() -> int:
             gone = page.evaluate(
                 """k => !document.querySelector(`[data-setlv="${CSS.escape(k)}"]`)""", skill)
             check("D3 移除技能成功", gone)
+
+            # ---------- H 前后台权重口径一致 ----------
+            # 管理台按边逐条求和，前台按 skill_key 聚合；同技能多档时两边必然打架。
+            # 存量已由 scripts/dedupe_skill_composition_edges.py 合并为一技能一档。
+            print("\n== H 前后台权重口径 ==")
+            cmp_res = page.evaluate("""async ({b, id}) => {
+              const g = async (u) => (await fetch(b + u)).json();
+              const back = await g('/v1/admin/composition?node_id=' + encodeURIComponent(id));
+              const raw = await g('/v1/occupations/skills?aggregate=1&occupation_id='
+                + encodeURIComponent(id));
+              const front = Array.isArray(raw) ? raw : (raw.skills || raw.items || []);
+              const r4 = (v) => Math.round((Number(v) || 0) * 10000) / 10000;
+              const bm = {}, fm = {};
+              (back.items || []).forEach(i => { bm[i.skill_key] = [i.selected_level, r4(i.weight)]; });
+              front.forEach(x => { fm[x.skill_key] = [x.required_level, r4(x.weight)]; });
+              const bk = Object.keys(bm), fk = Object.keys(fm);
+              const diff = bk.filter(k => JSON.stringify(bm[k]) !== JSON.stringify(fm[k]));
+              const dupBack = bk.length !== (back.items || []).length;
+              return { nb: bk.length, nf: fk.length, diff: diff.slice(0, 3), dupBack,
+                       bs: r4(bk.reduce((s,k)=>s+bm[k][1],0)), fs: r4(fk.reduce((s,k)=>s+fm[k][1],0)) };
+            }""", {"b": BASE, "id": occ_id})
+            check("H1 技能数与逐项(档,权重)一致",
+                  cmp_res["nb"] == cmp_res["nf"] and not cmp_res["diff"],
+                  f"后台{cmp_res['nb']} 前台{cmp_res['nf']} 差异={cmp_res['diff']}")
+            check("H2 权重和一致", abs(cmp_res["bs"] - cmp_res["fs"]) < 1e-6,
+                  f"后台Σ={cmp_res['bs']} 前台Σ={cmp_res['fs']}")
+            check("H3 后台无同技能重复行", not cmp_res["dupBack"])
 
             # ---------- B 技能详情 ----------
             print("\n== B 技能详情 ==")

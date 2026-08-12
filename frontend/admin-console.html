@@ -787,12 +787,24 @@
       $("cpAdd").onclick = async () => {
         const key = $("cpSel").value.trim();
         if (!key) { toast("请先输入并选择技能", true); return; }
+        // 一个技能只保留一个要求档：本地先挡一次，避免白跑一趟网络
+        const dup = (d.items || []).find((it) => it.skill_key === key);
+        if (dup) {
+          toast(`「${key}」已在构成中（当前 L${dup.selected_level || "?"}），`
+            + "请直接点该行的档位按钮调整", true);
+          return;
+        }
         const lv = $("cpLv").value;
         try {
-          await api.apiFetch("/v1/admin/composition?node_id=" + encodeURIComponent(nodeId),
+          // mode=add：后端也判重，防绕过前端直接调接口
+          await api.apiFetch(
+            "/v1/admin/composition?mode=add&node_id=" + encodeURIComponent(nodeId),
             { method: "PUT", body: { skill_key: key, level: lv ? Number(lv) : null } });
           toast("已添加 " + key); reload();
-        } catch (e) { toast(e.message || e, true); }
+        } catch (e) {
+          // 409 判重的提示语已由 api-client 从 detail.message 提取到 e.message
+          toast(e.message || e, true);
+        }
       };
     }
 

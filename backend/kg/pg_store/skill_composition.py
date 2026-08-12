@@ -32,6 +32,19 @@ class CompositionError(ValueError):
     """技能构成操作失败（类型不支持 / 技能不存在 / 等级不存在等）。"""
 
 
+class SkillExistsError(CompositionError):
+    """该技能已在构成中。
+
+    一个实体对一个技能只能有一个要求档——高级技能天然包含低级，同时挂 L1 和 L3
+    没有意义，且会让管理台按边求和的权重与前台按 skill_key 聚合的权重对不上。
+    """
+
+    def __init__(self, message: str, *, skill_key: str, current_level: int | None):
+        super().__init__(message)
+        self.skill_key = skill_key
+        self.current_level = current_level
+
+
 def _rel_for(node_type: str) -> tuple[str, bool]:
     if node_type not in _REL:
         raise CompositionError(
@@ -315,16 +328,42 @@ def set_skill(
     *,
     level: int | None = None,
     weight: float | None = None,
+    only_if_absent: bool = False,
     user_id: str,
     user_name: str,
 ) -> dict[str, Any]:
-    """添加/更新一项技能。改等级即换边端点，故先删同 skill_key 的旧边再建。"""
+    """添加/更新一项技能。改等级即换边端点，故先删同 skill_key 的旧边再建。
+
+    only_if_absent=True 用于「添加」入口：该技能已在构成中就报错，而不是静默改档。
+    改档入口（点档位按钮）保持默认 False。
+    """
     ensure_schema()
     from backend.kg.pg_store.write import create_edge
 
     with connect() as conn:
         node = _node(conn, node_id)
         rel, weighted = _rel_for(node["type"])
+        if only_if_absent:
+            cur = conn.execute(
+                f"""
+                SELECT (n.attrs::json->>'level')::int AS level
+                FROM kg_edge e
+                JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level'
+                WHERE e.src_id=%s AND e.rel_type=%s AND ({SKILL_KEY_SQL})=%s AND {_EP}
+                ORDER BY 1 DESC NULLS LAST
+                LIMIT 1
+                """,
+                (node_id, rel, skill_key),
+            ).fetchone()
+            if cur:
+                lv = cur["level"]
+                raise SkillExistsError(
+                    f"技能「{skill_key}」已在构成中"
+                    + (f"（当前 L{lv}）" if lv else "")
+                    + "；一个技能只保留一个要求档，如需调整请直接点档位按钮",
+                    skill_key=skill_key,
+                    current_level=lv,
+                )
         target = _find_level_node(conn, skill_key, level, node["region"] or "CN")
         # 删掉该 skill_key 下的旧边（可能指向别的等级节点）
         conn.execute(

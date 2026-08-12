@@ -250,14 +250,21 @@ def group_nodes_to_bundles(
         li = level_from_node(n)
         edge = n.get("edge") if isinstance(n.get("edge"), dict) else {}
         w = edge.get("weight")
-        if w is not None:
-            try:
-                fw = float(w)
-                weights[key] = max(weights.get(key, fw), fw)
-            except (TypeError, ValueError):
-                pass
-        if li is not None:
-            req_level[key] = max(req_level.get(key, li), li)
+        try:
+            fw = float(w) if w is not None else None
+        except (TypeError, ValueError):
+            fw = None
+        # 一个实体对一个技能只有一个要求档（高级天然含低级）。存量重复已由
+        # scripts/dedupe_skill_composition_edges.py 合并；这里保留兜底聚合：
+        # 取最高档，**权重取该档那条边的**，而非 max(权重) —— 国标权重是「该等级
+        # 考核中的占比」，取别档的权重会和 required_level 不同源，导致前后台数字打架。
+        cur = req_level.get(key)
+        if li is not None and (cur is None or li > cur):
+            req_level[key] = li
+            if fw is not None:
+                weights[key] = fw
+        elif cur is None and key not in weights and fw is not None:
+            weights[key] = fw          # 该技能无档位信息时的兜底
     return [
         assemble_bundle(
             k,

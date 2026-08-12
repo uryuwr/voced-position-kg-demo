@@ -689,15 +689,26 @@ def get_skill_composition(
     description=(
         "从已有技能中选一项加入构成，或改已有项的等级/权重。\n\n"
         "「选中等级」由**边指向哪个等级节点**表达，因此改档实现为"
-        "先删该 skill_key 的旧边再建新边——对同一 skill_key 重复调用是幂等的。"
+        "先删该 skill_key 的旧边再建新边——对同一 skill_key 重复调用是幂等的。\n\n"
+        "**一个技能只保留一个要求档**（高级天然含低级；同时挂多档会让管理台按边求和的"
+        "权重与前台按 skill_key 聚合的权重对不上）。因此：\n"
+        "- `mode=add`（添加入口）：该技能已存在则返回 **409**，附 `current_level`\n"
+        "- `mode=set`（默认，改档入口）：直接替换档位/权重"
     ),
 )
 def put_skill_composition(
     body: CompositionSkillBody,
     node_id: str = Query(..., description="专业或岗位的节点 id"),
+    mode: str = Query(
+        "set", description="set=改档（默认，覆盖）；add=新增（已存在则 409）"
+    ),
     user: AuthUser = Depends(require_auth_user),
 ) -> dict[str, Any]:
-    from backend.kg.pg_store.skill_composition import CompositionError, set_skill
+    from backend.kg.pg_store.skill_composition import (
+        CompositionError,
+        SkillExistsError,
+        set_skill,
+    )
 
     try:
         return set_skill(
@@ -705,9 +716,19 @@ def put_skill_composition(
             body.skill_key,
             level=body.level,
             weight=body.weight,
+            only_if_absent=(mode or "").strip().lower() == "add",
             user_id=user.user_id,
             user_name=user.user_name,
         )
+    except SkillExistsError as e:
+        raise HTTPException(
+            409,
+            detail={
+                "message": str(e),
+                "skill_key": e.skill_key,
+                "current_level": e.current_level,
+            },
+        ) from e
     except CompositionError as e:
         raise HTTPException(400, str(e)) from e
 
