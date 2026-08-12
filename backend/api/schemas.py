@@ -148,12 +148,14 @@ class KgNode(BaseModel):
         None, description="待审动作 create|update|delete|disable|enable（通过后才改库）"
     )
     pending_title: str | None = None
-    counts: dict[str, int] | None = Field(
+    counts: dict[str, int | float] | None = Field(
         None,
         description=(
             "关联计数（include_counts=1 时联读填充）。"
             "键：major/occupation/skill/industry/course/level；"
-            "skill 为逻辑技能 DISTINCT skill_key"
+            "skill 为逻辑技能 DISTINCT skill_key；"
+            "skill_aggregated 为专业经岗位两跳汇总的技能数。"
+            "另有 weight_sum（岗位 requires 权重和）是**小数**，故值类型为 int | float"
         ),
     )
     industries: list[dict[str, Any]] | None = Field(

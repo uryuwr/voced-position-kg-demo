@@ -143,6 +143,32 @@ def main() -> int:
             check("A2 技能名不带国标后缀", *no_forbidden(names))
             check("A3 列表页无国标等级文案", *no_forbidden(body))
 
+            # ---------- G 四维列表 include_counts ----------
+            # 回归：counts 曾声明为 dict[str,int]，而岗位的 weight_sum 是小数，
+            # 权重和恰为整数（如归一化后的 1.0）时侥幸通过，遇到 0.5 就 500。
+            print("\n== G 四维列表（include_counts）==")
+            for typ, label in [("industry", "行业"), ("major", "专业"),
+                               ("occupation", "岗位"), ("skill_level", "技能等级")]:
+                st = page.evaluate("""async ({b, t}) => {
+                  const r = await fetch(`${b}/v1/kg/nodes?type=${t}&page=1&page_size=20`
+                    + `&region=CN&scope=manage&include_counts=1&order_by=created_desc`);
+                  return { s: r.status, body: (await r.text()).slice(0, 200) };
+                }""", {"b": BASE, "t": typ})
+                check(f"G {label}列表 include_counts 返回 200",
+                      st["s"] == 200, "" if st["s"] == 200 else f"HTTP {st['s']} {st['body']}")
+
+            # 岗位权重和为小数时也要正常序列化
+            frac = page.evaluate("""async (b) => {
+              const r = await fetch(`${b}/v1/kg/nodes?type=occupation&page=1&page_size=100`
+                + `&region=CN&scope=manage&include_counts=1&order_by=created_desc`);
+              if (r.status !== 200) return { err: r.status };
+              const j = await r.json();
+              const ws = j.items.map(i => (i.counts || {}).weight_sum).filter(v => v != null);
+              return { any: ws.some(v => v % 1 !== 0), sample: ws.slice(0, 5) };
+            }""", BASE)
+            check("G 岗位小数权重和可序列化",
+                  not frac.get("err"), f"样例 weight_sum={frac.get('sample')}")
+
             # ---------- C 岗位技能构成（核心回归） ----------
             print("\n== C 岗位技能构成 ==")
             occ_id = fx["occupation"]["id"]

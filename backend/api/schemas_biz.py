@@ -22,6 +22,8 @@ class RelationCounts(BaseModel):
     industry: int = 0
     course: int = 0
     level: int = Field(0, description="技能 bundle 下已有 L 档数")
+    skill_aggregated: int = Field(0, description="专业经岗位两跳汇总的技能数（skill 为直连数）")
+    weight_sum: float = Field(0.0, description="岗位 requires 权重和，**小数**；归一化后应为 1.0")
 
 
 class IndustryRef(BaseModel):
