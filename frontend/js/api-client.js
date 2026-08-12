@@ -156,6 +156,27 @@
     }
   }
 
+  /** 构造带鉴权的请求头。SSE 流式请求也要用它——EventSource 不支持自定义
+   *  header，而 MAC 签名必须放 Authorization，所以流式只能走 fetch + 这套头。 */
+  async function buildHeaders(url, method, extra) {
+    const h = Object.assign({}, extra || {});
+    const m = (method || "GET").toUpperCase();
+    const cfg = _config || (await loadConfig().catch(function () { return {}; }));
+    if (cfg.auth_bypass) {
+      const u = getUser();
+      h["X-Test-Uid"] = u.id;
+      h["X-Test-Uname"] = headerVal(u.name);
+    } else {
+      const auth = await getAuthHeader(url, m);
+      if (auth) h["Authorization"] = auth;
+      const u = getUser();
+      if (u.name) h["X-User-Name"] = headerVal(u.name);
+      const appId = String(window.__SDP_APP_ID__ || cfg.sdp_app_id || "").trim();
+      if (appId) h["sdp-app-id"] = appId;
+    }
+    return h;
+  }
+
   async function apiFetch(url, opts) {
     opts = opts || {};
     const method = (opts.method || "GET").toUpperCase();
@@ -215,6 +236,8 @@
     getUser,
     setUser,
     apiFetch,
+    buildHeaders,
+    absUrl,
     headerVal,
     LS_UID,
     LS_UNAME,

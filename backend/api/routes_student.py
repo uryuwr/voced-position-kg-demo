@@ -318,11 +318,50 @@ def student_set_goal(
     "/goal",
     tags=["前台 · 岗位探索与详情"],
     summary="清除学习目标",
-    description="对齐 clearGoal。",
+    description="对齐 clearGoal。传 occupation_id 只删该目标，否则清空全部。",
 )
-def student_clear_goal(user: TempUser = Depends(require_temp_user)) -> dict[str, str]:
-    biz.clear_goal(user.user_id)
+def student_clear_goal(
+    occupation_id: str | None = Query(None, description="只清除该岗位目标"),
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, str]:
+    biz.clear_goal(user.user_id, occupation_id)
     return {"status": "cleared"}
+
+
+@router.get(
+    "/goals",
+    tags=["前台 · 岗位探索与详情"],
+    summary="我的全部目标（活跃 + 历史）",
+    description=(
+        "一人可锁定多个岗位目标，其中至多一个 `status=active`。"
+        "换目标时旧目标转为 `archived` 而非删除，其测评结果与进度仍可回看。"
+    ),
+)
+def student_list_goals(user: TempUser = Depends(require_temp_user)) -> list[dict[str, Any]]:
+    return biz.list_goals(user.user_id)
+
+
+@router.get(
+    "/goal/overview",
+    tags=["前台 · 岗位探索与详情"],
+    summary="目标概览（当前目标 + 晋升路径 + 测评结果）",
+    description=(
+        "「岗位学习与自适应路径」页顶部卡片的数据源，一次取齐三块：\n\n"
+        "- **当前活跃目标**：岗位名/职级/职责/归属专业、技能项数\n"
+        "- **下一级成长目标**：沿 `advances_to` 的下一级岗位，及进阶需补的关键技能\n"
+        "- **测评结果**：该用户针对**这个岗位**最近一次报告（匹配度/雷达/优势/短板）\n\n"
+        "三者都按岗位绑定，换目标即换整套数据。\n\n"
+        "注意：`advances_to` 边目前只覆盖约 1% 的岗位，多数情况下 `next_level` 为 null，"
+        "前端应隐藏该区块而非报错。"
+    ),
+)
+def student_goal_overview(
+    occupation_id: str | None = Query(None, description="留空取当前活跃目标"),
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    from backend.kg.pg_store.goal_overview import goal_overview
+
+    return goal_overview(user.user_id, occupation_id)
 
 
 # ── AI 诊断 ──────────────────────────────────────────────────

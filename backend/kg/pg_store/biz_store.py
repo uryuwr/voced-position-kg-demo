@@ -534,12 +534,21 @@ def _row_jsonable(row: Any) -> dict[str, Any]:
     return d
 
 
-def get_goal(user_id: str) -> dict[str, Any] | None:
+def get_goal(user_id: str, occupation_id: str | None = None) -> dict[str, Any] | None:
+    """默认取当前活跃目标；给 occupation_id 则取该岗位那条（含已归档的历史目标）。"""
     ensure_biz_schema()
     with connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM biz_user_goal WHERE user_id = %s", (user_id,)
-        ).fetchone()
+        if occupation_id:
+            row = conn.execute(
+                "SELECT * FROM biz_user_goal WHERE user_id=%s AND occupation_id=%s",
+                (user_id, occupation_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM biz_user_goal WHERE user_id=%s "
+                "ORDER BY (status='active') DESC, updated_at DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
     if not row:
         return None
     return _row_jsonable(row)
@@ -558,18 +567,24 @@ def set_goal(
         raise ValueError("occupation not found")
     major = get_node(major_id) if major_id else None
     with connect() as conn:
+        # 换目标不删旧目标，只把它降为 archived：旧目标的测评结果与晋升进度仍要可查
+        conn.execute(
+            "UPDATE biz_user_goal SET status='archived' "
+            "WHERE user_id=%s AND occupation_id <> %s AND status='active'",
+            (user_id, occupation_id),
+        )
         conn.execute(
             """
             INSERT INTO biz_user_goal (
               user_id, user_name, occupation_id, occupation_name,
-              major_id, major_name, updated_at
-            ) VALUES (%s,%s,%s,%s,%s,%s,NOW())
-            ON CONFLICT (user_id) DO UPDATE SET
+              major_id, major_name, status, updated_at
+            ) VALUES (%s,%s,%s,%s,%s,%s,'active',NOW())
+            ON CONFLICT (user_id, occupation_id) DO UPDATE SET
               user_name = EXCLUDED.user_name,
-              occupation_id = EXCLUDED.occupation_id,
               occupation_name = EXCLUDED.occupation_name,
               major_id = EXCLUDED.major_id,
               major_name = EXCLUDED.major_name,
+              status = 'active',
               updated_at = NOW()
             """,
             (
@@ -586,10 +601,28 @@ def set_goal(
     return get_goal(user_id)  # type: ignore[return-value]
 
 
-def clear_goal(user_id: str) -> None:
+def list_goals(user_id: str) -> list[dict[str, Any]]:
+    """该用户的全部目标（活跃在前）。原型「当前活跃目标」之外还要能回看历史目标。"""
     ensure_biz_schema()
     with connect() as conn:
-        conn.execute("DELETE FROM biz_user_goal WHERE user_id = %s", (user_id,))
+        rows = conn.execute(
+            "SELECT * FROM biz_user_goal WHERE user_id=%s "
+            "ORDER BY (status='active') DESC, updated_at DESC",
+            (user_id,),
+        ).fetchall()
+    return [_row_jsonable(r) for r in rows]
+
+
+def clear_goal(user_id: str, occupation_id: str | None = None) -> None:
+    ensure_biz_schema()
+    with connect() as conn:
+        if occupation_id:
+            conn.execute(
+                "DELETE FROM biz_user_goal WHERE user_id=%s AND occupation_id=%s",
+                (user_id, occupation_id),
+            )
+        else:
+            conn.execute("DELETE FROM biz_user_goal WHERE user_id = %s", (user_id,))
         conn.commit()
 
 
@@ -754,6 +787,31 @@ def create_resume_diagnosis(
         skills = _parse_resume_skills(content_text or "")
         agent_meta = {"engine": "rule", "error": str(e)[:200]}
         agent_summary = None
+    return _persist_resume_diagnosis(
+        user_id,
+        user_name,
+        content_text=content_text or "",
+        target_occupation_id=target_occupation_id,
+        occ_name=occ_name,
+        skills=skills,
+        agent_meta=agent_meta,
+        agent_summary=agent_summary,
+    )
+
+
+def _persist_resume_diagnosis(
+    user_id: str,
+    user_name: str,
+    *,
+    content_text: str,
+    target_occupation_id: str | None,
+    occ_name: str | None,
+    skills: list[dict[str, Any]],
+    agent_meta: dict[str, Any],
+    agent_summary: str | None,
+) -> dict[str, Any]:
+    """落库：简历资产 + 会话 + 技能画像 + 报告。同步与流式两条路径共用此段。"""
+    ensure_biz_schema()
     with connect() as conn:
         res = conn.execute(
             """
@@ -833,6 +891,84 @@ def create_resume_diagnosis(
     }
 
 
+def create_assessment_session(
+    user_id: str, user_name: str, *, target_occupation_id: str | None = None
+) -> int:
+    """建一条测评会话，返回 id —— 同时用作 LangGraph 的 thread_id。
+
+    复用 biz_diagnosis_session（channel='assessment'）而不是另起一张表：
+    报告落库、历史查询、学习计划等下游都已按这张表实现。
+    """
+    ensure_biz_schema()
+    occ_name = None
+    if target_occupation_id:
+        occ_name = (get_node(target_occupation_id) or {}).get("name")
+    with connect() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO biz_diagnosis_session
+              (user_id, user_name, channel, target_occupation_id, target_occupation_name, status)
+            VALUES (%s, %s, 'assessment', %s, %s, 'active')
+            RETURNING id
+            """,
+            (user_id, user_name, target_occupation_id, occ_name),
+        ).fetchone()
+        conn.commit()
+    return int(row["id"])
+
+
+def save_assessment_report(session_id: int, user_id: str, report: dict[str, Any]) -> None:
+    """测评收敛后落库：写报告 + 结束会话 + 更新技能画像。"""
+    ensure_biz_schema()
+    measured = [
+        {
+            "skill_name": i.get("skill_key"),
+            "level": i.get("measured_level"),
+            "score": int((i.get("ratio") or 0) * 100),
+        }
+        for i in (report.get("items") or [])
+        if i.get("tested") and i.get("measured_level")
+    ]
+    with connect() as conn:
+        conn.execute(
+            "UPDATE biz_diagnosis_session SET status='finished', finished_at=NOW() WHERE id=%s",
+            (session_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO biz_diagnosis_result
+              (session_id, match_score, gap_json, radar_json, evidence_json, report_json)
+            VALUES (%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb)
+            ON CONFLICT (session_id) DO UPDATE SET
+              match_score=EXCLUDED.match_score,
+              gap_json=EXCLUDED.gap_json,
+              radar_json=EXCLUDED.radar_json,
+              report_json=EXCLUDED.report_json
+            """,
+            (
+                session_id,
+                report.get("match_score"),
+                json.dumps(report.get("gaps") or [], ensure_ascii=False),
+                json.dumps(report.get("radar") or {}, ensure_ascii=False),
+                json.dumps({"skills": measured}, ensure_ascii=False),
+                json.dumps(report, ensure_ascii=False),
+            ),
+        )
+        for s in measured:
+            conn.execute(
+                """
+                INSERT INTO biz_user_skill (user_id, skill_id, skill_name, level, score, source, updated_at)
+                VALUES (%s,%s,%s,%s,%s,'assessment',NOW())
+                ON CONFLICT (user_id, skill_id) DO UPDATE SET
+                  level=EXCLUDED.level, score=EXCLUDED.score,
+                  source=EXCLUDED.source, updated_at=NOW()
+                """,
+                (user_id, f"skill_key:{s['skill_name']}", s["skill_name"], s["level"], s["score"]),
+            )
+        conn.commit()
+    _unlock(user_id, user_id, "first_diag")
+
+
 def create_chat_session(
     user_id: str,
     user_name: str,
@@ -876,9 +1012,14 @@ def create_chat_session(
     }
 
 
-def post_chat_message(
+def _chat_prepare(
     session_id: int, user_id: str, content: str
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    """存学员本轮回答并取回会话与近期历史。同步与流式两条路径共用。
+
+    单独提交：流式路径要先把这一轮回答落库，再花几秒跑模型，
+    中途断连也不至于丢掉学员输入。
+    """
     ensure_biz_schema()
     with connect() as conn:
         sess = conn.execute(
@@ -902,26 +1043,49 @@ def post_chat_message(
             {"role": r["role"], "content": r["content"]}
             for r in reversed(list(hist_rows))
         ]
-        try:
-            from backend.agent.diagnose import run_chat_diagnose
+        conn.commit()
+    return dict(sess), history
 
-            chat_out = run_chat_diagnose(
-                content,
-                target_occupation_id=sess.get("target_occupation_id"),
-                target_occupation_name=sess.get("target_occupation_name"),
-                history=history,
-            )
-            skills = chat_out.get("skills") or _parse_resume_skills(content)
-            score = int(chat_out.get("score") or min(100, 40 + 10 * len(skills)))
-            reply = chat_out.get("reply") or (
-                f"已记录 {len(skills)} 项技能线索。"
-            )
-            agent_meta = chat_out.get("meta") or {}
-        except Exception as e:
-            skills = _parse_resume_skills(content)
-            score = min(100, 40 + 10 * len(skills))
-            reply = f"回答已记录（规则）。技能线索 {len(skills)} 项。"
-            agent_meta = {"engine": "rule", "error": str(e)[:200]}
+
+def post_chat_message(
+    session_id: int, user_id: str, content: str
+) -> dict[str, Any]:
+    sess, history = _chat_prepare(session_id, user_id, content)
+    try:
+        from backend.agent.diagnose import run_chat_diagnose
+
+        chat_out = run_chat_diagnose(
+            content,
+            target_occupation_id=sess.get("target_occupation_id"),
+            target_occupation_name=sess.get("target_occupation_name"),
+            history=history,
+        )
+        skills = chat_out.get("skills") or _parse_resume_skills(content)
+        score = int(chat_out.get("score") or min(100, 40 + 10 * len(skills)))
+        reply = chat_out.get("reply") or f"已记录 {len(skills)} 项技能线索。"
+        agent_meta = chat_out.get("meta") or {}
+    except Exception as e:
+        skills = _parse_resume_skills(content)
+        score = min(100, 40 + 10 * len(skills))
+        reply = f"回答已记录（规则）。技能线索 {len(skills)} 项。"
+        agent_meta = {"engine": "rule", "error": str(e)[:200]}
+    return _persist_chat_message(
+        sess, user_id, skills=skills, score=score, reply=reply, agent_meta=agent_meta
+    )
+
+
+def _persist_chat_message(
+    sess: dict[str, Any],
+    user_id: str,
+    *,
+    skills: list[dict[str, Any]],
+    score: int,
+    reply: str,
+    agent_meta: dict[str, Any],
+) -> dict[str, Any]:
+    """落库：助手回复 + 报告 + 技能画像，并结束会话。两条路径共用。"""
+    session_id = sess["id"]
+    with connect() as conn:
         conn.execute(
             "INSERT INTO biz_chat_message (session_id, role, content, meta_json) VALUES (%s,'assistant',%s,%s::jsonb)",
             (

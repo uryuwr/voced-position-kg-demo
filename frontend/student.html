@@ -72,7 +72,7 @@
       <button data-tab="explore" class="on">① 岗位探索</button>
       <button data-tab="detail">② 岗位详情</button>
       <button data-tab="diag">③ AI 诊断</button>
-      <button data-tab="path">④ 学习路径</button>
+      <button data-tab="path">④ 岗位学习与自适应路径</button>
     </div>
   </header>
   <main>
@@ -122,11 +122,12 @@
     </section>
 
     <section id="tab-path" hidden>
-      <div class="bar">
-        <button class="act" id="btnGenPath">生成 / 重新生成自适应路径</button>
-        <span class="muted" id="pathMeta"></span>
-      </div>
-      <div id="pathBox"><div class="empty">尚无路径，先锁定目标并做一次诊断</div></div>
+      <!-- 顶部卡片：当前锁定目标 / 岗位晋升路径 / 测评结果，三者都按岗位绑定 -->
+      <div id="goalCard"><div class="empty">加载中…</div></div>
+      <!-- 胜任力能力报告与技能缺口分析 -->
+      <div id="compBox"></div>
+      <!-- 自适应学习计划：等后续提供的 API，当前为前端占位数据 -->
+      <div id="planBox"></div>
     </section>
   </main>
   <div class="toast" id="toast"></div>
@@ -343,46 +344,155 @@
       } catch (e) { $("reportBox").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
     }
 
-    /* ── ④ 学习路径 ─────────────────────────────── */
-    $("btnGenPath").onclick = async () => {
-      $("pathMeta").textContent = "生成中…";
-      try { await api("/v1/student/learn/path/generate", { method: "POST", body: {} }); await loadPath(); toast("路径已生成"); }
-      catch (e) { $("pathMeta").textContent = "失败：" + (e.message || e); }
-    };
+    /* ── ④ 岗位学习与自适应路径 ───────────────────────
+       顶部卡片三块数据都来自 GET /v1/student/goal/overview，按岗位绑定：
+       换目标即换整套（目标 / 晋升路径 / 该岗位的测评结果）。          */
     async function loadPath() {
       try {
-        const d = await api("/v1/student/learn/path");
-        if (!d || !d.path) { $("pathBox").innerHTML = '<div class="empty">尚无路径，先锁定目标并做一次诊断，再点上方生成</div>'; $("pathMeta").textContent=""; return; }
-        const pr = d.progress || {};
-        $("pathMeta").textContent = `目标：${d.path.occupation_name || ""} · 共 ${pr.total || 0} 个任务 · 建议 ${pr.duration_min_total || 0} 分钟`;
-        const stages = d.stages || [];
-        $("pathBox").innerHTML = `
-          <div class="card" style="margin-bottom:12px">
-            <div class="row"><b>路径总体进度</b>
-              <div class="bar-wrap" style="flex:1"><div class="bar-in" style="width:${pr.weighted_pct || 0}%"></div></div>
-              <span class="score">${pr.weighted_pct || 0}%</span>
-              <span class="muted">（完成权重/总权重；按条数为 ${pr.completed||0}/${pr.total||0}）</span>
+        const d = await api("/v1/student/goal/overview");
+        if (!d.has_goal) {
+          $("goalCard").innerHTML = '<div class="empty">尚未锁定目标岗位，请先到「岗位探索」锁定一个</div>';
+          $("compBox").innerHTML = ""; $("planBox").innerHTML = "";
+          return;
+        }
+        renderGoalCard(d);
+        renderCompetency(d);
+        renderPlanMock(d);
+      } catch (e) {
+        $("goalCard").innerHTML = `<div class="empty">加载失败：${esc(e.message || e)}</div>`;
+      }
+    }
+
+    function renderGoalCard(d) {
+      const o = d.occupation || {}, nl = d.next_level;
+      const goals = d.goals || [];
+      const others = goals.filter((g) => g.status !== "active");
+      $("goalCard").innerHTML = `
+        <div class="card" style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px">
+          <div>
+            <div class="row">
+              <span class="tag">当前活跃目标</span>
+              <span class="muted">归属：${esc((d.major || {}).name || "—")}</span>
+              <span class="tag">${d.match_score != null ? "匹配度 " + d.match_score + "%" : "未测评"}</span>
+            </div>
+            <h3 style="margin:8px 0 4px">◎ ${esc(o.name || "")}
+              <span class="tag">${esc(o.level_label || "—")}</span></h3>
+            <div class="muted" style="max-width:640px">${esc((o.description || "暂无岗位职责描述").slice(0, 160))}</div>
+            <div class="row" style="margin-top:12px">
+              <button class="ghost" id="btnSwitchGoal">↻ 更换目标</button>
+              <button class="act" id="btnDiag">⚡ AI 智能诊断</button>
+              <span class="muted">技能项 ${o.skill_count || 0}</span>
+            </div>
+            ${others.length ? `<div class="muted" style="margin-top:10px;font-size:12px">
+              历史目标：${others.map((g) => esc(g.occupation_name)).join("、")}（测评结果仍可回看）</div>` : ""}
+          </div>
+          <div class="card" style="margin:0;background:#0b1220">
+            ${nl ? `
+              <div class="row"><span class="tag">↗ 下一级成长目标</span>
+                <span class="tag">${esc(nl.level_label || "")}</span></div>
+              <h4 style="margin:8px 0">${esc(nl.name)} ›</h4>
+              <div class="muted" style="font-size:12px">进阶解锁需具备的关键核心技能：</div>
+              <div style="margin-top:6px">
+                ${(nl.unlock_skills || []).length
+                  ? nl.unlock_skills.map((s) => `<span class="tag">${esc(s.skill_key)}${s.required_level ? " L" + s.required_level : ""}</span>`).join(" ")
+                  : '<span class="muted">下一级岗位暂未配置技能构成</span>'}
+              </div>
+              <div class="muted" style="font-size:12px;margin-top:10px">
+                💡 完成当前${esc(o.level_label || "")}胜任测评及阶段任务后，即可开启下一级发展阶段。</div>`
+              : `<div class="row"><span class="tag">下一级成长目标</span></div>
+                 <div class="muted" style="margin-top:8px">该岗位暂未配置晋升关系（advances_to 边覆盖约 1%），
+                 补齐后此处会显示下一级岗位与进阶所需技能。</div>`}
+          </div>
+        </div>`;
+      $("btnDiag").onclick = () => { location.href = "/assessment"; };
+      $("btnSwitchGoal").onclick = () => {
+        document.querySelector('.tabs button[data-tab="explore"]').click();
+        toast("在岗位探索里选择新的目标岗位");
+      };
+    }
+
+    function renderCompetency(d) {
+      const rep = d.assessment;
+      if (!rep) {
+        $("compBox").innerHTML = `<div class="card"><b>胜任力能力报告与技能缺口分析</b>
+          <div class="empty" style="margin-top:10px">该岗位尚无测评结果，点上方「AI 智能诊断」开始一次测评</div></div>`;
+        return;
+      }
+      const items = (rep.items || []).filter((x) => x.tested).slice(0, 8);
+      const strengths = (rep.strengths || []).slice(0, 4);
+      const gaps = (rep.gaps || []).slice(0, 4);
+      $("compBox").innerHTML = `
+        <div class="card">
+          <div class="row"><b>🏅 胜任力能力报告与技能缺口分析</b>
+            <span class="muted">对比个人实测水平与【${esc(d.occupation.name)}】能力等级要求</span>
+            <button class="ghost" id="btnReDiag">✨ 重新 AI 测评</button></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px">
+            <div>
+              <div class="muted" style="font-size:12px;margin-bottom:6px">各维能力 当前 vs 目标标准（L1–L5）</div>
+              ${items.map((x) => `
+                <div style="margin-bottom:10px">
+                  <div class="row" style="justify-content:space-between">
+                    <span>${esc(x.skill_key)}</span>
+                    <span class="muted">L${x.measured_level || 0} / 目标 L${x.required_level || "?"}</span>
+                  </div>
+                  <div class="bar-wrap"><div class="bar-in" style="width:${Math.round((x.ratio || 0) * 100)}%;
+                    background:${x.ok ? "#10b981" : "#f59e0b"}"></div></div>
+                </div>`).join("") || '<div class="muted">无实测维度</div>'}
+            </div>
+            <div>
+              <div class="muted" style="font-size:12px;margin-bottom:6px">核心技能缺口排查</div>
+              <div class="card" style="margin:0 0 10px;background:#08201a">
+                <b style="color:#34d399">✦ 优势精通（已达标）</b>
+                <div class="muted" style="margin-top:6px">${strengths.length
+                  ? strengths.map((x) => `${esc(x.skill_key)}（L${x.measured_level}）`).join("、") + "，已满足岗位胜任标准。"
+                  : "本次未测出达标项。"}</div>
+              </div>
+              <div class="card" style="margin:0;background:#231a08">
+                <b style="color:#f59e0b">⚠ 关键能力缺口（待攻关）</b>
+                <div class="muted" style="margin-top:6px">${gaps.length
+                  ? gaps.map((x) => `${esc(x.skill_key)}（L${x.measured_level || 0}→L${x.required_level}）`).join("、") + "。"
+                  : "未发现明显缺口。"}</div>
+              </div>
+              <div class="muted" style="font-size:12px;margin-top:8px">
+                💡 匹配度 ${rep.match_score}%（本次覆盖岗位技能权重 ${rep.coverage != null ? rep.coverage + "%" : "—"}）</div>
             </div>
           </div>
-          ${stages.map((g) => `
+        </div>`;
+      $("btnReDiag").onclick = () => { location.href = "/assessment"; };
+    }
+
+    /* 自适应学习计划：服务端 API 后续提供，这里先用测评短板拼占位数据，
+       只为把「短板 → 学习任务」的信息流走通，不落库、不调接口。 */
+    function renderPlanMock(d) {
+      const rep = d.assessment || {};
+      const gaps = (rep.gaps || []).slice(0, 4);
+      const seed = gaps.length ? gaps : ((d.next_level || {}).unlock_skills || []).slice(0, 3)
+        .map((s) => ({ skill_key: s.skill_key, measured_level: 0, required_level: s.required_level }));
+      const stages = [
+        { t: "基础夯实", d: "补齐概念与规范，能在指导下完成常规任务", pct: 0 },
+        { t: "实战演练", d: "独立完成典型任务并处理常见异常", pct: 0 },
+        { t: "进阶攻坚", d: "优化方法、沉淀标准，具备指导他人的能力", pct: 0 },
+      ];
+      $("planBox").innerHTML = `
+        <div class="card">
+          <div class="row"><b>🚀 自适应学习计划</b>
+            <span class="tag" style="background:#3b2f0b;color:#f59e0b">前端占位数据</span>
+            <span class="muted">学习计划服务端接口待接入，当前按测评短板生成示意</span></div>
+          ${seed.length ? stages.map((g, i) => `
             <div class="stage">
-              <div class="row"><b>第 ${g.stage} 阶段：${esc(g.title)}</b>
-                <span class="tag">阶段权重 ${g.stage_weight_pct}%</span>
-                <span class="tag">${g.completed}/${g.total}</span>
-                <span class="tag">${g.duration_min} 分钟</span></div>
-              ${g.steps.map((s) => `
-                <div class="step ${s.status === "completed" ? "done" : ""}">
-                  <span class="t">${esc(s.title)}</span>
-                  <span class="muted">关联技能：${esc(s.skill_name || "-")} · ${s.duration_min || 0} 分钟</span>
-                  ${s.status === "completed" ? '<span class="tag">已完成</span>'
-                    : `<button class="ghost" data-step="${s.id}">完成</button>`}
+              <div class="row"><b>第 ${i + 1} 阶段 · ${g.t}</b>
+                <span class="tag">${g.pct}%</span>
+                <span class="muted">${g.d}</span></div>
+              ${seed.map((s) => `
+                <div class="step">
+                  <span class="t">${esc(s.skill_key)} · ${g.t}任务</span>
+                  <span class="muted">目标 L${s.required_level || "?"}
+                    ${s.measured_level ? `（当前 L${s.measured_level}）` : ""} · 预计 45 分钟</span>
+                  <button class="ghost" disabled>待接入</button>
                 </div>`).join("")}
-            </div>`).join("")}`;
-        $("pathBox").querySelectorAll("[data-step]").forEach((el) => el.onclick = async () => {
-          try { await api(`/v1/student/learn/steps/${el.dataset.step}/complete`, { method: "POST", body: {} }); await loadPath(); toast("已完成一步"); }
-          catch (e) { toast("失败：" + (e.message || e)); }
-        });
-      } catch (e) { $("pathBox").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
+            </div>`).join("")
+            : '<div class="empty">先完成一次 AI 测评，系统会依据短板生成学习计划</div>'}
+        </div>`;
     }
 
     /* ── 启动 ─────────────────────────────── */
@@ -401,6 +511,10 @@
       $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
       await loadGoal();
       await search();
+      // 测评页看完报告可直接跳回本页的路径 tab：/student?tab=path
+      const want = new URLSearchParams(location.search).get("tab");
+      const btn = want && document.querySelector(`.tabs button[data-tab="${want}"]`);
+      if (btn) btn.click();
     })();
   </script>
 </body>

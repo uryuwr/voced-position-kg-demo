@@ -67,6 +67,7 @@ from backend.api.schemas import (
     StatsResponse,
 )
 from backend.api.routes_admin_biz import router as admin_biz_router
+from backend.api.routes_assessment import router as assessment_router
 from backend.api.routes_student import router as student_router
 from backend.kg.pg_store.biz_store import ensure_biz_schema
 from backend.kg.pg_store.client import ensure_schema, verify_connectivity
@@ -205,6 +206,7 @@ def _startup() -> None:
 
 # 学生端业务（frontend.html）+ 管理端看板/审核
 app.include_router(student_router)
+app.include_router(assessment_router)
 app.include_router(admin_biz_router)
 
 
@@ -329,6 +331,14 @@ def _mount_dev_ui() -> None:
         page = FRONTEND_DIR / "student.html"
         if not page.exists():
             raise HTTPException(status_code=404, detail="student.html missing")
+        return FileResponse(page)
+
+    @app.get("/assessment", include_in_schema=False)
+    def assessment_page():
+        """AI 能力测评：简历解析推断 → 对话问答测评(HITL) → 综合能力报告。"""
+        page = FRONTEND_DIR / "assessment.html"
+        if not page.exists():
+            raise HTTPException(status_code=404, detail="assessment.html missing")
         return FileResponse(page)
 
     @app.get("/kg", include_in_schema=False)

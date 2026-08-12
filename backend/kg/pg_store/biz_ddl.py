@@ -15,6 +15,18 @@ CREATE TABLE IF NOT EXISTS biz_user_goal (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 目标从「每人一个」升级为「每人多个、其一为活跃」：原型卡片是「当前活跃目标」，
+-- 而换目标后旧目标的测评结果、晋升进度仍要能查回来，所以按 (user_id, occupation_id)
+-- 存一行。老表主键 user_id 会把用户锁死在单个目标上，必须换成业务唯一键。
+ALTER TABLE biz_user_goal ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE biz_user_goal ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE biz_user_goal DROP CONSTRAINT IF EXISTS biz_user_goal_pkey;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_biz_user_goal_user_occ
+  ON biz_user_goal(user_id, occupation_id);
+-- 每人至多一个活跃目标
+CREATE UNIQUE INDEX IF NOT EXISTS uq_biz_user_goal_active
+  ON biz_user_goal(user_id) WHERE status = 'active';
+
 -- 用户技能画像
 CREATE TABLE IF NOT EXISTS biz_user_skill (
   user_id TEXT NOT NULL,
