@@ -44,7 +44,12 @@ def _is_free_object(sch: dict) -> bool:
     if sch.get("$ref") or sch.get("allOf") or sch.get("anyOf") or sch.get("oneOf"):
         return False
     if sch.get("type") == "object":
-        return not sch.get("properties")
+        if sch.get("properties"):
+            return False
+        # dict[str, int] 这类映射：additionalProperties 是个 schema 而非 true，
+        # 值类型是明确的，Swagger 不会显示 any
+        ap = sch.get("additionalProperties")
+        return not isinstance(ap, dict)
     # 连 type 都没有、也没 ref/枚举/组合 —— Swagger 渲染为 any
     return not any(
         k in sch for k in ("type", "$ref", "enum", "const", "allOf", "anyOf", "oneOf")

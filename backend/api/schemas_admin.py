@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from backend.api.schemas_biz import RelationCounts, SkillOut
+from backend.api.schemas_biz import SkillOut
 
 # ── AI 网关 ──────────────────────────────────────────────────
 

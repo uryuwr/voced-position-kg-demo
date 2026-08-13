@@ -26,9 +26,24 @@ class RelationCounts(BaseModel):
     weight_sum: float = Field(0.0, description="岗位 requires 权重和，**小数**；归一化后应为 1.0")
 
 
+class EdgeBrief(BaseModel):
+    """连边摘要：这条记录是**经哪条边**关联进来的。
+
+    同一个节点可能因不同的边被带进列表（岗位既 belongs_to 行业、又被专业
+    prepares_for），`rel_type` 与 `weight` 说明的是这一次的关联口径。
+    """
+
+    id: str | None = Field(None, description="边 id")
+    rel_type: str | None = Field(
+        None, description="关系类型：requires / covers / belongs_to / prepares_for"
+    )
+    weight: float | None = Field(None, description="边权重；无权重的关系为 null")
+    confidence: str | None = Field(None, description="置信度标记，如 ai_inferred")
+
+
 class IndustryRef(BaseModel):
-    id: str
-    name: str | None = None
+    id: str = Field(..., description="行业节点 id")
+    name: str | None = Field(None, description="行业名")
 
 
 class ProfessionOut(BaseModel):
@@ -69,7 +84,7 @@ class PositionOut(BaseModel):
     salary: str | None = None
     source_url: str | None = None
     attrs: dict[str, Any] | None = None
-    edge: dict[str, Any] | None = Field(None, description="与专业/行业连边摘要")
+    edge: EdgeBrief | None = Field(None, description="与专业/行业的连边摘要")
     counts: RelationCounts | None = Field(
         None, description="skill=逻辑技能数；major=对口专业数；industry=归属行业数"
     )
@@ -105,7 +120,9 @@ class SkillOut(BaseModel):
     weight: float | None = Field(None, description="岗位要求权重")
     source_url: str | None = None
     attrs: dict[str, Any] | None = None
-    edge: dict[str, Any] | None = None
+    edge: EdgeBrief | None = Field(
+        None, description="与岗位/专业的连边摘要——岗位要求的权重就在这里"
+    )
     levels: list[SkillLevelItem] = Field(
         default_factory=list, description="已有等级节点（聚合视图）"
     )
@@ -222,17 +239,58 @@ class ChatMessageBody(BaseModel):
     content: str = Field(..., min_length=1, description="学员回复内容")
 
 
+class ParsedUserSkill(BaseModel):
+    """从简历/对话文本里解析出的一项学员技能。"""
+
+    skill_name: str = Field(..., description="技能名")
+    level: int = Field(2, ge=1, le=5, description="推断档位 1–5；关键词命中时默认 2")
+    score: int = Field(0, description="推断得分")
+    source: str | None = Field(None, description="来源：resume / chat / llm / rule")
+
+
+class RequiredSkillRef(BaseModel):
+    """岗位要求的一项技能。"""
+
+    id: str | None = Field(None, description="技能节点或 bundle id")
+    skill_name: str | None = Field(None, description="技能名")
+    skill_key: str | None = Field(None, description="技能聚合主键")
+    required_level: int | None = Field(None, ge=1, le=5, description="要求档 1–5")
+    weight: float | None = Field(None, description="权重")
+    category: str | None = Field(None, description="技能大类")
+
+
+class SimpleRadar(BaseModel):
+    """单系列雷达图：按技能大类聚合的达成率。"""
+
+    categories: list[str] = Field(default_factory=list, description="各轴名称（技能大类）")
+    scores: list[int] = Field(
+        default_factory=list, description="各轴达成率 0–100，顺序与 categories 一致"
+    )
+
+
 class DiagnosisReportOut(BaseModel):
-    user_id: str | None = None
-    channel: str | None = Field(None, description="resume|chat|profile")
-    target_occupation_id: str | None = None
-    target_occupation_name: str | None = None
+    """诊断报告（简历 / 对话渠道）。
+
+    与测评报告 `AssessmentReportOut` 的区别在证据强度：那边每项技能都有实测档位
+    与要求档位的对照，这边只是从文本里解析出的技能名与岗位要求做匹配。
+    """
+
+    user_id: str | None = Field(None, description="UC 用户 id")
+    channel: str | None = Field(None, description="诊断渠道：resume / chat / profile")
+    target_occupation_id: str | None = Field(None, description="目标岗位节点 id")
+    target_occupation_name: str | None = Field(None, description="目标岗位名")
     match_score: float | None = Field(None, description="匹配度 0–100")
-    user_skills: list[dict[str, Any]] = Field(default_factory=list)
-    required_skills: list[dict[str, Any]] = Field(default_factory=list)
-    gaps: list[dict[str, Any]] = Field(default_factory=list, description="缺口技能")
-    radar: dict[str, Any] = Field(default_factory=dict, description="雷达图数据")
-    summary: str | None = None
+    user_skills: list[ParsedUserSkill] = Field(
+        default_factory=list, description="从简历/对话解析出的学员技能"
+    )
+    required_skills: list[RequiredSkillRef] = Field(
+        default_factory=list, description="岗位要求的技能"
+    )
+    gaps: list[RequiredSkillRef] = Field(
+        default_factory=list, description="缺口技能（岗位要求但学员未体现）"
+    )
+    radar: SimpleRadar = Field(default_factory=SimpleRadar, description="雷达图数据")
+    summary: str | None = Field(None, description="一句话结论")
 
 
 class PathGenerateBody(BaseModel):
@@ -255,31 +313,70 @@ class LearningStepOut(BaseModel):
     completed_at: str | None = None
 
 
+class LearningPathHead(BaseModel):
+    """学习路径主体（对应 biz_learning_path 一行）。"""
+
+    id: int = Field(..., description="路径 id")
+    user_id: str = Field(..., description="UC 用户 id")
+    user_name: str | None = Field(None, description="用户名")
+    occupation_id: str | None = Field(None, description="目标岗位 id")
+    occupation_name: str | None = Field(None, description="目标岗位名")
+    status: str = Field(..., description="active=进行中；archived=已归档")
+    source: str = Field(..., description="来源：diagnosis=按诊断生成；manual=手工建")
+    created_at: str | None = Field(None, description="创建时间 ISO8601")
+
+
+class LearningTaskOut(LearningStepOut):
+    """一条学习任务：在 LearningStepOut 之上补齐分组与配速字段。"""
+
+    stage: int | None = Field(None, description="所属阶段序号 1..n")
+    stage_title: str | None = Field(None, description="阶段标题")
+    category: str | None = Field(None, description="技能大类，阶段按它分组")
+    weight: float | None = Field(None, description="该任务对应技能的权重")
+    duration_min: int | None = Field(None, description="建议耗时（分钟）")
+    required_level: int | None = Field(None, ge=1, le=5, description="目标档位 1–5")
+
+
+class LearningStageOut(BaseModel):
+    """一个学习阶段（原型「第一/二/三阶段」）。
+
+    按技能大类分组，阶段顺序沿用国标职业功能的推进顺序（先作业准备、后维护检修）。
+    """
+
+    stage: int = Field(..., description="阶段序号 1..n")
+    title: str = Field(..., description="阶段标题")
+    steps: list[LearningTaskOut] = Field(default_factory=list, description="该阶段的任务")
+    stage_weight_pct: int = Field(0, description="该阶段占总权重的百分比")
+    completed: int = Field(0, ge=0, description="已完成任务数")
+    total: int = Field(0, ge=0, description="任务总数")
+    duration_min: int = Field(0, description="该阶段建议总耗时（分钟）")
+
+
+class LearningProgressOut(BaseModel):
+    """学习进度。
+
+    条数进度与权重进度是两回事：补一门权重 0.3 的核心技能，条数上只是 1/20，
+    权重上却是 30%。原型顶部那个百分比用的是 `weighted_pct`。
+    """
+
+    completed: int = Field(0, ge=0, description="已完成任务数")
+    total: int = Field(0, ge=0, description="任务总数")
+    ratio: float = Field(0.0, description="按任务条数的完成率 0–1")
+    weighted_pct: int = Field(
+        0, description="**按权重计的总进度百分比**，原型顶部展示的就是它"
+    )
+    duration_min_total: int = Field(0, description="建议总耗时（分钟）")
+
+
 class LearningPathOut(BaseModel):
-    path: dict[str, Any] = Field(..., description="路径主体：目标岗位、状态、来源")
-    steps: list[dict[str, Any]] = Field(
-        ...,
-        description=(
-            "全部任务（扁平，按 seq）。每项含 stage/stage_title/category/weight/"
-            "duration_min/required_level/skill_name/status"
-        ),
+    """自适应学习路径：主体 + 扁平任务 + 阶段树 + 进度。"""
+
+    path: LearningPathHead = Field(..., description="路径主体")
+    steps: list[LearningTaskOut] = Field(..., description="全部任务（扁平，按 seq 排）")
+    stages: list[LearningStageOut] | None = Field(
+        None, description="阶段任务树；未分组时为 null"
     )
-    stages: list[dict[str, Any]] | None = Field(
-        None,
-        description=(
-            "阶段任务树（原型「第一/二/三阶段」）：按技能大类分组，"
-            "阶段顺序沿用国标职业功能推进顺序。"
-            "每组含 stage/title/steps[]/stage_weight_pct（阶段权重%）/completed/total/duration_min"
-        ),
-    )
-    progress: dict[str, Any] | None = Field(
-        None,
-        description=(
-            "进度。completed/total/ratio 为按任务条数；"
-            "**weighted_pct 为按权重计的总进度**（原型顶部「35% 完成权重/总权重」用这个）；"
-            "duration_min_total 为建议总耗时"
-        ),
-    )
+    progress: LearningProgressOut | None = Field(None, description="进度")
 
 
 class ResourceItem(BaseModel):
@@ -297,14 +394,55 @@ class ResourceListOut(PageMeta):
     items: list[ResourceItem]
 
 
+class UserGoalBrief(BaseModel):
+    """当前学习目标摘要。"""
+
+    user_id: str | None = Field(None, description="UC 用户 id")
+    user_name: str | None = Field(None, description="用户名")
+    occupation_id: str | None = Field(None, description="目标岗位 id")
+    occupation_name: str | None = Field(None, description="目标岗位名")
+    major_id: str | None = Field(None, description="关联专业 id")
+    major_name: str | None = Field(None, description="关联专业名")
+    industry_id: str | None = Field(None, description="所属行业 id")
+    industry_name: str | None = Field(None, description="所属行业名")
+    status: str | None = Field(None, description="active=活跃；archived=历史")
+    created_at: str | None = Field(None, description="设定时间 ISO8601")
+    updated_at: str | None = Field(None, description="更新时间 ISO8601")
+
+
+class UserBadgeOut(BaseModel):
+    """已解锁的成就（成就定义 + 解锁时间）。"""
+
+    code: str = Field(..., description="成就编码")
+    name: str = Field(..., description="成就名")
+    description: str | None = Field(None, description="成就说明")
+    points: int = Field(0, description="该成就的成长值")
+    category: str | None = Field(None, description="成就分类")
+    unlocked_at: str | None = Field(None, description="解锁时间 ISO8601")
+
+
+class UserSkillOut(BaseModel):
+    """学员技能画像的一项（对应 biz_user_skill 一行）。"""
+
+    user_id: str | None = Field(None, description="UC 用户 id")
+    skill_id: str | None = Field(None, description="技能 id 或 skill_key")
+    skill_name: str | None = Field(None, description="技能名")
+    level: int = Field(1, ge=1, le=5, description="档位 1–5")
+    score: int = Field(0, description="得分")
+    source: str = Field("self", description="来源：self=自评；assessment=测评；resume=简历解析")
+    updated_at: str | None = Field(None, description="更新时间 ISO8601")
+
+
 class MeOut(BaseModel):
-    user_id: str
-    user_name: str | None = None
-    goal: dict[str, Any] | None = Field(None, description="当前学习目标")
+    """学员个人首页数据。"""
+
+    user_id: str = Field(..., description="UC 用户 id")
+    user_name: str | None = Field(None, description="用户名")
+    goal: UserGoalBrief | None = Field(None, description="当前学习目标；未锁定为 null")
     points: int = Field(0, description="成长值/积分")
-    badges: list[dict[str, Any]] = Field(default_factory=list)
-    skills: list[dict[str, Any]] = Field(default_factory=list, description="技能画像")
-    active_path_id: int | None = None
+    badges: list[UserBadgeOut] = Field(default_factory=list, description="已解锁成就")
+    skills: list[UserSkillOut] = Field(default_factory=list, description="技能画像")
+    active_path_id: int | None = Field(None, description="进行中的学习路径 id")
 
 
 class BadgeDefOut(BaseModel):
