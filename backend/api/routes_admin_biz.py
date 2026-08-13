@@ -7,7 +7,21 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.api.auth import AuthUser, require_auth_user
-from backend.api.schemas_biz import AdminDashboardOut
+from backend.api.schemas_admin import (
+    AiGatewayOut,
+    ChangeApprovedOut,
+    ChangeRejectedOut,
+    EdgeReviewListOut,
+    PrereqDeletedOut,
+    PrereqOut,
+    PublishDemoteOut,
+    PublishValidateOut,
+    SkillBundleListOut,
+    SkillBundlePreviewOut,
+    SkillCompositionAdminOut,
+    SkillOptionOut,
+)
+from backend.api.schemas_biz import AdminDashboardOut, SkillOut
 from backend.kg.pg_store import biz_store as biz
 from backend.kg.pg_store import review as rev
 from backend.kg.pg_store.skill_aggregate import get_skill_bundle
@@ -117,8 +131,9 @@ def dashboard(user: AuthUser = Depends(require_auth_user)) -> AdminDashboardOut:
     "/ai-gateway",
     tags=["管理台 · 运营看板"],
     summary="AI 网关就绪态（非 UC）",
+    response_model=AiGatewayOut,
 )
-def ai_gateway_status(user: AuthUser = Depends(require_auth_user)) -> dict[str, Any]:
+def ai_gateway_status(user: AuthUser = Depends(require_auth_user)) -> AiGatewayOut:
     _ = user
     from backend.agent.llm import gateway_info
 
@@ -130,6 +145,7 @@ def ai_gateway_status(user: AuthUser = Depends(require_auth_user)) -> dict[str, 
     tags=["管理台 · 审核发布"],
     summary="低置信/AI 边抽检列表",
     description="默认 confidence=ai_inferred；可筛 prepares_for / requires。",
+    response_model=EdgeReviewListOut,
 )
 def admin_edges_review(
     confidence: str | None = Query("ai_inferred"),
@@ -138,7 +154,7 @@ def admin_edges_review(
     page_size: int = Query(20, ge=1, le=100),
     region: str = Query("CN"),
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> EdgeReviewListOut:
     _ = user
     from backend.kg.pg_store.edge_review import list_edges_for_review
 
@@ -221,11 +237,12 @@ def submit_change(
     "/changes/{change_id}/approve",
     tags=["管理台 · 审核发布"],
     summary="审核通过并生效",
+    response_model=ChangeApprovedOut,
 )
 def approve_change(
     change_id: int,
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> ChangeApprovedOut:
     try:
         return rev.approve_change(
             change_id, user_id=user.user_id, user_name=user.user_name
@@ -238,11 +255,12 @@ def approve_change(
     "/changes/{change_id}/reject",
     tags=["管理台 · 审核发布"],
     summary="驳回（删除待审记录）",
+    response_model=ChangeRejectedOut,
 )
 def reject_change(
     change_id: int,
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> ChangeRejectedOut:
     _ = user
     try:
         return rev.reject_change(change_id)
@@ -273,11 +291,12 @@ class PublishValidateBody(BaseModel):
         "不写库。major→BR-02；occupation→BR-03；skill→BR-04+BR-05；"
         "action=delete 时 skill→BR-06。"
     ),
+    response_model=PublishValidateOut,
 )
 def admin_publish_validate(
     body: PublishValidateBody,
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> PublishValidateOut:
     _ = user
     from backend.kg.pg_store.publish_rules import validate_publish
 
@@ -294,6 +313,7 @@ def admin_publish_validate(
     "/publish/validate",
     tags=["管理台 · 发布门禁"],
     summary="校验是否可发布（query）",
+    response_model=PublishValidateOut,
 )
 def admin_publish_validate_get(
     node_type: str | None = Query(None),
@@ -302,7 +322,7 @@ def admin_publish_validate_get(
     region: str = Query("CN"),
     action: str = Query("enable"),
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> PublishValidateOut:
     _ = user
     from backend.kg.pg_store.publish_rules import validate_publish
 
@@ -332,11 +352,12 @@ class PublishDemoteBody(BaseModel):
         "草稿不再出现在前台 search/explore/学员列表。"
         "默认 dry_run=true。"
     ),
+    response_model=PublishDemoteOut,
 )
 def admin_publish_demote(
     body: PublishDemoteBody,
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> PublishDemoteOut:
     _ = user
     from backend.kg.pg_store.publish_rules import demote_noncompliant
 
@@ -433,6 +454,7 @@ class SkillBundleBody(BaseModel):
         "按 skill_key 聚合。默认 scope=manage 可见 draft/disabled；"
         "可按 status=published|draft|disabled 筛选。含聚合 status 字段。"
     ),
+    response_model=SkillBundleListOut,
 )
 def admin_list_skills(
     q: str | None = Query(None),
@@ -445,7 +467,7 @@ def admin_list_skills(
     has_level: str | None = Query(None),
     occupation_id: str | None = Query(None),
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> SkillBundleListOut:
     _ = user
     from backend.kg.pg_store.skill_aggregate import list_skill_bundles
 
@@ -557,11 +579,12 @@ def admin_patch_skill_bundle(
     "/skills/preview",
     tags=["管理台 · 技能多档"],
     summary="预览多档拆分结果（不写库、不进审）",
+    response_model=SkillBundlePreviewOut,
 )
 def admin_preview_skill_bundle(
     body: SkillBundleBody,
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> SkillBundlePreviewOut:
     _ = user
     try:
         raw = body.model_dump(exclude_none=True)
@@ -581,12 +604,13 @@ def admin_preview_skill_bundle(
     "/skills/{skill_key:path}",
     tags=["管理台 · 技能多档"],
     summary="查询逻辑技能详情（聚合读）",
+    response_model=SkillOut,
 )
 def admin_get_skill_bundle(
     skill_key: str,
     region: str | None = Query("CN"),
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> SkillOut:
     _ = user
     # 管理端可看 draft（published_only=False）
     b = get_skill_bundle(skill_key, region=region, published_only=False)
@@ -641,13 +665,14 @@ class CompositionSkillBody(BaseModel):
         "- 每项附 `available_levels`（该技能已配齐的档位）与 `level_completeness`，"
         "前端据此决定 L1–L5 哪些档可选"
     ),
+    response_model=list[SkillOptionOut],
 )
 def composition_options(
     q: str | None = Query(None, description="技能名关键字，模糊匹配"),
     region: str = Query("CN", description="区域，默认 CN"),
     limit: int = Query(50, ge=1, le=200),
     user: AuthUser = Depends(require_auth_user),
-) -> list[dict[str, Any]]:
+) -> list[SkillOptionOut]:
     _ = user
     from backend.kg.pg_store.skill_composition import list_skill_options
 
@@ -668,11 +693,12 @@ def composition_options(
         "前端即可渲染 L1–L5 档位按钮并高亮选中项。"
     ),
     response_description="{ node（头部）, relation, weighted, items[], weight_sum, normalized, can_normalize }",
+    response_model=SkillCompositionAdminOut,
 )
 def get_skill_composition(
     node_id: str = Query(..., description="专业或岗位的节点 id（含冒号，用 query 传）"),
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> SkillCompositionAdminOut:
     _ = user
     from backend.kg.pg_store.skill_composition import CompositionError, get_composition
 
@@ -695,6 +721,7 @@ def get_skill_composition(
         "- `mode=add`（添加入口）：该技能已存在则返回 **409**，附 `current_level`\n"
         "- `mode=set`（默认，改档入口）：直接替换档位/权重"
     ),
+    response_model=SkillCompositionAdminOut,
 )
 def put_skill_composition(
     body: CompositionSkillBody,
@@ -703,7 +730,7 @@ def put_skill_composition(
         "set", description="set=改档（默认，覆盖）；add=新增（已存在则 409）"
     ),
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> SkillCompositionAdminOut:
     from backend.kg.pg_store.skill_composition import (
         CompositionError,
         SkillExistsError,
@@ -737,12 +764,13 @@ def put_skill_composition(
     "/composition",
     tags=["管理台 · 数据列表"],
     summary="技能构成 · 移除一项技能",
+    response_model=SkillCompositionAdminOut,
 )
 def delete_skill_composition(
     node_id: str = Query(..., description="专业或岗位的节点 id"),
     skill_key: str = Query(..., description="要移除的逻辑技能名"),
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> SkillCompositionAdminOut:
     from backend.kg.pg_store.skill_composition import CompositionError, remove_skill
 
     try:
@@ -764,11 +792,12 @@ def delete_skill_composition(
         "**专业技能不带权重，调用会返回 400。**"
     ),
     response_description="归一化后的构成，附 normalized_from（归一前权重和）",
+    response_model=SkillCompositionAdminOut,
 )
 def normalize_skill_composition(
     node_id: str = Query(..., description="岗位节点 id"),
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> SkillCompositionAdminOut:
     from backend.kg.pg_store.skill_composition import CompositionError, normalize_weights
 
     try:
@@ -783,12 +812,13 @@ def normalize_skill_composition(
     "/skills/{skill_key:path}/prerequisites",
     tags=["管理台 · 技能多档"],
     summary="列出先修技能",
+    response_model=list[PrereqOut],
 )
 def admin_list_prereqs(
     skill_key: str,
     region: str = Query("CN"),
     user: AuthUser = Depends(require_auth_user),
-) -> list[dict[str, Any]]:
+) -> list[PrereqOut]:
     _ = user
     from backend.kg.pg_store.skill_prereq import list_prereqs
 
@@ -799,12 +829,13 @@ def admin_list_prereqs(
     "/skills/{skill_key:path}/prerequisites",
     tags=["管理台 · 技能多档"],
     summary="添加先修（无环校验）",
+    response_model=PrereqOut,
 )
 def admin_add_prereq(
     skill_key: str,
     body: PrereqBody,
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> PrereqOut:
     from backend.kg.pg_store.skill_prereq import add_prereq
 
     try:
@@ -823,12 +854,13 @@ def admin_add_prereq(
     "/skills/{skill_key:path}/prerequisites",
     tags=["管理台 · 技能多档"],
     summary="整体替换先修列表（无环）",
+    response_model=list[PrereqOut],
 )
 def admin_set_prereqs(
     skill_key: str,
     body: PrereqSetBody,
     user: AuthUser = Depends(require_auth_user),
-) -> list[dict[str, Any]]:
+) -> list[PrereqOut]:
     from backend.kg.pg_store.skill_prereq import set_prereqs
 
     try:
@@ -846,13 +878,14 @@ def admin_set_prereqs(
     "/skills/{skill_key:path}/prerequisites/{prereq_key:path}",
     tags=["管理台 · 技能多档"],
     summary="删除一条先修",
+    response_model=PrereqDeletedOut,
 )
 def admin_del_prereq(
     skill_key: str,
     prereq_key: str,
     region: str = Query("CN"),
     user: AuthUser = Depends(require_auth_user),
-) -> dict[str, Any]:
+) -> PrereqDeletedOut:
     _ = user
     from backend.kg.pg_store.skill_prereq import remove_prereq
 
