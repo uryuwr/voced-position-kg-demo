@@ -1,0 +1,40 @@
+# docker build 上下文是仓库根，但镜像只需要 backend/ 与 schemas/。
+# 这里既为瘦身，也为**防止把密钥打进镜像**。
+
+# —— 密钥：backend/.env 是 override=True 加载的配置真源，
+#    一旦进镜像既泄露 DATABASE_URL/GITHUB_TOKEN，又会盖掉 K8s 注入的环境变量 ——
+.env
+**/.env
+.env.*
+!**/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 非交付目录（镜像里不 COPY，排除掉可少传上下文）
+crawlers/
+pipelines/
+frontend/
+docs/
+reports/
+scripts/
+tests/
+data/
+design-system/
+830前台原型/
+知识图谱接口预研/
+
+# VCS / IDE / OS
+.git/
+.gitignore
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

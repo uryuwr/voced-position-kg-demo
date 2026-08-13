@@ -50,9 +50,21 @@ reports/step_*.out.txt
 scripts/_tmp_*
 scripts/**/__pycache__/
 
+# E2E 自起服务的运行日志（测试产物，非源码）
+tests/_e2e*.log
+
 # 内部资料，不进公开仓库（接口预研原始件、设计截图/xmind）
 知识图谱接口预研/
 docs/**/*.png
 docs/**/*.jpg
 docs/**/*.xmind
 *.xmind
+
+# Node 依赖（reports/mock 下的简历生成脚本会装 node_modules，390 个文件 11MB）
+node_modules/
+**/node_modules/
+package-lock.json
+
+# 本地生成的样例文件
+reports/mock/*.docx
+reports/mock/*.pdf
