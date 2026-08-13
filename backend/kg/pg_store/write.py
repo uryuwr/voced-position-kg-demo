@@ -225,6 +225,32 @@ def _assert_code_free(
         raise CodeConflictError(code, node_type, region or "CN", hit)
 
 
+def _assert_attrs_sane(attrs: Any, node_type: str) -> None:
+    """技能节点的 `attrs.level` 必须是 1–5 的整数。
+
+    NodeCreate.attrs 是自由 `dict[str, Any]`，Pydantic 不管里面的值；而 attrs.level
+    是产品档的**唯一真源**，读路径要按它排序、聚合、渲染档位格。写进一个 "L3"
+    就会让技能库列表整页 500（读侧已在 config.attrs_level_int 兜底，但脏值仍会
+    让该技能的档位凭空消失）。所以写侧拒绝，让运营当场看到 400 而不是事后查页面白屏。
+    """
+    if not isinstance(attrs, dict) or "level" not in attrs:
+        return
+    if str(node_type or "").lower() not in ("skill_level", "skill", "skill_bundle"):
+        return
+    lv = attrs.get("level")
+    if lv is None or (isinstance(lv, str) and not lv.strip()):
+        return
+    # 布尔是 int 的子类，True 会被当成 1 混进来，单独挡掉
+    ok = isinstance(lv, int) and not isinstance(lv, bool)
+    if not ok and isinstance(lv, str) and lv.strip().isdigit():
+        lv, ok = int(lv.strip()), True
+    if not ok or not 1 <= int(lv) <= 5:
+        raise ValueError(
+            f"attrs.level 必须是 1–5 的整数（产品档 1 了解 → 5 专家），收到：{attrs.get('level')!r}"
+        )
+    attrs["level"] = int(lv)   # 顺手把 "3" 归一成 3，库里只存一种形态
+
+
 def create_node(
     data: dict[str, Any],
     *,
@@ -240,6 +266,7 @@ def create_node(
     _assert_code_free(
         body.get("attrs"), body["type"], body.get("region") or "CN", exclude_id=nid
     )
+    _assert_attrs_sane(body.get("attrs"), body["type"])
     # 直写 published 须过 BR 门禁；先落 draft 再在调用方升权，或此处拦截
     if str(status).lower() == "published":
         ntype = (body.get("type") or "").lower()
@@ -398,6 +425,7 @@ def patch_node(
             body.get("region") or _cur.get("region") or "CN",
             exclude_id=node_id,
         )
+        _assert_attrs_sane(body["attrs"], _cur.get("type") or body.get("type") or "")
         fields.append("attrs = %(attrs)s")
         params["attrs"] = _json_or_none(body["attrs"])
     if fields:

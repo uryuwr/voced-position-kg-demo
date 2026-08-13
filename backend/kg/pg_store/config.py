@@ -4,11 +4,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from backend.kg.paths import ROOT
 
-load_dotenv(ROOT / ".env")
+# 配置真源是 backend/.env（见 backend/settings.py）。
+# 这里不能自己 load_dotenv(ROOT/".env")——那读的是**仓库根** .env，独立部署时根本不存在，
+# 单独 import 本模块的脚本（如 python -m backend.kg.pg_store.migrate）会拿不到 DATABASE_URL。
+import backend.settings  # noqa: F401  仅为触发 .env 加载
 
 # Default local docker: docker run ... -e POSTGRES_USER=voced ...
 DATABASE_URL = os.getenv(
@@ -58,3 +59,20 @@ def node_not_archived(alias: str = "") -> str:
     """【管理台】节点可见性：除 archived 外都可见。"""
     col = f"{alias}.status" if alias else "status"
     return f"COALESCE({col}, 'published') <> '{ARCHIVED_STATUS}'"
+
+
+def attrs_level_int(alias: str = "n") -> str:
+    """技能产品档 `attrs.level` → int，**脏值取 NULL 而不是让整条查询炸**。
+
+    attrs 是 TEXT 列，`attrs.level` 没有任何数据库约束。裸写 `(attrs::json->>'level')::int`
+    时，只要库里有**一行** level 是 `"L3"`、`"三级"`、`"3.5"` 这类值，
+    PostgreSQL 就抛 `invalid input syntax for type integer`，
+    整个列表接口 500 —— 一行脏数据打死整页，和当初 weight_sum 那个 500 同形。
+
+    写入侧已在 write.py 校验（1–5 的整数），这里是读侧兜底：
+    采集脚本、历史数据、直连改库都绕得过应用层校验，读路径必须自己站得住。
+    """
+    return (
+        f"CASE WHEN ({alias}.attrs::json->>'level') ~ '^[0-9]+$' "
+        f"THEN ({alias}.attrs::json->>'level')::int END"
+    )
