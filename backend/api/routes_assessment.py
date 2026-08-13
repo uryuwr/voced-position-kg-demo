@@ -1,15 +1,17 @@
-"""能力测评工作流 API（前台）。
+"""能力测评 API：**出题 / 答题 / 结算** 三段。
 
-对应原型的三步：**1 简历解析推断 → 2 对话问答测评 → 3 综合能力报告**。
-前端步骤条固定三节点，状态与每节点的输出都由 `stages` 字段驱动，
-不需要知道 LangGraph 内部有哪些节点。
+对应原型三步：1 简历解析推断 → 2 对话问答测评 → 3 综合能力报告。
+前端步骤条固定三节点，状态由 `stage` 事件与 `GET /sessions/{id}` 的 `stages` 驱动。
 
-会话状态存在 LangGraph 的 checkpointer（Postgres）里，刷新页面用
-`GET /sessions/{id}` 就能恢复现场——服务端不额外维护「第几题、答了什么」。
+    ① POST /sessions/questions/stream   一条 SSE 长连接推完**全部题目**
+                                        stage → plan(总题数) → question×N → question_end
+    ② POST /sessions/{id}/answers       提交一题，即答即走
+                                        选择题当场判分；问答题后台判，不阻塞下一题
+    ③ POST /sessions/{id}/report/stream 等判分收尾 → 综合能力报告
 
-题目是**分批懒加载**的：一次只返回当前该答的那道，答完再给下一道；
-`question_end=false` 表示后面还会有新题，`true` 表示已收敛、可以看报告了。
-流式接口在出题/判分这类耗时几秒到十几秒的步骤上推 `status` 事件。
+为什么出题和答题分开：题目不依赖作答（整场一次排定），把它们绑在同一个请求里
+会让「出题被答题节奏拖住」——学员每答一题都要等服务端现出下一题。
+前端拿到长连接推来的题后放进本地队列，答题零等待。
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -35,40 +37,32 @@ _SSE_HEADERS = {
 
 
 class StartBody(BaseModel):
-    model_config = {
-        "json_schema_extra": {
-            "examples": [{"occupation_id": "CN:occupation:MOHRSS:4-12-01-01", "resume_text": "从事汽车维修5年…"}]
-        }
-    }
-
-    occupation_id: str | None = Field(
-        None, description="目标岗位；不传则取该用户已锁定的学习目标"
-    )
-    resume_text: str | None = Field(
-        None, description="简历/自述原文。留空则跳过阶段 1，直接开始测评"
-    )
+    occupation_id: str | None = Field(None, description="目标岗位；不传取当前活跃目标")
+    resume_text: str | None = Field(None, description="简历原文；留空则跳过解析")
 
 
 class AnswerBody(BaseModel):
-    model_config = {"json_schema_extra": {"examples": [{"answer": 3}, {"answer": "我曾负责…"}]}}
-
+    index: int = Field(..., ge=0, description="题号（question.index）")
     answer: Any = Field(..., description="选择题传选项 value（int）；问答题传文本")
 
 
 def _resolve_occupation(user: TempUser, occupation_id: str | None) -> str:
-    occ = occupation_id
-    if not occ:
-        occ = (biz.get_goal(user.user_id) or {}).get("occupation_id")
+    occ = occupation_id or (biz.get_goal(user.user_id) or {}).get("occupation_id")
     if not occ:
         raise HTTPException(400, "缺少目标岗位：请先锁定学习目标或传 occupation_id")
     return occ
 
 
-def _new_session(user: TempUser, occupation_id: str) -> int:
-    """建一条诊断会话，其 id 同时用作工作流 thread_id，报告可复用既有查询。"""
-    return biz.create_assessment_session(
-        user.user_id, user.user_name, target_occupation_id=occupation_id
-    )
+def _own_session(session_id: int, user: TempUser) -> dict[str, Any]:
+    """校验会话归属并返回会话元信息。
+
+    不存在与不属于都回 404（而不是 403）：403 会把「这个 id 确实存在」这条信息
+    透给试探者，自增 id 下等于给出可枚举的会话清单。
+    """
+    meta = biz.session_meta(session_id)
+    if not meta or meta["user_id"] != str(user.user_id):
+        raise HTTPException(404, "测评会话不存在")
+    return meta
 
 
 def _sse(events: Iterator[dict[str, Any]]) -> StreamingResponse:
@@ -83,102 +77,103 @@ def _sse(events: Iterator[dict[str, Any]]) -> StreamingResponse:
 
 
 @router.post(
-    "/sessions",
-    summary="测评 · 开始（解析简历并出首批题）",
+    "/sessions/questions/stream",
+    summary="① 出题 · 一条长连接推完全部题目（SSE）",
     description=(
-        "启动工作流：读岗位标准 → 解析简历推断画像 → 出首批题，返回第一道题。\n\n"
-        "返回的 `stages` 直接对应前端三节点步骤条；`question` 是当前该答的题；"
-        "`question_end=false` 表示题还没出完。"
+        "建会话 → 解析简历 → 规划题数 → 生成并**陆续推送全部题目**。\n\n"
+        "事件顺序：`session` → `stage`(解析) → `plan`(含确定题数) → "
+        "`stage`(出题) → `question` × N → `question_end`。\n\n"
+        "前端把 `question` 事件压进本地队列，一次展示一道；收到 `question_end` "
+        "即表示题目出完（它是服务端的确定信号，比按题数判断可靠——"
+        "模型出题失败降级时实际条数可能少于计划）。"
     ),
 )
-def start_session(body: StartBody, user: TempUser = Depends(require_temp_user)) -> dict[str, Any]:
-    from backend.agent.assessment import service
-
-    occ = _resolve_occupation(user, body.occupation_id)
-    sid = _new_session(user, occ)
-    return service.start(
-        sid,
-        user_id=user.user_id,
-        user_name=user.user_name,
-        occupation_id=occ,
-        resume_text=body.resume_text,
-    )
-
-
-@router.post(
-    "/sessions/stream",
-    summary="测评 · 开始（SSE 流式）",
-    description=(
-        "同上，但以 SSE 推进度。事件：`status`（正在解析/出题）、`question`（新题）、"
-        "`stages`（阶段状态）、`report`、`done`、`error`。\n\n"
-        "解析与出题各需数秒到十几秒，流式让前端能显示当前在做什么。"
-    ),
-)
-def start_session_stream(
+def stream_questions(
     body: StartBody, user: TempUser = Depends(require_temp_user)
 ) -> StreamingResponse:
     from backend.agent.assessment import service
 
     occ = _resolve_occupation(user, body.occupation_id)
-    sid = _new_session(user, occ)
+    sid = biz.create_assessment_session(
+        user.user_id, user.user_name, target_occupation_id=occ
+    )
 
     def events() -> Iterator[dict[str, Any]]:
         yield {"type": "session", "session_id": sid, "occupation_id": occ}
-        yield from service.stream_start(
-            sid,
-            user_id=user.user_id,
-            user_name=user.user_name,
-            occupation_id=occ,
-            resume_text=body.resume_text,
+        yield from service.stream_questions(
+            sid, occupation_id=occ, resume_text=body.resume_text
         )
 
     return _sse(events())
 
 
 @router.post(
-    "/sessions/{session_id}/answer",
-    summary="测评 · 提交一题作答",
+    "/sessions/{session_id}/answers",
+    summary="② 答题 · 提交一题（即答即走）",
     description=(
-        "选择题传选项 `value`，问答题传文本。返回下一题（若有）与最新阶段状态；"
-        "题目出完时 `question_end=true` 且带上 `report`。"
+        "选择题**当场判分**（选项自带档位，纯查表）；问答题落库后交后台线程判分，"
+        "接口立即返回——学员不该为了等模型判分卡在这一题上。\n\n"
+        "返回 `progress.grading` 表示还有几道在后台判分；结算接口会等它们收尾。"
     ),
 )
 def submit_answer(
-    session_id: int, body: AnswerBody, user: TempUser = Depends(require_temp_user)
+    session_id: int = Path(..., ge=1),
+    body: AnswerBody = ...,
+    user: TempUser = Depends(require_temp_user),
 ) -> dict[str, Any]:
     from backend.agent.assessment import service
 
-    _ = user
+    _own_session(session_id, user)
     try:
-        return service.answer(session_id, body.answer)
+        return service.submit_answer(session_id, body.index, body.answer)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
 
 @router.post(
-    "/sessions/{session_id}/answer/stream",
-    summary="测评 · 提交作答（SSE 流式）",
-    description="判分与下一批出题会用到模型，用流式推 `status`，避免前端长时间空白。",
+    "/sessions/{session_id}/report/stream",
+    summary="③ 结算 · 生成综合能力报告（SSE）",
+    description=(
+        "等待后台判分收尾（推 `stage` 进度），再聚合实测结果与岗位标准，"
+        "产出匹配度 / 双系列雷达 / 优势 / 短板，并落库到诊断报告。"
+    ),
 )
-def submit_answer_stream(
-    session_id: int, body: AnswerBody, user: TempUser = Depends(require_temp_user)
+def stream_report(
+    session_id: int = Path(..., ge=1),
+    occupation_id: str | None = Query(None),
+    user: TempUser = Depends(require_temp_user),
 ) -> StreamingResponse:
     from backend.agent.assessment import service
 
-    _ = user
-    return _sse(service.stream_answer(session_id, body.answer))
+    meta = _own_session(session_id, user)
+    # 目标岗位以会话落库的为准：结算必须拿**出题时那个岗位**的标准去打分，
+    # 否则传个别的 occupation_id 就能算出一份自洽但错的报告。
+    occ = meta["target_occupation_id"] or _resolve_occupation(user, occupation_id)
+    return _sse(
+        service.stream_report(session_id, user_id=user.user_id, occupation_id=occ)
+    )
 
 
 @router.get(
     "/sessions/{session_id}",
     summary="测评 · 当前状态（刷新恢复）",
-    description="返回阶段状态与当前待答题目；会话状态由 LangGraph checkpointer 持久化。",
+    description=(
+        "三阶段状态 + 全部题目 + 已作答 + 下一道未答题。"
+        "状态来自业务表（biz_assessment_question / biz_assessment_answer），"
+        "刷新恢复只是两条普通查询。"
+    ),
 )
-def get_session(session_id: int, user: TempUser = Depends(require_temp_user)) -> dict[str, Any]:
+def get_session(
+    session_id: int = Path(..., ge=1),
+    occupation_id: str | None = Query(None),
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
     from backend.agent.assessment import service
 
-    _ = user
-    st = service.get_state(session_id)
+    meta = _own_session(session_id, user)
+    st = service.get_state(
+        session_id, occupation_id=meta["target_occupation_id"] or occupation_id
+    )
     if not st.get("exists"):
-        raise HTTPException(404, "测评会话不存在或已过期")
+        raise HTTPException(404, "测评会话不存在或尚未出题")
     return st

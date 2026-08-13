@@ -5,396 +5,63 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>AI 能力测评 · 职业教育知识图谱</title>
 <style>
-  :root{
-    --bg:#0b1220; --panel:#111a2b; --panel2:#0e1626; --line:#1e2b45;
-    --txt:#e6edf7; --muted:#8fa3c0; --brand:#10b981; --brand2:#34d399;
-    --warn:#f59e0b; --purple:#818cf8;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--txt);
+  body{margin:0;background:#0b1220;color:#e6edf7;
        font:14px/1.6 "Microsoft YaHei",system-ui,-apple-system,sans-serif}
-  .wrap{max-width:1080px;margin:0 auto;padding:22px 18px 60px}
-  .muted{color:var(--muted)}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px}
-  .tag{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;
-       border:1px solid var(--brand);color:var(--brand2);background:rgba(16,185,129,.1)}
-  h1{font-size:22px;margin:10px 0 6px}
-  h2{font-size:16px;margin:0 0 12px}
-  button{font:inherit;cursor:pointer}
-  .btn{background:var(--brand);color:#04231a;border:0;border-radius:10px;padding:10px 18px;font-weight:700}
-  .btn:disabled{opacity:.45;cursor:not-allowed}
-  .btn.ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
-  textarea,input,select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
-        border-radius:10px;padding:10px 12px;width:100%;font:inherit}
-
-  /* 步骤条：固定三节点，状态由后端 stages 驱动 */
-  .steps{display:flex;gap:10px;background:var(--panel);border:1px solid var(--line);
-         border-radius:14px;padding:10px;margin-bottom:16px}
-  .step{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;
-        padding:10px 12px;border-radius:10px;color:var(--muted);font-weight:600}
-  .step.active{background:var(--brand);color:#04231a}
-  .step.done{background:rgba(16,185,129,.12);color:var(--brand2);border:1px solid rgba(16,185,129,.35)}
-  .step .ico{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
-             font-size:12px;background:rgba(255,255,255,.12)}
-  .step.active .ico{background:rgba(0,0,0,.18)}
-
-  /* 题目 */
-  .qbox{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:12px}
-  .opt{display:block;width:100%;text-align:left;background:var(--panel);color:var(--txt);
-       border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:8px}
-  .opt:hover{border-color:var(--brand)}
-  .opt.sel{border-color:var(--brand);background:rgba(16,185,129,.12)}
-  .badge{display:inline-block;background:rgba(129,140,248,.15);color:var(--purple);
-         border-radius:6px;padding:1px 8px;font-size:12px;margin-left:6px}
-
-  /* 报告 */
-  .grid{display:grid;grid-template-columns:1.15fr 1fr;gap:16px}
-  @media(max-width:860px){.grid{grid-template-columns:1fr}}
-  .score{font-size:34px;font-weight:800;color:var(--brand2);line-height:1}
-  .box{border:1px solid var(--line);border-radius:12px;padding:14px}
-  .box.good{border-color:rgba(16,185,129,.4);background:rgba(16,185,129,.06)}
-  .box.bad{border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.06)}
-  .chip{display:inline-block;margin:6px 6px 0 0;padding:6px 12px;border-radius:8px;font-size:13px}
-  .chip.good{background:rgba(16,185,129,.14);color:var(--brand2)}
-  .chip.bad{background:rgba(245,158,11,.14);color:var(--warn)}
-  .legend{display:flex;gap:16px;justify-content:center;font-size:12px;margin-top:6px}
-  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
-  .log{font-size:12px;color:var(--muted);min-height:20px;margin-top:10px}
-  .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);
-        border-top-color:var(--brand);border-radius:50%;animation:r .8s linear infinite;margin-right:6px}
-  @keyframes r{to{transform:rotate(360deg)}}
+  .wrap{max-width:1040px;margin:0 auto;padding:22px 18px 60px}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+  .top h1{font-size:17px;margin:0}
+  .top a{color:#8fa3c0;font-size:13px;text-decoration:none}
+  .top a:hover{color:#34d399}
+  select{background:#111a2b;color:#e6edf7;border:1px solid #1e2b45;border-radius:8px;padding:7px 10px;font:inherit}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="steps" id="steps"></div>
-  <div id="main"></div>
-  <div class="log" id="log"></div>
+  <div class="top">
+    <h1>AI 能力测评</h1>
+    <div>
+      <span style="color:#8fa3c0;font-size:13px">目标岗位</span>
+      <select id="occSel"><option value="">（用我锁定的目标）</option></select>
+      <a href="/student?tab=path">← 回学员端</a>
+    </div>
+  </div>
+  <div id="box"></div>
 </div>
 
 <script src="/js/api-client.js"></script>
+<script src="/js/assessment-widget.js"></script>
 <script>
-const api = window.VocedApi;
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
-  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-/* 前端只维护三样东西：阶段状态、题目队列、当前题。
-   题是分批产出的，question_end=false 就代表后面还会追加。 */
-const S = {
-  sessionId: null,
-  stages: null,
-  queue: [],          // 待答题目队列
-  current: null,      // 正在展示的题
-  questionEnd: false,
-  report: null,
-  busy: false,
-  occupationId: null,
-  seen: new Set(),    // 已入队题目的 index，防重复追加
-};
-
-const SAMPLE = "从事汽车维修5年，负责整车故障诊断与发动机检修，熟练使用示波器和解码器定位间歇性电路故障，"
-  + "主导过变速箱大修，季度返修率从8%降到3%，带过2名学徒。";
-
-const STEP_ICONS = { parse: "📄", assess: "💬", report: "🏆" };
-
-function renderSteps() {
-  const st = S.stages || [
-    { key: "parse", name: "简历解析推断", status: "active" },
-    { key: "assess", name: "对话问答测评", status: "pending" },
-    { key: "report", name: "综合能力报告", status: "pending" },
-  ];
-  $("steps").innerHTML = st.map((s, i) =>
-    `<div class="step ${s.status}">
-       <span class="ico">${STEP_ICONS[s.key] || ""}</span>
-       ${i + 1}. ${esc(s.name)} ${s.status === "done" ? "✓" : ""}
-     </div>`).join("");
-}
-
-function log(msg, spin) {
-  $("log").innerHTML = msg ? `${spin ? '<span class="spin"></span>' : ""}${esc(msg)}` : "";
-}
-
-/* ── 阶段 1：简历解析 ───────────────────────────────── */
-function renderStage1() {
-  $("main").innerHTML = `
-    <div class="card">
-      <span class="tag">F-03 · 简历智能化能力推断</span>
-      <h1>上传或粘贴个人简历，自动解析提取技能等级</h1>
-      <p class="muted">通过大模型结合知识图谱做结构化提取，推断你在目标岗位各维度能力的基准分。</p>
-      <div style="margin:14px 0 8px">
-        <label class="muted">目标岗位</label>
-        <select id="occSel"><option value="">加载中…</option></select>
-      </div>
-      <textarea id="resume" rows="6" placeholder="粘贴简历/自述正文…（可留空，直接开始测评）"></textarea>
-      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn" id="btnStart">开始测评 →</button>
-        <button class="btn ghost" id="btnSample">使用范例简历</button>
-        <button class="btn ghost" id="btnSkip">跳过解析，直接测评</button>
-      </div>
-    </div>`;
-  $("btnSample").onclick = () => { $("resume").value = SAMPLE; };
-  $("btnSkip").onclick = () => { $("resume").value = ""; start(); };
-  $("btnStart").onclick = () => start();
-  loadOccupations();
-}
-
-async function loadOccupations() {
-  try {
-    const d = await api.apiFetch("/v1/student/positions?page=1&page_size=50");
-    const items = d.items || [];
-    const goal = await api.apiFetch("/v1/student/goal").catch(() => null);
-    S.occupationId = (goal && goal.occupation_id) || (items[0] && items[0].id) || null;
-    $("occSel").innerHTML = items.map((x) =>
-      `<option value="${esc(x.id)}" ${x.id === S.occupationId ? "selected" : ""}>${esc(x.name)}</option>`
-    ).join("") || `<option value="">（无可选岗位）</option>`;
-    $("occSel").onchange = (e) => { S.occupationId = e.target.value; };
-  } catch (e) {
-    $("occSel").innerHTML = `<option value="">加载失败：${esc(e.message || e)}</option>`;
-  }
-}
-
-/* ── SSE：fetch + ReadableStream（EventSource 不能带鉴权头） ── */
-async function sse(url, body, onEvent) {
-  const headers = await api.buildHeaders(url, "POST", { "Content-Type": "application/json" });
-  const res = await fetch(api.absUrl(url), { method: "POST", headers, body: JSON.stringify(body) });
-  if (!res.ok || !res.body) throw new Error("HTTP " + res.status + " " + (await res.text()).slice(0, 200));
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let i;
-    while ((i = buf.indexOf("\n\n")) >= 0) {
-      const raw = buf.slice(0, i); buf = buf.slice(i + 2);
-      let type = "message", data = "";
-      raw.split("\n").forEach((line) => {
-        if (line.startsWith("event:")) type = line.slice(6).trim();
-        else if (line.startsWith("data:")) data += line.slice(5).trim();
-      });
-      if (!data) continue;
-      try { onEvent(type, JSON.parse(data)); } catch (_) { /* 忽略半包 */ }
-    }
-  }
-}
-
-function handleEvent(type, d) {
-  if (type === "session") S.sessionId = d.session_id;
-  else if (type === "status") log(d.message, true);
-  else if (type === "stages") { S.stages = d.stages; renderSteps(); }
-  else if (type === "question") pushQuestion(d.question);
-  else if (type === "report") S.report = d.report;
-  else if (type === "error") log("出错：" + (d.message || ""), false);
-  else if (type === "done") {
-    S.questionEnd = !!d.question_end;
-    log("", false);
-  }
-}
-
-function pushQuestion(q) {
-  if (!q || S.seen.has(q.index)) return;   // 同一题可能随状态重复下发
-  S.seen.add(q.index);
-  S.queue.push(q);
-}
-
-/* ── 阶段 2：逐题作答（队列消费） ──────────────────── */
-function nextQuestion() {
-  if (!S.current && S.queue.length) S.current = S.queue.shift();
-  renderStage2();
-}
-
-function renderStage2() {
-  if (S.report) return renderReport();
-  const q = S.current;
-  if (!q) {
-    $("main").innerHTML = `<div class="card"><h2>对话问答测评</h2>
-      <p class="muted">${S.questionEnd ? "题目已答完，正在生成报告…" : "AI 正在按岗位标准出题，请稍候…"}</p></div>`;
+/* 独立页只是组件的一层薄壳：步骤条、出题、判分、报告全在 assessment-widget.js，
+   与 student.html 的「③ AI 诊断」tab 共用同一份实现。 */
+(async function () {
+  const api = window.VocedApi;
+  try { await api.initAuth(); } catch (e) {
+    document.getElementById("box").textContent = "鉴权初始化失败：" + (e.message || e);
     return;
   }
-  const total = q.total || "?";
-  const opts = (q.options || []).map((o) =>
-    `<button class="opt" data-v="${o.value}">${esc(o.text)}</button>`).join("");
-  $("main").innerHTML = `
-    <div class="card">
-      <span class="tag">F-04 · 多轮实战对话考评</span>
-      <h1>针对【${esc(S.stages && S.stages[1] && S.report ? "" : (q.skill_key || ""))}】实战场景出题考评</h1>
-      <p class="muted">第 ${q.index + 1} / ${total} 题
-        · 技能「${esc(q.skill_key)}」
-        <span class="badge">${q.variant === "sjt" ? "情景判断" : "自评"}</span>
-        ${q.required_level ? `<span class="badge">岗位要求 L${q.required_level}</span>` : ""}
-      </p>
-      <div class="qbox">
-        <div style="margin-bottom:10px">${esc(q.prompt)}</div>
-        ${q.type === "choice" ? opts : `
-          <textarea id="ans" rows="5" placeholder="${esc(q.placeholder || "请结合具体经历作答：任务、方法、结果")}"></textarea>
-          ${(q.rubric || []).length ? `<p class="muted" style="font-size:12px;margin-top:8px">评分要点：${q.rubric.map(esc).join(" / ")}</p>` : ""}
-          <div style="margin-top:10px"><button class="btn" id="btnSend">提交回答 →</button></div>`}
-      </div>
-    </div>`;
-  if (q.type === "choice") {
-    document.querySelectorAll(".opt").forEach((b) => {
-      b.onclick = () => { if (!S.busy) { b.classList.add("sel"); submit(Number(b.dataset.v)); } };
-    });
-  } else {
-    $("btnSend").onclick = () => { if (!S.busy) submit($("ans").value.trim()); };
-  }
-}
 
-/* ── 提交作答 ───────────────────────────────────── */
-async function start() {
-  const occ = S.occupationId || ($("occSel") && $("occSel").value) || null;
-  if (!occ) { log("请先选择目标岗位", false); return; }
-  S.busy = true; log("正在启动测评…", true);
+  let picked = "";
+  const sel = document.getElementById("occSel");
   try {
-    await sse("/v1/student/assessment/sessions/stream",
-      { occupation_id: occ, resume_text: ($("resume") && $("resume").value.trim()) || null },
-      handleEvent);
-  } catch (e) {
-    log("启动失败：" + (e.message || e), false);
-  }
-  S.busy = false;
-  nextQuestion();
-}
+    const [d, goal] = await Promise.all([
+      api.apiFetch("/v1/student/positions?page=1&page_size=50"),
+      api.apiFetch("/v1/student/goal").catch(() => null),
+    ]);
+    picked = (goal && goal.occupation_id) || "";
+    sel.innerHTML = `<option value="">（用我锁定的目标${goal ? "：" + goal.occupation_name : ""}）</option>`
+      + (d.items || []).map((x) =>
+        `<option value="${x.id}" ${x.id === picked ? "" : ""}>${x.name}</option>`).join("");
+  } catch (_) { /* 取不到列表也不挡测评，后端会回落到活跃目标 */ }
+  sel.onchange = () => { picked = sel.value; };
 
-async function submit(answer) {
-  if (answer === "" || answer == null) { log("请先作答", false); return; }
-  S.busy = true; S.current = null; log("正在判分…", true);
-  renderStage2();
-  try {
-    await sse(`/v1/student/assessment/sessions/${S.sessionId}/answer/stream`, { answer }, handleEvent);
-  } catch (e) {
-    log("提交失败：" + (e.message || e), false);
-  }
-  S.busy = false;
-  if (S.report) renderReport(); else nextQuestion();
-}
-
-/* ── 阶段 3：综合能力报告 ──────────────────────────── */
-function renderReport() {
-  const r = S.report || {};
-  const strengths = (r.strengths || []).slice(0, 6);
-  const gaps = (r.gaps || []).slice(0, 6);
-  $("main").innerHTML = `
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
-        <div>
-          <span class="tag">知识图谱 × AI 评估生成</span>
-          <h1>【${esc(r.target_occupation_name || "目标岗位")}】AI 智能能力诊断报告</h1>
-          <p class="muted">${esc(r.summary || "")}</p>
-        </div>
-        <div class="box" style="text-align:center;min-width:150px">
-          <div class="muted" style="font-size:12px">综合能力匹配度</div>
-          <div class="score">${r.match_score != null ? r.match_score + "%" : "—"}</div>
-          <div class="muted" style="font-size:12px">覆盖权重 ${r.coverage != null ? r.coverage + "%" : "—"}</div>
-        </div>
-      </div>
-      <div class="grid" style="margin-top:16px">
-        <div class="box">
-          <h2>能力维度与目标极域图</h2>
-          <canvas id="radar" width="440" height="360" style="width:100%;max-width:440px;display:block;margin:0 auto"></canvas>
-          <div class="legend">
-            <span><i class="dot" style="background:var(--brand)"></i>学员实测能力</span>
-            <span><i class="dot" style="background:var(--purple)"></i>岗位标准要求</span>
-          </div>
-        </div>
-        <div>
-          <div class="box good">
-            <b style="color:var(--brand2)">✓ 优势能力领域</b>
-            <span class="muted" style="font-size:12px">（已达到或超越基准）</span>
-            <div>${strengths.length ? strengths.map((x) =>
-              `<span class="chip good">✓ ${esc(x.skill_key)} L${x.measured_level}</span>`).join("")
-              : '<div class="muted" style="margin-top:8px">本次未测出达标项</div>'}</div>
-          </div>
-          <div class="box bad" style="margin-top:12px">
-            <b style="color:var(--warn)">⚠ 关键能力短板</b>
-            <span class="muted" style="font-size:12px">（需优先攻关提升）</span>
-            <div>${gaps.length ? gaps.map((x) =>
-              `<span class="chip bad">⚠ ${esc(x.skill_key)} ${x.measured_level ? "L" + x.measured_level : "待补强"}
-                 → 需 L${x.required_level || "?"}</span>`).join("")
-              : '<div class="muted" style="margin-top:8px">未发现明显短板</div>'}</div>
-          </div>
-          <button class="btn" style="width:100%;margin-top:12px" id="btnPath">
-            基于短板一键生成个人自适应学习计划 →</button>
-        </div>
-      </div>
-    </div>`;
-  drawRadar(r.radar || {});
-  // 学习计划由后续提供的 API 承接，这里只做跳转；不自造接口
-  $("btnPath").onclick = () => {
-    location.href = "/student?tab=path";
-  };
-}
-
-/** 双系列雷达图：绿=学员实测，紫=岗位要求（原型的绿/紫双层） */
-function drawRadar(radar) {
-  const cv = $("radar"); if (!cv) return;
-  const axes = radar.categories || [];
-  const series = radar.series || [];
-  const ctx = cv.getContext("2d");
-  const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2 + 6, R = Math.min(W, H) / 2 - 58;
-  ctx.clearRect(0, 0, W, H);
-  if (axes.length < 3) {
-    ctx.fillStyle = "#8fa3c0"; ctx.font = "13px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText("测评维度不足，无法绘制雷达图", cx, cy);
-    return;
-  }
-  const pt = (i, v) => {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI) / axes.length;
-    const rr = R * Math.max(0, Math.min(100, v)) / 100;
-    return [cx + rr * Math.cos(a), cy + rr * Math.sin(a)];
-  };
-  // 网格
-  ctx.strokeStyle = "#1e2b45";
-  for (let g = 1; g <= 4; g++) {
-    ctx.beginPath();
-    axes.forEach((_, i) => {
-      const [x, y] = pt(i, (g / 4) * 100);
-      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-    });
-    ctx.closePath(); ctx.stroke();
-  }
-  axes.forEach((_, i) => {
-    ctx.beginPath(); ctx.moveTo(cx, cy);
-    const [x, y] = pt(i, 100); ctx.lineTo(x, y); ctx.stroke();
+  const inst = window.AssessmentWidget.mount(document.getElementById("box"), {
+    getOccupationId: () => picked || null,
+    onGotoPath: () => { location.href = "/student?tab=path"; },
   });
-  // 数据
-  const colors = { user: ["rgba(16,185,129,.35)", "#10b981"], required: ["rgba(129,140,248,.10)", "#818cf8"] };
-  series.forEach((s) => {
-    const [fill, line] = colors[s.key] || ["rgba(255,255,255,.1)", "#fff"];
-    ctx.beginPath();
-    (s.scores || []).forEach((v, i) => {
-      const [x, y] = pt(i, v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-    });
-    ctx.closePath();
-    ctx.fillStyle = fill; ctx.fill();
-    ctx.strokeStyle = line; ctx.lineWidth = 2; ctx.stroke();
-  });
-  // 轴标签
-  ctx.fillStyle = "#c7d5ea"; ctx.font = "12px sans-serif";
-  axes.forEach((name, i) => {
-    const [x, y] = pt(i, 122);
-    ctx.textAlign = Math.abs(x - cx) < 12 ? "center" : (x > cx ? "left" : "right");
-    ctx.fillText(String(name).slice(0, 8), x, y);
-  });
-}
 
-/* ── 启动 ───────────────────────────────────────── */
-(async function main() {
-  renderSteps();
-  try { await api.initAuth(); } catch (e) { log("鉴权初始化失败：" + (e.message || e), false); }
+  // 刷新恢复：/assessment?session=123
   const sid = new URLSearchParams(location.search).get("session");
-  if (sid) {   // 刷新恢复：状态在 LangGraph checkpointer 里
-    try {
-      const st = await api.apiFetch(`/v1/student/assessment/sessions/${sid}`);
-      S.sessionId = st.session_id; S.stages = st.stages; S.report = st.report;
-      S.questionEnd = st.question_end; renderSteps();
-      if (st.question) pushQuestion(st.question);
-      return S.report ? renderReport() : nextQuestion();
-    } catch (_) { /* 会话不存在则走新建 */ }
-  }
-  renderStage1();
+  if (sid) inst.resume(sid);
 })();
 </script>
 </body>

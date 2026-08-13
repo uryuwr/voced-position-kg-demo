@@ -24,6 +24,68 @@ def _ratio(measured: int, required: int) -> float:
     return min(measured / required, 1.0) if measured else 0.0
 
 
+RADAR_MIN_AXES = 3          # 少于 3 个轴画不成多边形
+RADAR_MAX_AXES = 6          # 轴太多标签会糊成一团
+
+
+def _build_radar(tested_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """双系列雷达（学员实测 / 岗位标准要求）。
+
+    **轴是技能，不是技能大类** —— 原型上的「流量承接与转化 / 广告精准投放 /
+    数据分析与复盘 / 直播控场与话术」都是具体技能。早先按大类聚合，遇到技能集中在
+    一两个大类的岗位（如计算机程序设计员的 4 项技能几乎同类）就只剩 1–2 根轴，
+    直接退化成「维度不足，无法绘制」。
+
+    技能不足 3 项时退回大类聚合再试一次，仍不足才判定画不出来。
+    """
+    def _axes_from(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        top = sorted(rows, key=lambda x: -(x.get("weight") or 0))[:RADAR_MAX_AXES]
+        return {
+            "axis_type": "skill",
+            "categories": [r["skill_key"] for r in top],
+            "series": [
+                {
+                    "key": "user",
+                    "name": "学员实测能力",
+                    "scores": [base_score(r["measured_level"]) if r["measured_level"] else 0 for r in top],
+                },
+                {
+                    "key": "required",
+                    "name": "岗位标准要求",
+                    "scores": [base_score(r["required_level"]) if r["required_level"] else 0 for r in top],
+                },
+            ],
+            "scores": [base_score(r["measured_level"]) if r["measured_level"] else 0 for r in top],
+        }
+
+    if len(tested_rows) >= RADAR_MIN_AXES:
+        return _axes_from(tested_rows)
+
+    # 技能数不够，退回按大类聚合（多个技能合成一根轴，至少可能凑出 3 根）
+    acc: dict[str, dict[str, list[float]]] = {}
+    order: list[str] = []
+    for r in tested_rows:
+        cat = r["category"] or "未分类"
+        if cat not in acc:
+            acc[cat] = {"user": [], "req": []}
+            order.append(cat)
+        acc[cat]["user"].append(base_score(r["measured_level"]) if r["measured_level"] else 0)
+        acc[cat]["req"].append(base_score(r["required_level"]) if r["required_level"] else 0)
+
+    def _avg(v: list[float]) -> int:
+        return round(sum(v) / len(v)) if v else 0
+
+    return {
+        "axis_type": "category",
+        "categories": order,
+        "series": [
+            {"key": "user", "name": "学员实测能力", "scores": [_avg(acc[c]["user"]) for c in order]},
+            {"key": "required", "name": "岗位标准要求", "scores": [_avg(acc[c]["req"]) for c in order]},
+        ],
+        "scores": [_avg(acc[c]["user"]) for c in order],
+    }
+
+
 def build_report(
     *,
     occupation: dict[str, Any] | None,
@@ -92,30 +154,7 @@ def build_report(
         (r for r in rows if not r["tested"]), key=lambda x: -(x["weight"] or 0)
     )
 
-    # 雷达：按技能大类聚合成轴，两条系列同轴对比（原型的绿/紫双层）。
-    # 同样只用测过的维度，否则会出现一条恒为 0 的轴。
-    axes: list[str] = []
-    acc: dict[str, dict[str, list[float]]] = {}
-    for r in tested_rows:
-        cat = r["category"]
-        if cat not in acc:
-            acc[cat] = {"user": [], "req": []}
-            axes.append(cat)
-        acc[cat]["user"].append(base_score(r["measured_level"]) if r["measured_level"] else 0)
-        acc[cat]["req"].append(base_score(r["required_level"]) if r["required_level"] else 0)
-
-    def _avg(v: list[float]) -> int:
-        return round(sum(v) / len(v)) if v else 0
-
-    radar = {
-        "categories": axes,
-        "series": [
-            {"key": "user", "name": "学员实测能力", "scores": [_avg(acc[c]["user"]) for c in axes]},
-            {"key": "required", "name": "岗位标准要求", "scores": [_avg(acc[c]["req"]) for c in axes]},
-        ],
-        # 兼容旧前端：scores 单系列仍指学员实测
-        "scores": [_avg(acc[c]["user"]) for c in axes],
-    }
+    radar = _build_radar(tested_rows)
 
     return {
         "channel": channel,

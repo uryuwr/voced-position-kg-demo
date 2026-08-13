@@ -100,6 +100,8 @@ def project(state: dict[str, Any], *, interrupted: bool = False) -> dict[str, An
             "asked": len(paper),
             "answered": answered,
             "cursor": cursor,
+            # 懒加载下真实总题数事先未知，给个预估值，避免前端显示「1 / ?」
+            "planned_total": int(state.get("planned_total") or 0) or None,
             "stop_reason": state.get("stop_reason") or "",
         },
         "awaiting_answer": bool(interrupted),
@@ -113,3 +115,85 @@ def pending_question(state: dict[str, Any], interrupt_value: Any = None) -> dict
     paper = state.get("paper") or []
     cursor = int(state.get("cursor") or 0)
     return paper[cursor] if 0 <= cursor < len(paper) else None
+
+
+def with_progress(q: dict[str, Any] | None, state: dict[str, Any]) -> dict[str, Any] | None:
+    """给题目补上进度信息（分批出题时 total 只能是预估）。"""
+    if not q:
+        return q
+    out = dict(q)
+    out["planned_total"] = int(state.get("planned_total") or 0) or None
+    out.pop("total", None)          # 旧字段在懒加载下没有意义，避免前端显示 1/?
+    return out
+
+
+def project_from_store(
+    session_id: int, *, occupation_id: str | None = None
+) -> dict[str, Any]:
+    """从业务表投影出三阶段状态（替代原先从 checkpointer 读）。
+
+    刷新恢复因此变成两条普通查询，不再依赖图的存档。
+    """
+    from backend.agent.assessment import service, store
+
+    qs = store.list_questions(session_id)
+    answers = {a["index"]: a for a in store.list_answers(session_id)}
+    p = store.progress(session_id)
+    ctx = service._ctx(session_id)
+    profile = ctx.get("profile_levels") or {}
+    profile_meta = ctx.get("profile_meta") or {}
+
+    # 直接按 session_id 查（它本身唯一），不要求调用方传 user_id
+    report = None
+    try:
+        from backend.kg.pg_store.client import connect
+
+        with connect() as conn:
+            r = conn.execute(
+                "SELECT report_json FROM biz_diagnosis_result WHERE session_id=%s",
+                (session_id,),
+            ).fetchone()
+        if r:
+            rep = r["report_json"]
+            if isinstance(rep, str):
+                import json as _json
+
+                rep = _json.loads(rep)
+            report = rep or None
+    except Exception:  # noqa: BLE001
+        report = None
+
+    started = bool(qs)
+    finished = bool(report)
+    s1 = _stage(
+        STAGE_PARSE,
+        "done" if started or profile_meta else "active",
+        {
+            "engine": profile_meta.get("engine"),
+            "skill_count": len(profile),
+            "skills": [{"skill_key": k, "level": v} for k, v in profile.items()],
+        },
+    )
+    s2 = _stage(
+        STAGE_ASSESS,
+        "done" if finished else ("active" if started else "pending"),
+        {"asked": p["asked"], "answered": p["answered"], "grading": p["grading"]},
+    )
+    s3 = _stage(STAGE_REPORT, "done" if finished else "pending", report or {})
+
+    pending_q = store.next_unanswered(session_id)
+    return {
+        "session_id": session_id,
+        "exists": started,
+        "occupation_id": occupation_id or (ctx.get("occupation") or {}).get("id"),
+        "stages": [s1, s2, s3],
+        "current_stage": STAGE_REPORT if finished else (STAGE_ASSESS if started else STAGE_PARSE),
+        "questions": qs,
+        "answers": list(answers.values()),
+        "question": pending_q,
+        "progress": {**p, "target_total": ctx.get("target_total")},
+        # 出题是一次性长连接：库里有题就说明那一轮已经推完（进程重启后内存里的
+        # target_total 会丢，不能拿它做判断，否则刷新恢复时会一直显示「还在出题」）
+        "question_end": bool(started),
+        "report": report,
+    }

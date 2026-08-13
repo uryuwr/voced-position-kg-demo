@@ -52,8 +52,13 @@ BATCH_SIZE = 3            # 后续每批
 MAX_QUESTIONS = 10        # 硬上限
 MAX_BATCHES = 4           # 批次上限
 COVERAGE_TARGET = 0.8     # 加权覆盖率达标即停
+MIN_QUESTIONS = 4         # 题数下限：3 题就结束体感太草率
+MIN_COVER_QUESTIONS = 4   # 覆盖题下限
+VERIFY_LEVEL = 4          # 要求档 >= 此值的技能需要开放题验证
 MAX_PER_SKILL = 2         # 同一技能最多出几题
-MAX_PER_CATEGORY = 2      # 同一大类最多出几题
+MAX_PER_CATEGORY = 3      # 同一大类最多出几题（技能集中在少数大类的岗位不能因此少考）
+RADAR_MIN_SKILLS = 3      # 报告雷达至少需要的已测技能数
+OPEN_PER_RUN = 2          # 一轮测评里追加的问答题上限
 
 _PLACEHOLDER = re.compile(r"权重\s*\d+\s*%|·\s*L[1-5]\s*(·|$)")
 
@@ -73,6 +78,47 @@ def _requirement_hint(item: dict[str, Any]) -> str | None:
 
 
 # ── 选技能 ───────────────────────────────────────────────────
+
+
+def plan_all_skills(
+    items: list[dict[str, Any]], plan: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """**一次性**规划整场要考的技能与题型，不看学员作答。
+
+    出题因此可以在会话一开始就全部排定、并在后台并行生成：学员答题时下一批已经
+    躺在缓存里，不必等模型。代价是失去「按回答调难度」的自适应——权衡后选前者：
+    等待十几秒换一点难度微调不划算，而验证题本来就可以按**岗位要求档**预先决定
+    （要求 L4/L5 的技能一律追问，不必等学员先自评达标）。
+    """
+    est = plan or estimate_total(items)
+    ranked = sorted(items, key=lambda x: -(float(x.get("weight") or 0)))
+    cover_n = min(int(est.get("cover") or 0) or MIN_COVER_QUESTIONS, len(ranked))
+
+    # 覆盖题：按权重降序，同大类限额以保证雷达维度分散；不足时放开限额补足
+    picked: list[dict[str, Any]] = []
+    per_cat: dict[str, int] = {}
+    for it in ranked:
+        cat = str(it.get("category") or "未分类")
+        if per_cat.get(cat, 0) >= MAX_PER_CATEGORY:
+            continue
+        picked.append(it)
+        per_cat[cat] = per_cat.get(cat, 0) + 1
+        if len(picked) >= cover_n:
+            break
+    if len(picked) < cover_n:
+        keys = {str(x.get("skill_key")) for x in picked}
+        for it in ranked:
+            if str(it.get("skill_key")) not in keys:
+                picked.append(it)
+                if len(picked) >= cover_n:
+                    break
+
+    out = [{**it, "_item_type": "choice", "_reason": "coverage"} for it in picked]
+    # 验证题：要求档高的技能追加开放题，按权重优先
+    hard = [it for it in picked if int(it.get("required_level") or 0) >= VERIFY_LEVEL]
+    for it in hard[: int(est.get("verify") or 0)]:
+        out.append({**it, "_item_type": "open", "_reason": "verify_high_bar"})
+    return out
 
 
 def plan_batch_skills(
@@ -123,9 +169,76 @@ def plan_batch_skills(
             continue
         fresh.append({**it, "_item_type": "choice", "_reason": "coverage"})
 
+    # 大类限额是为了让雷达维度分散，但当它把候选卡到不够出题时必须放开——
+    # 「计算机程序设计员」这类岗位 4 项技能几乎同属一类，卡住就只能出 3 题
+    if len(verify) + len(fresh) < size:
+        picked_keys = {str(x.get("skill_key")) for x in fresh}
+        for it in sorted(items, key=lambda x: -(float(x.get("weight") or 0))):
+            key = str(it.get("skill_key"))
+            if asked.get(key) or key in picked_keys:
+                continue
+            fresh.append({**it, "_item_type": "choice", "_reason": "coverage_relaxed"})
+            picked_keys.add(key)
+            if len(verify) + len(fresh) >= size:
+                break
+
     # 验证题不超过本批一半：主线仍是扩大覆盖
     out = verify[: max(1, size // 2)] + fresh
     return out[:size]
+
+
+def estimate_total(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """**出题前**按岗位技能构成算出这次要考多少题，之后一直考到这个数为止。
+
+    此前用的是「多重收敛条件先到先停」，权重集中的岗位 3 题就能凑够 80% 覆盖率，
+    学员体感是「怎么才问三道就结束了」。改成先定题数、出满为止，进度也才有意义。
+
+    题数 = 覆盖题 + 验证题：
+
+    - **覆盖题**：按权重降序累计到 COVERAGE_TARGET 所需的技能数；再往上取
+      RADAR_MIN_SKILLS（报告雷达至少要 3 根轴）与 MIN_COVER_QUESTIONS 的较大值，
+      并以技能总数封顶（只有 4 项技能的岗位出不了 8 道覆盖题）
+    - **验证题**：要求档 ≥ VERIFY_LEVEL 的技能属于高标准项，自评达标必须拿证据，
+      每项一道开放追问，上限 OPEN_PER_RUN
+
+    返回 {total, cover, verify, reason}，reason 供排查「为什么是这个题数」。
+    """
+    n = len(items)
+    if not n:
+        return {"total": 0, "cover": 0, "verify": 0, "reason": "该岗位没有技能构成"}
+
+    ranked = sorted(items, key=lambda x: -(float(x.get("weight") or 0)))
+    total_w = sum(float(i.get("weight") or 0) for i in ranked)
+    cover = 0
+    if total_w > 0:
+        acc = 0.0
+        for it in ranked:
+            cover += 1
+            acc += float(it.get("weight") or 0)
+            if acc / total_w >= COVERAGE_TARGET:
+                break
+    else:
+        cover = min(n, MIN_COVER_QUESTIONS)
+    cover = min(n, max(cover, RADAR_MIN_SKILLS, MIN_COVER_QUESTIONS))
+
+    # 高要求档的技能要验证：要求 L4/L5 却只凭选择题定档，虚高无从发现
+    hard = [
+        it for it in ranked[:cover]
+        if int(it.get("required_level") or 0) >= VERIFY_LEVEL
+    ]
+    verify = min(len(hard), OPEN_PER_RUN)
+
+    total = max(MIN_QUESTIONS, min(MAX_QUESTIONS, cover + verify))
+    return {
+        "total": total,
+        "cover": cover,
+        "verify": verify,
+        "reason": (
+            f"{n} 项技能中，按权重覆盖 {COVERAGE_TARGET:.0%} 需 {cover} 项"
+            f"（不少于 {max(RADAR_MIN_SKILLS, MIN_COVER_QUESTIONS)} 项）；"
+            f"其中要求档≥L{VERIFY_LEVEL} 的 {len(hard)} 项需追问验证，取 {verify} 道"
+        ),
+    }
 
 
 def should_stop(
@@ -135,22 +248,17 @@ def should_stop(
     batches: int,
     graded: list[dict[str, Any]],
     next_batch: list[dict[str, Any]],
+    target_total: int = 0,
 ) -> tuple[bool, str]:
-    """收敛判定。返回 (是否停止, 原因)。"""
+    """收敛判定：**出满预估题数才停**，另有两道兜底防止出不满时卡死。"""
+    if target_total and asked_total >= target_total:
+        return True, f"已出满预估题数 {target_total}"
     if asked_total >= MAX_QUESTIONS:
         return True, f"达到题量上限 {MAX_QUESTIONS}"
     if batches >= MAX_BATCHES:
         return True, f"达到批次上限 {MAX_BATCHES}"
     if not next_batch:
         return True, "没有可考的新技能"
-    total_w = sum(float(i.get("weight") or 0) for i in items)
-    if total_w > 0 and asked_total >= FIRST_BATCH:
-        tested = {str(g.get("skill_key")) for g in graded if g.get("level")}
-        cov = sum(
-            float(i.get("weight") or 0) for i in items if str(i.get("skill_key")) in tested
-        ) / total_w
-        if cov >= COVERAGE_TARGET:
-            return True, f"加权覆盖率已达 {round(cov*100)}%"
     return False, ""
 
 
