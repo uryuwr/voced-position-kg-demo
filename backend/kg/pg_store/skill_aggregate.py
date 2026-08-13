@@ -30,8 +30,11 @@ COALESCE(
 
 # attrs.level 是产品等级（1 了解 → 5 专家）的唯一真源，由采集端直接写入，
 # 库内历史数据已由 scripts/migrate_skill_level_to_product.py 迁移到位。
+# 非数字的 level（"L3"/"三级"/"3.5"）取 NULL，而不是让 PG 抛 invalid input syntax
+# 把整个列表接口打成 500 —— 详见 config.attrs_level_int 的说明。
 LEVEL_SQL = f"""
-NULLIF(trim(both FROM ({_ATTRS_JSON}->>'level')), '')::int
+CASE WHEN trim(both FROM ({_ATTRS_JSON}->>'level')) ~ '^[0-9]+$'
+     THEN trim(both FROM ({_ATTRS_JSON}->>'level'))::int END
 """
 
 def _level_labels() -> dict[int, str]:

@@ -11,11 +11,12 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import connect
-from backend.kg.pg_store.config import edge_published, node_not_archived
+from backend.kg.pg_store.config import attrs_level_int, edge_published, node_not_archived
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
 _EP = edge_published("e")
 _NODE_VISIBLE = node_not_archived("n")
+_LEVEL_N = attrs_level_int("n")
 
 
 def _base(row: dict[str, Any]) -> dict[str, Any]:
@@ -134,7 +135,7 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
     direct = conn.execute(
         f"""
         SELECT ({SKILL_KEY_SQL}) AS skill_key, n.category,
-               (n.attrs::json->>'level')::int AS level
+               {_LEVEL_N} AS level
         FROM kg_edge e
         JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level' AND {_NODE_VISIBLE}
         WHERE e.src_id = %s AND e.rel_type='covers' AND {_EP}
@@ -160,7 +161,7 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
             f"""
             SELECT e.src_id AS occ_id, o.name AS occ_name,
                    ({SKILL_KEY_SQL}) AS skill_key, n.category,
-                   (n.attrs::json->>'level')::int AS level
+                   {_LEVEL_N} AS level
             FROM kg_edge e
             JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level' AND {_NODE_VISIBLE}
             JOIN kg_node o ON o.id = e.src_id
@@ -299,7 +300,7 @@ def _skill_detail(conn, node: dict[str, Any]) -> dict[str, Any]:
         f"""
         -- o.level 是岗位职级；required_level 是该岗位对本技能要求的产品档
         SELECT DISTINCT o.id, o.name, o.status, o.level,
-               (n.attrs::json->>'level')::int AS required_level
+               {_LEVEL_N} AS required_level
         FROM kg_node n
         JOIN kg_edge e ON e.dst_id = n.id AND e.rel_type='requires' AND {_EP}
         JOIN kg_node o ON o.id = e.src_id AND o.type='occupation'

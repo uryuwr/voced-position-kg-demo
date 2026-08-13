@@ -83,6 +83,12 @@ def skill_categories() -> list[dict[str, Any]]:
     return out
 
 
+# 技能名退化匹配的闸门（见 position_match._user_level_for）
+FUZZY_MIN_LEN = 4         # 参与包含匹配的最短技能名（中文 4 字）
+FUZZY_MIN_RATIO = 0.55    # 短串至少要占长串多少比例（「数据分析」占「数据分析与复盘」
+                          # 是 4/7≈0.57，应放行；「运维」占「设备运维管理」只有 0.33，拦下）
+
+
 def position_match(
     user_id: str, occupation_id: str, *, limit: int = 50
 ) -> dict[str, Any]:
@@ -109,16 +115,45 @@ def position_match(
         nm = (r["skill_name"] or "").strip()
         if nm:
             user_levels[nm] = max(user_levels.get(nm, 0), int(r["level"] or 0))
+    return match_with_profile(occ, required, user_levels)
+
+
+def match_with_profile(
+    occ: dict[str, Any],
+    required: list[dict[str, Any]],
+    user_levels: dict[str, int],
+) -> dict[str, Any]:
+    """给定岗位技能要求与一份技能画像，算加权达标率。
+
+    抽出来是为了让「岗位探索列表」能用**五维记忆推断的画像**跑同一套算法——
+    匹配度口径必须只有一个，否则列表、目标卡、诊断报告又会给出对不上的数字。
+    """
 
     def _user_level_for(skill_key: str) -> tuple[int, str | None]:
+        """用户画像里哪一项对应这个岗位技能。
+
+        先精确匹配；退化的包含匹配**加了两道闸**：
+        1. 双方长度都 ≥ FUZZY_MIN_LEN —— 否则「运维」会命中「设备运维管理」、
+           「诊断」会命中「汽车故障诊断」，把无关技能按满档计入，匹配度虚高
+        2. 短串要占长串 ≥ FUZZY_MIN_RATIO —— 「故障诊断」→「汽车故障诊断」(0.67)、
+           「数据分析」→「数据分析与复盘」(0.57) 放行；「运维」→「设备运维管理」(0.33) 拦下
+        命中多个时取重合比例最高的，而不是碰上的第一个。
+        """
         if skill_key in user_levels:
             return user_levels[skill_key], skill_key
-        k = (skill_key or "").lower()
+        k = (skill_key or "").strip().lower()
+        if len(k) < FUZZY_MIN_LEN:
+            return 0, None
+        best: tuple[float, int, str] | None = None
         for nm, lv in user_levels.items():
-            n = nm.lower()
-            if n and (n in k or k in n):
-                return lv, nm
-        return 0, None
+            n = nm.strip().lower()
+            if len(n) < FUZZY_MIN_LEN:
+                continue
+            if n in k or k in n:
+                ratio = min(len(n), len(k)) / max(len(n), len(k))
+                if ratio >= FUZZY_MIN_RATIO and (best is None or ratio > best[0]):
+                    best = (ratio, lv, nm)
+        return (best[1], best[2]) if best else (0, None)
 
     items: list[dict[str, Any]] = []
     total_w = 0.0
@@ -150,6 +185,10 @@ def position_match(
         )
 
     score = round(100 * got_w / total_w, 1) if total_w else 0.0
+    # 画像命中了几项：一项没命中时 score 必然是 0，但那是「没有证据」而非
+    # 「完全不匹配」，调用方应据此显示「未评估」而不是刺眼的 0%
+    covered = [i for i in items if (i.get("user_level") or 0) > 0]
+    covered_w = sum(i["weight"] for i in covered)
     strengths = [i for i in items if i["ok"]]
     gaps = sorted(
         (i for i in items if not i["ok"]), key=lambda x: -(x["weight"] or 0)
@@ -171,6 +210,9 @@ def position_match(
         "match_score": score,
         "skill_total": len(items),
         "matched_count": len(strengths),
+        # 证据覆盖：画像命中的技能数与权重占比
+        "covered_count": len(covered),
+        "coverage": round(100 * covered_w / total_w, 1) if total_w else 0.0,
         "items": items,
         "strengths": strengths,
         "gaps": gaps,
@@ -891,6 +933,75 @@ def _persist_resume_diagnosis(
     }
 
 
+def save_learning_plan(
+    user_id: str,
+    occupation_id: str,
+    plan_id: str,
+    *,
+    session_id: int | None = None,
+    gap_skills: list[str] | None = None,
+    source: str = "api",
+) -> dict[str, Any]:
+    """记录「学员 × 岗位 × 学习计划」的关联。
+
+    学习计划内容由外部服务持有，这里只存 plan_id 与生成依据，便于列表回显、
+    以及从综合能力报告追到它衍生出的计划。
+    """
+    ensure_biz_schema()
+    with connect() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO biz_user_learning_plan
+              (user_id, occupation_id, plan_id, session_id, gap_skills, source)
+            VALUES (%s,%s,%s,%s,%s::jsonb,%s)
+            ON CONFLICT (user_id, occupation_id, plan_id) DO UPDATE SET
+              session_id = EXCLUDED.session_id,
+              gap_skills = EXCLUDED.gap_skills,
+              source = EXCLUDED.source,
+              created_at = NOW()
+            RETURNING *
+            """,
+            (
+                user_id,
+                occupation_id,
+                plan_id,
+                session_id,
+                json.dumps(gap_skills or [], ensure_ascii=False),
+                source,
+            ),
+        ).fetchone()
+        # 报告里也留一份，方便「这份报告生成过哪个计划」独立可查
+        if session_id:
+            conn.execute(
+                """
+                UPDATE biz_diagnosis_result
+                   SET report_json = jsonb_set(
+                         COALESCE(report_json, '{}'::jsonb), '{learning_plan_id}', to_jsonb(%s::text), true)
+                 WHERE session_id = %s
+                """,
+                (plan_id, session_id),
+            )
+        conn.commit()
+    return _row_jsonable(row)
+
+
+def list_learning_plans(user_id: str, occupation_id: str | None = None) -> list[dict[str, Any]]:
+    ensure_biz_schema()
+    with connect() as conn:
+        if occupation_id:
+            rows = conn.execute(
+                "SELECT * FROM biz_user_learning_plan WHERE user_id=%s AND occupation_id=%s "
+                "ORDER BY created_at DESC",
+                (user_id, occupation_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM biz_user_learning_plan WHERE user_id=%s ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+    return [_row_jsonable(r) for r in rows]
+
+
 def create_assessment_session(
     user_id: str, user_name: str, *, target_occupation_id: str | None = None
 ) -> int:
@@ -915,6 +1026,32 @@ def create_assessment_session(
         ).fetchone()
         conn.commit()
     return int(row["id"])
+
+
+def session_meta(session_id: int) -> dict[str, Any] | None:
+    """会话的归属人与目标岗位；会话不存在返回 None。
+
+    两个用途都要求「以库为准，不信调用方传来的值」：
+
+    - **归属人**：session_id 是 BIGSERIAL 自增值，前端拿到的就是「隔壁那个人的 id 减一」。
+      题目、作答、能力报告都挂在它下面，不校验归属等于把别人的测评向任何一个登录
+      用户敞开——既能读走报告，也能替别人答题污染其画像。
+    - **目标岗位**：结算接口的 `occupation_id` 是可传的查询参数。用它去取技能构成，
+      就会拿 B 岗位的标准去给 A 岗位的作答打分，算出一份看起来正常的错报告。
+    """
+    if not isinstance(session_id, int) or session_id <= 0:
+        return None
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT user_id, target_occupation_id FROM biz_diagnosis_session WHERE id = %s",
+            (session_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "user_id": str(row["user_id"]),
+        "target_occupation_id": row["target_occupation_id"],
+    }
 
 
 def save_assessment_report(session_id: int, user_id: str, report: dict[str, Any]) -> None:
@@ -1129,8 +1266,11 @@ def _persist_chat_message(
                 INSERT INTO biz_user_skill (user_id, skill_id, skill_name, level, score, source, updated_at)
                 VALUES (%s,%s,%s,%s,%s,'chat',NOW())
                 ON CONFLICT (user_id, skill_id) DO UPDATE SET
-                  level=GREATEST(biz_user_skill.level, EXCLUDED.level),
-                  score=GREATEST(biz_user_skill.score, EXCLUDED.score),
+                  -- 以最近一次诊断为准，直接覆盖。此前用 GREATEST「只升不降」，
+                  -- 历史高分会永久留在画像里，用户重测也降不下来，导致
+                  -- 顶部按画像算的匹配度长期高于实测报告（曾出现 53% vs 28%）。
+                  level=EXCLUDED.level,
+                  score=EXCLUDED.score,
                   updated_at=NOW()
                 """,
                 (

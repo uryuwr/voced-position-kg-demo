@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>学员端 · 岗位探索与自适应提升（E2E 演示）</title>
   <script src="/js/api-client.js"></script>
+  <script src="/js/assessment-widget.js"></script>
   <style>
     :root { --bg:#0f172a; --panel:#1e293b; --line:#334155; --text:#e2e8f0; --muted:#94a3b8;
             --primary:#6366f1; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; }
@@ -36,6 +37,13 @@
     .tag.lv { color:#a5b4fc; border-color:#4f46e5; }
     .tag.core { color:#fca5a5; border-color:#b91c1c; }
     .score { font-size:19px; font-weight:700; color:var(--ok); }
+    /* 无分数时的占位：与真实分数同字号同位置，用虚线框+灰字表达「待测」，
+       不能退化成一句普通文字，否则看不出这里本来有匹配度 */
+    .score.unknown { color:var(--muted); border:1px dashed var(--line);
+                     border-radius:8px; padding:1px 10px; font-weight:600; }
+    .score.unknown .q { color:var(--warn); }
+    .match-cta { background:transparent; color:var(--warn); border:1px solid var(--warn);
+                 border-radius:8px; padding:4px 10px; cursor:pointer; font-size:12px; }
     .muted { color:var(--muted); font-size:12px; }
     table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
     th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
@@ -71,6 +79,7 @@
     <div class="tabs">
       <button data-tab="explore" class="on">① 岗位探索</button>
       <button data-tab="detail">② 岗位详情</button>
+      <button data-tab="profile">② ' 我的画像</button>
       <button data-tab="diag">③ AI 诊断</button>
       <button data-tab="path">④ 岗位学习与自适应路径</button>
     </div>
@@ -90,35 +99,20 @@
       <div id="detailBox"><div class="empty">尚未选择岗位</div></div>
     </section>
 
+    <!-- 我的画像：匹配度用到的三份数据（实测/记忆/合并）+ 五维记忆原始响应 -->
+    <section id="tab-profile" hidden>
+      <div class="bar">
+        <button class="act" id="btnProfReload">刷新画像</button>
+        <button class="ghost" id="btnProfParse">重新解析为技能画像（调模型，5–10s）</button>
+        <span class="muted" id="profMeta"></span>
+      </div>
+      <div id="profBox"><div class="empty">加载中…</div></div>
+    </section>
+
+    <!-- AI 诊断：步骤引导式测评工作流。三个节点的状态与输出全部读服务端 graph
+         返回的 stages，组件实现见 js/assessment-widget.js（与 /assessment 页共用） -->
     <section id="tab-diag" hidden>
-      <div class="card" style="margin-bottom:12px">
-        <h3>1. 简历解析推断</h3>
-        <div class="bar">
-          <button class="ghost" id="btnSample">使用范例简历一键体验</button>
-          <span class="muted">或粘贴文本 / 拖拽文件（PDF、DOCX、TXT，≤20MB）</span>
-        </div>
-        <div class="drop" id="drop">拖拽简历文件到此处，或点击选择</div>
-        <input type="file" id="file" accept=".pdf,.docx,.txt,.md" hidden />
-        <textarea id="resumeText" placeholder="粘贴简历文本…" style="margin-top:10px"></textarea>
-        <div class="bar" style="margin-top:8px">
-          <button class="act" id="btnDiagText">文本诊断</button>
-          <span class="muted" id="diagMeta"></span>
-        </div>
-      </div>
-      <div class="card" style="margin-bottom:12px">
-        <h3>2. 对话问答测评</h3>
-        <div class="bar">
-          <button class="ghost" id="btnChatStart">开启会话</button>
-          <input id="chatMsg" placeholder="输入你的回答…" style="flex:1" />
-          <button class="act" id="btnChatSend">提交回答</button>
-        </div>
-        <div id="chatBox" class="muted">尚未开启会话</div>
-      </div>
-      <div class="card">
-        <h3>3. 综合能力报告</h3>
-        <button class="ghost" id="btnReport">刷新报告</button>
-        <div id="reportBox"><div class="empty">尚无报告</div></div>
-      </div>
+      <div id="awBox"><div class="empty">加载中…</div></div>
     </section>
 
     <section id="tab-path" hidden>
@@ -145,9 +139,10 @@
     document.querySelectorAll(".tabs button").forEach((b) => {
       b.onclick = () => {
         document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
-        ["explore","detail","diag","path"].forEach((t) => { $("tab-" + t).hidden = t !== b.dataset.tab; });
+        ["explore","detail","profile","diag","path"].forEach((t) => { $("tab-" + t).hidden = t !== b.dataset.tab; });
+        if (b.dataset.tab === "profile") loadProfile();
         if (b.dataset.tab === "path") loadPath();
-        if (b.dataset.tab === "diag") loadReport();
+        if (b.dataset.tab === "diag") loadDiag();
       };
     });
 
@@ -171,7 +166,6 @@
             ${p.level ? `<span class="tag lv">L${p.level}</span>` : ""}
             ${p.salary ? `<span class="tag">${esc(p.salary)}</span>` : `<span class="tag muted">薪资待补</span>`}
             <span style="flex:1"></span>
-            <span class="score" id="ms${i}">–</span>
           </div>
           <h3>${esc(p.name)}</h3>
           <div class="muted">${esc((p.desc || "").slice(0, 60))}</div>
@@ -186,13 +180,45 @@
       $("posGrid").querySelectorAll("[data-diag]").forEach((el) => el.onclick = () => {
         lockGoal(S.positions[+el.dataset.diag]).then(() => document.querySelector('[data-tab="diag"]').click());
       });
-      S.positions.forEach((p, i) => loadMatch(p.id, "ms" + i));  // 匹配得分逐个异步填
+      // 列表不再展示匹配度：整页逐行算会触发模型、拖慢首屏；改到详情页按需算
     }
-    async function loadMatch(pid, elId) {
+    /** 匹配度只在岗位详情按需取：服务端级联（诊断报告 > 实测画像 > 记忆推断），
+        只有最后一档才会调模型，所以放在详情里等几秒可以接受，放列表里逐行算不行。 */
+    // 措辞要能区分「测过这个岗位」和「用你已有的技能画像去比对这个岗位」——
+    // biz_user_skill 是跨岗位累积的，写成「已测技能」会被读成「测过本岗位」
+    const MATCH_SOURCE_LABEL = {
+      diagnosis: "实测 · 你诊断过这个岗位",
+      assessment: "推算 · 用你在其他岗位测出的技能比对",
+      memory: "预估 · 由你的能力画像推断",
+      no_overlap: "该岗位要求的技能你还没测过",
+      none: "尚无评估依据",
+    };
+    async function loadMatchInto(pid, box) {
+      box.innerHTML = '<span class="muted">匹配度计算中…</span>';
       try {
         const d = await api("/v1/student/positions/match?position_id=" + encodeURIComponent(pid));
-        const el = $(elId); if (el) el.textContent = (d.match_score ?? 0) + "%";
-      } catch (e) { const el = $(elId); if (el) el.textContent = "–"; }
+        const label = MATCH_SOURCE_LABEL[d.source] || "";
+        if (d.match_score == null) {
+          // 占位也要长得像分数：同一位置、同一字号，虚线框 + 问号
+          box.innerHTML = `<span class="score unknown"><span class="q">?</span> %</span>
+            <span class="muted">${esc(label)}</span>
+            <span class="muted">${esc(d.reason || "")}</span>
+            <button class="match-cta" data-go-diag>做一次 AI 诊断 →</button>`;
+          const b = box.querySelector("[data-go-diag]");
+          if (b) b.onclick = () => {
+            const p = S.current;
+            if (p) lockGoal(p).then(() => document.querySelector('[data-tab="diag"]').click());
+          };
+          return d;
+        }
+        box.innerHTML = `<span class="score">${d.match_score}%</span>
+          <span class="muted">${esc(label)}${d.estimated ? "（预估）" : ""}</span>
+          ${(d.gaps || []).length ? `<span class="muted">· 主要缺口：${
+            (d.gaps || []).slice(0, 3).map((g) => esc(g.skill_key)).join("、")}</span>` : ""}`;
+        return d;
+      } catch (e) {
+        box.innerHTML = `<span class="muted">匹配度获取失败：${esc(e.message || e)}</span>`;
+      }
     }
 
     /* ── 目标锁定 ─────────────────────────────── */
@@ -210,8 +236,21 @@
         $("goalName").textContent = S.goal ? (S.goal.occupation_name || S.goal.occupation_id) : "未锁定";
         $("goalMatch").textContent = "";
         if (S.goal) {
-          const m = await api("/v1/student/positions/match?position_id=" + encodeURIComponent(S.goal.occupation_id));
-          $("goalMatch").textContent = (m.match_score ?? 0) + "% 匹配";
+          // 与「岗位学习与自适应路径」列表同源：都取该岗位最近一次测评的匹配度。
+          // 此前这里用 positions/match（拿累积技能画像算全量技能），同一岗位会出现
+          // 两个不同的数字（顶部 53% / 列表 28%）——画像只升不降，历史高分会一直留着。
+          const ov = await api("/v1/student/goal/overview?occupation_id="
+            + encodeURIComponent(S.goal.occupation_id));
+          if (ov && ov.match_score != null) {
+            $("goalMatch").textContent = ov.match_score + "% 匹配";
+            $("goalMatch").title = "来自最近一次 AI 测评";
+          } else {
+            // 尚未测评：退回按已有画像的预估值，并明确标注，避免与实测值混淆
+            const m = await api("/v1/student/positions/match?position_id="
+              + encodeURIComponent(S.goal.occupation_id));
+            $("goalMatch").innerHTML = `${m.match_score ?? 0}% <span class="muted">预估（未测评）</span>`;
+            $("goalMatch").title = "尚无该岗位的测评记录，按已有技能画像预估";
+          }
         }
       } catch (e) { S.goal = null; $("goalName").textContent = "未锁定"; }
     }
@@ -227,19 +266,19 @@
       document.querySelector('[data-tab="detail"]').click();
       $("detailBox").innerHTML = '<div class="empty">加载中…</div>';
       try {
-        const [comp, match] = await Promise.all([
-          api("/v1/student/positions/skill-composition?id=" + encodeURIComponent(p.id)),
-          api("/v1/student/positions/match?position_id=" + encodeURIComponent(p.id)).catch(() => null),
-        ]);
+        // 技能构成先渲染，匹配度异步填：级联到「记忆推断」那档要调模型，
+        // 不该让整个详情页陪着等
+        const comp = await api("/v1/student/positions/skill-composition?id=" + encodeURIComponent(p.id));
         const skills = comp.skills || [];
+        let match = null;
         $("detailBox").innerHTML = `
           <div class="card">
             <div class="row">
               <h3 style="margin:0">${esc(p.name)}</h3>
               ${p.level ? `<span class="tag lv">L${p.level}</span>` : ""}
               <span style="flex:1"></span>
-              <span class="score">${match ? (match.match_score + "% 匹配") : ""}</span>
             </div>
+            <div class="row" id="matchBox" style="margin-top:6px"></div>
             <div class="muted" style="margin-top:6px">${esc(p.desc || "（岗位职责描述待补充）")}</div>
             <h3 style="margin-top:14px">岗位必备胜任力图谱</h3>
             <table>
@@ -251,7 +290,7 @@
                   <td>L${s.required_level ?? "-"}</td>
                   <td>${s.weight_pct != null ? s.weight_pct + "%" : "-"}</td>
                   <td class="muted">${esc(s.category || "未分类")}</td>
-                  <td>${mi ? (mi.user_level ? "L" + mi.user_level : "—") : ""}</td>
+                  <td class="my-lv" data-sk="${esc(s.skill_key || s.name)}">–</td>
                 </tr>`;
               }).join("")}
             </table>
@@ -263,101 +302,234 @@
           </div>`;
         $("dLock").onclick = () => lockGoal(p);
         $("dDiag").onclick = () => lockGoal(p).then(() => document.querySelector('[data-tab="diag"]').click());
+        // 匹配度与「我的等级」列一起异步回填
+        match = await loadMatchInto(p.id, $("matchBox"));
+        if (match) {
+          const byKey = {};
+          (match.items || []).forEach((x) => { byKey[x.skill_key] = x; });
+          document.querySelectorAll("#detailBox .my-lv").forEach((td) => {
+            const mi = byKey[td.dataset.sk];
+            td.textContent = mi && mi.user_level ? "L" + mi.user_level : "—";
+          });
+        }
       } catch (e) { $("detailBox").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
     }
 
-    /* ── ③ AI 诊断 ─────────────────────────────── */
-    $("btnSample").onclick = async () => {
-      try { const d = await api("/v1/student/diagnosis/resume/sample"); $("resumeText").value = d.content_text; toast("已填入范例简历"); }
-      catch (e) { toast("失败：" + (e.message || e)); }
+    /* ── ②' 我的画像：五维记忆 + 技能画像 + 诊断记录 ─────────
+       默认只调画像服务（1–2s）不调模型；技能画像那块只读缓存，
+       要重新解析得显式点按钮。                                    */
+    const FACET_STYLE = {
+      identity:   { icon: "✍", color: "#3b82f6" },
+      context:    { icon: "💬", color: "#8b5cf6" },
+      preference: { icon: "❤", color: "#ec4899" },
+      experience: { icon: "💡", color: "#f59e0b" },
+      activity:   { icon: "🔧", color: "#10b981" },
     };
-    $("btnDiagText").onclick = async () => {
-      const t = $("resumeText").value.trim();
-      if (!t) return toast("请先填写简历文本");
-      $("diagMeta").textContent = "诊断中…";
+
+    async function loadProfile(opts) {
+      opts = opts || {};
+      $("profBox").innerHTML = '<div class="empty">加载中…</div>';
+      $("profMeta").textContent = opts.parse ? "正在调模型重新解析…" : "正在拉取五维记忆…";
       try {
-        const d = await api("/v1/student/diagnosis/resume", { method: "POST", body: { content_text: t } });
-        showDiag(d);
-      } catch (e) { $("diagMeta").textContent = "失败：" + (e.message || e); }
-    };
-    function showDiag(d) {
-      const eng = (d.agent_meta || {}).engine || "-";
-      $("diagMeta").textContent = `解析 ${(d.parsed_skills || []).length} 项技能 · 引擎 ${eng}`;
-      loadGoal(); loadReport();
-      toast("诊断完成，匹配度 " + ((d.report || {}).match_score ?? "-") + "%");
+        const d = await api("/v1/student/profile" + (opts.parse ? "&parse=1" : ""));
+        const mem = d.memory || {}, sk = d.skills || {};
+        $("profMeta").textContent =
+          `记忆 ${mem.total ?? 0} 条 · 实测技能 ${(sk.counts || {}).assessment ?? 0} 项`
+          + (sk.parsed ? ` · 记忆推断 ${(sk.counts || {}).memory ?? 0} 项` : " · 技能画像未解析");
+
+        const facetCards = (mem.facets || []).map((f) => {
+          const st = FACET_STYLE[f.facet] || { icon: "•", color: "#64748b" };
+          const detail = (f.items || []).map((it) => `
+            <div style="border-left:2px solid ${st.color};padding-left:10px;margin:8px 0 8px 46px">
+              <div>${esc(it.title || it.summary || "(无标题)")}
+                ${it.subtype ? `<span class="tag">${esc(it.subtype)}</span>` : ""}</div>
+              ${it.summary && it.summary !== it.title ? `<div class="muted">${esc(it.summary)}</div>` : ""}
+              ${it.details ? `<div class="muted">${esc(String(it.details).slice(0, 160))}</div>` : ""}
+              ${(it.tags || []).length ? `<div style="margin-top:4px">${
+                it.tags.slice(0, 8).map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")}</div>` : ""}
+              ${Object.keys(it.facet_details || {}).length
+                ? `<details style="margin-top:4px"><summary class="muted">facetDetails</summary>
+                     <pre>${esc(JSON.stringify(it.facet_details, null, 2))}</pre></details>` : ""}
+              <div class="muted" style="font-size:11px">${esc((it.captured_at || "").slice(0, 19).replace("T", " "))}
+                · ${esc(it.memory_id || "")}</div>
+            </div>`).join("");
+          return `
+            <div style="padding:10px 0;border-bottom:1px solid var(--line)">
+              <div class="row">
+                <span style="width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+                             background:${st.color}22;color:${st.color};font-size:16px">${st.icon}</span>
+                <div style="flex:1">
+                  <b>${esc(f.label)}</b>
+                  <span class="muted">${f.count ? `（${f.count} 条）` : ""}</span>
+                  <div class="muted">${esc(f.digest)}</div>
+                </div>
+              </div>
+              ${detail}
+            </div>`;
+        }).join("");
+
+        const skillRows = (list, emptyText) => list.length
+          ? `<table><tr><th>技能</th><th>档位</th><th>来源</th></tr>${list.map((x) => `
+              <tr><td>${esc(x.skill_name || x.skill_key)}</td><td>L${x.level}</td>
+                  <td class="muted">${esc(x.from || x.source || "-")}</td></tr>`).join("")}</table>`
+          : `<div class="muted">${emptyText}</div>`;
+
+        $("profBox").innerHTML = `
+          <div class="card" style="margin-bottom:12px">
+            <div class="row"><h3 style="margin:0">🧠 AI 记忆画像</h3>
+              <span class="tag">${mem.available ? "服务已接通" : "服务未配置"}</span></div>
+            <div class="muted" style="margin:6px 0 10px">
+              基于您在平台的学习足迹，为个人 AI 助手构筑的五大分层记忆特征，
+              用于自适应构建更贴合、更有针对性的个人专属画像。</div>
+            ${mem.error ? `<div class="muted" style="color:var(--warn)">${esc(mem.error)}</div>` : ""}
+            ${facetCards || '<div class="muted">暂无记忆数据</div>'}
+            <div class="muted" style="margin-top:10px;font-size:11px">
+              ${esc(mem.endpoint || "")}${esc(mem.path || "")}</div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <h3>服务端原始返回值</h3>
+            <div class="muted">请求</div>
+            <pre>${esc(JSON.stringify(mem.request || {}, null, 2))}</pre>
+            <div class="muted">响应（原始 groups 结构）</div>
+            <pre>${esc(JSON.stringify(mem.raw || {}, null, 2))}</pre>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <h3>实测技能画像 <span class="muted">biz_user_skill · 跨岗位累积</span></h3>
+            ${skillRows(d.assessment || [], "尚无实测技能，先做一次 AI 诊断")}
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <h3>参与匹配度计算的合并画像
+              <span class="muted">${sk.parsed ? "实测覆盖记忆推断" : "（记忆尚未解析为技能）"}</span></h3>
+            ${skillRows(sk.merged || [], "暂无")}
+          </div>
+
+          <div class="card">
+            <h3>各岗位诊断记录 <span class="muted">匹配度级联的第一优先级</span></h3>
+            ${(d.diagnoses || []).length
+              ? `<table><tr><th>岗位</th><th>匹配度</th><th>渠道</th><th>时间</th></tr>${
+                  d.diagnoses.map((x) => `<tr><td>${esc(x.occupation_name || x.occupation_id)}</td>
+                    <td>${x.match_score ?? "-"}%</td><td class="muted">${esc(x.channel || "")}</td>
+                    <td class="muted">${esc((x.created_at || "").slice(0, 16).replace("T", " "))}</td></tr>`).join("")}</table>`
+              : '<div class="muted">尚无诊断记录</div>'}
+          </div>`;
+      } catch (e) {
+        $("profBox").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`;
+        $("profMeta").textContent = "";
+      }
     }
-    // 文件上传
-    const drop = $("drop");
-    drop.onclick = () => $("file").click();
-    drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
-    drop.ondragleave = () => drop.classList.remove("over");
-    drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); };
-    $("file").onchange = (e) => { if (e.target.files[0]) upload(e.target.files[0]); };
-    async function upload(f) {
-      $("diagMeta").textContent = `上传解析中：${f.name}…`;
-      const fd = new FormData(); fd.append("file", f);
-      try {
-        const d = await api("/v1/student/diagnosis/resume/upload", { method: "POST", body: fd });
-        showDiag(d);
-      } catch (e) { $("diagMeta").textContent = "失败：" + (e.message || e); toast(e.message || e); }
-    }
-    // 对话测评
-    $("btnChatStart").onclick = async () => {
-      try {
-        const d = await api("/v1/student/diagnosis/chat/sessions", { method: "POST", body: {} });
-        S.session = d.session_id;
-        $("chatBox").innerHTML = `<div><b>Q：</b>${esc(d.first_question || "")}</div>`;
-      } catch (e) { toast("失败：" + (e.message || e)); }
-    };
-    $("btnChatSend").onclick = async () => {
-      if (!S.session) return toast("请先开启会话");
-      const m = $("chatMsg").value.trim(); if (!m) return;
-      try {
-        const d = await api(`/v1/student/diagnosis/chat/sessions/${S.session}/messages`, { method: "POST", body: { content: m } });
-        $("chatBox").innerHTML += `<div style="margin-top:8px"><b>我：</b>${esc(m)}</div>
-          <div><b>AI：</b>${esc(d.reply || "")} <span class="muted">(${(d.skills || []).length} 项技能线索)</span></div>`;
-        $("chatMsg").value = ""; loadReport();
-      } catch (e) { toast("失败：" + (e.message || e)); }
-    };
-    // 报告
-    $("btnReport").onclick = () => loadReport();
-    async function loadReport() {
-      try {
-        const d = await api("/v1/student/diagnosis/report");
-        if (!d) { $("reportBox").innerHTML = '<div class="empty">尚无报告</div>'; return; }
-        const radar = d.radar || { categories: [], scores: [] };
-        const gaps = d.gaps || [];
-        $("reportBox").innerHTML = `
-          <div class="row" style="margin:8px 0"><span class="score">${d.match_score ?? 0}%</span>
-            <span class="muted">${esc(d.summary || "")}</span></div>
-          <h3 style="font-size:14px">各维能力达标率</h3>
-          <table>${radar.categories.map((c, i) => `
-            <tr><td style="width:150px">${esc(c)}</td>
-              <td><div class="bar-wrap"><div class="bar-in" style="width:${radar.scores[i] || 0}%"></div></div></td>
-              <td style="width:50px">${radar.scores[i] || 0}%</td></tr>`).join("")}</table>
-          <h3 style="font-size:14px;margin-top:14px">关键能力缺口（按权重）</h3>
-          <table>${gaps.slice(0, 8).map((g) => `
-            <tr><td>${esc(g.skill_name || "")}</td>
-              <td class="muted">${esc(g.category || "")}</td>
-              <td>L${g.user_level ?? 0} → L${g.required_level ?? "-"}</td>
-              <td>${g.weight_pct != null ? g.weight_pct + "%" : ""}</td></tr>`).join("") || '<tr><td class="muted">无缺口</td></tr>'}</table>`;
-      } catch (e) { $("reportBox").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
+    $("btnProfReload").onclick = () => loadProfile();
+    $("btnProfParse").onclick = () => loadProfile({ parse: true });
+
+    /* ── ③ AI 诊断：步骤引导式测评工作流 ─────────────
+       三节点的状态与输出全部由服务端 graph 的 stages 驱动，前端不自己推断进度。
+       组件与 /assessment 独立页共用一份实现。                        */
+    let awInst = null;
+    function loadDiag() {
+      if (awInst) return;                       // 已挂载则保留现场，不重置进度
+      awInst = window.AssessmentWidget.mount($("awBox"), {
+        getOccupationId: () => (S.goal || {}).occupation_id || null,
+        occupationName: (S.goal || {}).occupation_name || null,
+        onReport: () => { loadGoal(); },        // 报告出来后刷新顶部目标条的匹配度
+        onGotoPath: () => document.querySelector('[data-tab="path"]').click(),
+      });
     }
 
     /* ── ④ 岗位学习与自适应路径 ───────────────────────
        顶部卡片三块数据都来自 GET /v1/student/goal/overview，按岗位绑定：
        换目标即换整套（目标 / 晋升路径 / 该岗位的测评结果）。          */
-    async function loadPath() {
+    /* 两级视图：先列出诊断过/锁定过的岗位，点进去才看该岗位的详情卡片。
+       每个岗位一套独立数据（目标 / 晋升 / 测评结果），列表是它们的入口。 */
+    let pathPage = 1;
+    async function loadPath(occId, page) {
+      if (occId) return loadPathDetail(occId);
+      if (page) pathPage = page;
+      $("compBox").innerHTML = ""; $("planBox").innerHTML = "";
+      $("goalCard").innerHTML = '<div class="empty">加载中…</div>';
       try {
-        const d = await api("/v1/student/goal/overview");
+        const d = await api(`/v1/student/goal/diagnosed?page=${pathPage}&page_size=12`);
+        const list = d.items || [];
+        if (!list.length && pathPage > 1) { return loadPath(null, 1); }
+        if (!list.length) {
+          $("goalCard").innerHTML = `<div class="empty">还没有诊断记录。
+            先到「岗位探索」锁定一个目标岗位，再做一次 AI 诊断</div>`;
+          return;
+        }
+        $("goalCard").innerHTML = `
+          <div class="bar"><b>我的岗位诊断</b>
+            <span class="muted">共 ${d.total} 个岗位 · 第 ${d.page}/${d.pages || 1} 页 · 点卡片查看该岗位的能力报告与学习路径</span></div>
+          <div class="grid">
+            ${list.map((x) => `
+              <div class="card" style="cursor:pointer" data-occ="${esc(x.occupation_id)}">
+                <div class="row" style="justify-content:space-between">
+                  <b>${esc(x.occupation_name || "未命名岗位")}</b>
+                  ${x.is_active_goal ? '<span class="tag" style="color:#34d399;border-color:#10b981">当前活跃目标</span>' : ""}
+                </div>
+                <div class="row" style="margin-top:4px">
+                  ${x.level_label ? `<span class="tag lv">${esc(x.level_label)}</span>` : ""}
+                  ${x.major_name ? `<span class="tag">${esc(x.major_name)}</span>` : ""}
+                  ${x.goal_status === "archived" ? '<span class="tag">历史目标</span>' : ""}
+                </div>
+                <div class="muted" style="margin-top:6px;min-height:32px">
+                  ${esc((x.description || "暂无岗位职责描述").slice(0, 52))}</div>
+                <div class="row" style="justify-content:space-between;margin-top:8px">
+                  <span>${x.match_score != null
+                    ? `<span class="score">${x.match_score}%</span> <span class="muted">匹配度</span>`
+                    : '<span class="muted">尚未测评</span>'}</span>
+                  <span class="muted">${x.diagnosed_at
+                    ? "诊断于 " + fmtTime(x.diagnosed_at) + (x.session_count > 1 ? ` · ${x.session_count} 次` : "")
+                    : (x.goal_created_at ? "锁定于 " + fmtTime(x.goal_created_at) : "")}</span>
+                </div>
+              </div>`).join("")}
+          </div>`;
+        if ((d.pages || 1) > 1) {
+          const nav = document.createElement("div");
+          nav.className = "bar";
+          nav.style.marginTop = "12px";
+          nav.innerHTML = `
+            <button class="ghost" ${d.page <= 1 ? "disabled" : ""} data-prev>← 上一页</button>
+            <span class="muted">第 ${d.page} / ${d.pages} 页（共 ${d.total} 个）</span>
+            <button class="ghost" ${d.page >= d.pages ? "disabled" : ""} data-next>下一页 →</button>`;
+          const pv = nav.querySelector("[data-prev]"), nx = nav.querySelector("[data-next]");
+          if (pv && !pv.disabled) pv.onclick = () => loadPath(null, d.page - 1);
+          if (nx && !nx.disabled) nx.onclick = () => loadPath(null, d.page + 1);
+          $("goalCard").appendChild(nav);
+        }
+        $("goalCard").querySelectorAll("[data-occ]").forEach((el) => {
+          el.onclick = () => loadPathDetail(el.dataset.occ);
+        });
+      } catch (e) {
+        $("goalCard").innerHTML = `<div class="empty">加载失败：${esc(e.message || e)}</div>`;
+      }
+    }
+
+    function fmtTime(s) {
+      try {
+        const d = new Date(s);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      } catch (_) { return String(s || "").slice(0, 10); }
+    }
+
+    async function loadPathDetail(occId) {
+      $("goalCard").innerHTML = '<div class="empty">加载中…</div>';
+      $("compBox").innerHTML = ""; $("planBox").innerHTML = "";
+      try {
+        const d = await api("/v1/student/goal/overview?occupation_id=" + encodeURIComponent(occId));
         if (!d.has_goal) {
-          $("goalCard").innerHTML = '<div class="empty">尚未锁定目标岗位，请先到「岗位探索」锁定一个</div>';
-          $("compBox").innerHTML = ""; $("planBox").innerHTML = "";
+          $("goalCard").innerHTML = '<div class="empty">该岗位没有目标记录</div>';
           return;
         }
         renderGoalCard(d);
         renderCompetency(d);
         renderPlanMock(d);
+        // 顶部插一个返回列表的入口
+        const back = document.createElement("div");
+        back.className = "bar";
+        back.innerHTML = '<button class="ghost">← 返回岗位列表</button>';
+        back.querySelector("button").onclick = () => loadPath();
+        $("goalCard").prepend(back);
       } catch (e) {
         $("goalCard").innerHTML = `<div class="empty">加载失败：${esc(e.message || e)}</div>`;
       }
@@ -380,8 +552,10 @@
             <div class="muted" style="max-width:640px">${esc((o.description || "暂无岗位职责描述").slice(0, 160))}</div>
             <div class="row" style="margin-top:12px">
               <button class="ghost" id="btnSwitchGoal">↻ 更换目标</button>
-              <button class="act" id="btnDiag">⚡ AI 智能诊断</button>
+              <button class="act" id="btnDiag" ${o.skill_count ? "" : "disabled"}
+                      title="${o.skill_count ? "" : "该岗位尚未配置技能构成，无法测评"}">⚡ AI 智能诊断</button>
               <span class="muted">技能项 ${o.skill_count || 0}</span>
+              ${o.skill_count ? "" : '<span class="tag" style="color:#f59e0b;border-color:#b45309">该岗位尚未配置技能构成，无法测评</span>'}
             </div>
             ${others.length ? `<div class="muted" style="margin-top:10px;font-size:12px">
               历史目标：${others.map((g) => esc(g.occupation_name)).join("、")}（测评结果仍可回看）</div>` : ""}
@@ -418,7 +592,9 @@
           <div class="empty" style="margin-top:10px">该岗位尚无测评结果，点上方「AI 智能诊断」开始一次测评</div></div>`;
         return;
       }
-      const items = (rep.items || []).filter((x) => x.tested).slice(0, 8);
+      // 展示**完整的岗位技能构成**：本次没测到的、测出 0 分的也要列出来，
+      // 否则运营会以为岗位只有这几项技能（管理台里明明配了 4 项，报告只显示 3 项）
+      const items = (rep.items || []).slice().sort((a, b) => (b.weight || 0) - (a.weight || 0));
       const strengths = (rep.strengths || []).slice(0, 4);
       const gaps = (rep.gaps || []).slice(0, 4);
       $("compBox").innerHTML = `
@@ -428,16 +604,25 @@
             <button class="ghost" id="btnReDiag">✨ 重新 AI 测评</button></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px">
             <div>
-              <div class="muted" style="font-size:12px;margin-bottom:6px">各维能力 当前 vs 目标标准（L1–L5）</div>
-              ${items.map((x) => `
+              <div class="muted" style="font-size:12px;margin-bottom:6px">
+                各维能力 当前 vs 目标标准（L1–L5）· 共 ${items.length} 项
+                <span style="margin-left:6px">本次实测 ${(rep.counts || {}).tested ?? 0} 项</span></div>
+              ${items.map((x) => {
+                const w = x.tested ? Math.round((x.ratio || 0) * 100) : 0;
+                const color = !x.tested ? "#475569" : (x.ok ? "#10b981" : "#f59e0b");
+                return `
                 <div style="margin-bottom:10px">
                   <div class="row" style="justify-content:space-between">
-                    <span>${esc(x.skill_key)}</span>
-                    <span class="muted">L${x.measured_level || 0} / 目标 L${x.required_level || "?"}</span>
+                    <span${x.tested ? "" : ' class="muted"'}>${esc(x.skill_key)}
+                      ${x.tested ? "" : '<span class="tag" style="margin-left:6px">未测评</span>'}</span>
+                    <span class="muted">${x.tested ? "L" + (x.measured_level || 0) : "—"}
+                      / 目标 L${x.required_level || "?"}
+                      ${x.weight_pct != null ? `· 权重${x.weight_pct}%` : ""}</span>
                   </div>
-                  <div class="bar-wrap"><div class="bar-in" style="width:${Math.round((x.ratio || 0) * 100)}%;
-                    background:${x.ok ? "#10b981" : "#f59e0b"}"></div></div>
-                </div>`).join("") || '<div class="muted">无实测维度</div>'}
+                  <div class="bar-wrap"><div class="bar-in"
+                    style="width:${w}%;background:${color}"></div></div>
+                </div>`;
+              }).join("") || '<div class="muted">该岗位尚未配置技能构成</div>'}
             </div>
             <div>
               <div class="muted" style="font-size:12px;margin-bottom:6px">核心技能缺口排查</div>
@@ -463,6 +648,22 @@
 
     /* 自适应学习计划：服务端 API 后续提供，这里先用测评短板拼占位数据，
        只为把「短板 → 学习任务」的信息流走通，不落库、不调接口。 */
+    async function genLearningPlan(d) {
+      const rep = d.assessment || {};
+      try {
+        const r = await api("/v1/student/goal/learning-plan", {
+          method: "POST",
+          body: {
+            occupation_id: d.occupation.id,
+            session_id: rep.session_id || null,
+            gap_skills: (rep.gaps || []).slice(0, 8).map((x) => x.skill_key),
+          },
+        });
+        toast("已生成学习计划 " + (r.plan_id || "").slice(0, 8) + "…");
+        loadPathDetail(d.occupation.id);
+      } catch (e) { toast("生成失败：" + (e.message || e)); }
+    }
+
     function renderPlanMock(d) {
       const rep = d.assessment || {};
       const gaps = (rep.gaps || []).slice(0, 4);
@@ -473,9 +674,12 @@
         { t: "实战演练", d: "独立完成典型任务并处理常见异常", pct: 0 },
         { t: "进阶攻坚", d: "优化方法、沉淀标准，具备指导他人的能力", pct: 0 },
       ];
+      const planId = d.learning_plan_id || "";
       $("planBox").innerHTML = `
         <div class="card">
           <div class="row"><b>🚀 自适应学习计划</b>
+            ${planId ? `<span class="tag" style="color:#34d399;border-color:#10b981">已生成</span>` : ""}
+            <button class="act" id="btnGenPlan">基于短板生成学习计划</button>
             <span class="tag" style="background:#3b2f0b;color:#f59e0b">前端占位数据</span>
             <span class="muted">学习计划服务端接口待接入，当前按测评短板生成示意</span></div>
           ${seed.length ? stages.map((g, i) => `
@@ -493,6 +697,8 @@
             </div>`).join("")
             : '<div class="empty">先完成一次 AI 测评，系统会依据短板生成学习计划</div>'}
         </div>`;
+      const b = $("btnGenPlan");
+      if (b) b.onclick = () => genLearningPlan(d);
     }
 
     /* ── 启动 ─────────────────────────────── */

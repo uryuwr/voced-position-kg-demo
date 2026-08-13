@@ -5,6 +5,11 @@
 (function (global) {
   "use strict";
 
+  /* sdp-app-id 由**前端**决定并透传给服务端（同一后端可服务多个前端应用，
+     各带各的 app-id）。服务端不再写死、也不再用 .env 兜底。
+     需要覆盖时在页面里设 window.__SDP_APP_ID__ 即可。 */
+  var DEFAULT_SDP_APP_ID = "e176f53e-01ec-4385-894e-8b35bcfec5fa";
+
   const LS_UID = "voced_user_id";
   const LS_UNAME = "voced_user_name";
 
@@ -28,6 +33,10 @@
       };
       document.head.appendChild(s);
     });
+  }
+
+  function appId() {
+    return String(global.__SDP_APP_ID__ || DEFAULT_SDP_APP_ID || "").trim();
   }
 
   async function loadConfig() {
@@ -75,17 +84,14 @@
       if (!cfg.uc_sdk_url) {
         throw new Error("UC 配置缺少 uc_sdk_url，请在 .env 设置 UC_SDK_URL");
       }
-      if (!cfg.sdp_app_id) {
-        throw new Error(
-          "UC 配置缺少 sdp_app_id：请在仓库根 .env 填写 SDP_APP_ID 后重启服务；" +
-            "本地无 UC 可临时 AUTH_BYPASS=1"
-        );
+      if (!appId()) {
+        throw new Error("缺少 sdp-app-id：请在页面设置 window.__SDP_APP_ID__");
       }
       await loadScript(cfg.uc_sdk_url);
       var UC = SDP.UC.UC;
       _uc = new UC({
         env: cfg.uc_env || "preproduction",
-        sdpAppId: cfg.sdp_app_id,
+        sdpAppId: appId(),
         autoRefresh: true,
         storageExpire: 2592000,
         minEffectiveTime: 172800,
@@ -109,7 +115,7 @@
           "https://" +
           cfg.uc_component_host +
           "/?sdp-app-id=" +
-          cfg.sdp_app_id +
+          appId() +
           "#/login?sso=false&re_login=true&send_uckey=true&redirect_uri=" +
           redirectUri;
         window.location.href = loginUrl;
@@ -171,8 +177,8 @@
       if (auth) h["Authorization"] = auth;
       const u = getUser();
       if (u.name) h["X-User-Name"] = headerVal(u.name);
-      const appId = String(window.__SDP_APP_ID__ || cfg.sdp_app_id || "").trim();
-      if (appId) h["sdp-app-id"] = appId;
+      const id = appId();
+      if (id) h["sdp-app-id"] = id;
     }
     return h;
   }
@@ -194,11 +200,9 @@
       if (auth) h["Authorization"] = auth;
       const u = getUser();
       if (u.name) h["X-User-Name"] = headerVal(u.name);
-      // sdp-app-id 由前端透传：服务端优先用它，缺失才回落 .env 的 SDP_APP_ID。
-      // 多应用共用同一后端时，各前端带自己的 app-id。
-      // 可用 window.__SDP_APP_ID__ 覆盖，默认取 /v1/config 下发的值。
-      const appId = String(window.__SDP_APP_ID__ || cfg.sdp_app_id || "").trim();
-      if (appId) h["sdp-app-id"] = appId;
+      // sdp-app-id 一律由前端透传，服务端不再兜底
+      const id = appId();
+      if (id) h["sdp-app-id"] = id;
     }
 
     let body = opts.body;
@@ -237,6 +241,7 @@
     setUser,
     apiFetch,
     buildHeaders,
+    appId,
     absUrl,
     headerVal,
     LS_UID,

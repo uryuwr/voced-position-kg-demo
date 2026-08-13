@@ -6,6 +6,7 @@ from typing import Any, Iterator
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.string import StrDumper
 
 from backend.kg.pg_store.config import DATABASE_URL
 
@@ -118,6 +119,27 @@ CREATE TABLE IF NOT EXISTS kg_proposal (
 );
 CREATE INDEX IF NOT EXISTS idx_kg_proposal_status ON kg_proposal(status);
 """
+
+
+class _NulSafeStrDumper(StrDumper):
+    """写库前剔除 NUL（0x00）。
+
+    PostgreSQL 的 text 类型**物理上无法存 NUL**，psycopg 遇到就抛 DataError。
+    而 NUL 能从三个方向进来，且都不是攻击才有的极端情况：
+      1. 查询串 —— `?q=%00` 任何一个 str 参数都能触发，实测 49 个只读接口全数 500
+      2. 请求体 —— 前端把二进制片段误当文本提交
+      3. 简历解析 —— 部分 PDF 抽出的文本天然带 NUL
+    NUL 在文本里没有任何语义，逐个接口挡既漏又散；统一在**存储层**剔除：
+    它是"PG 存不了"这件事的正确高度，一处生效，覆盖上面三条全部路径。
+    """
+
+    def dump(self, obj: str, *args: Any, **kwargs: Any) -> Any:
+        if "\x00" in obj:
+            obj = obj.replace("\x00", "")
+        return super().dump(obj, *args, **kwargs)
+
+
+psycopg.adapters.register_dumper(str, _NulSafeStrDumper)
 
 
 def connect() -> psycopg.Connection:

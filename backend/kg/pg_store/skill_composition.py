@@ -19,10 +19,11 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import connect, ensure_schema
-from backend.kg.pg_store.config import edge_published
+from backend.kg.pg_store.config import attrs_level_int, edge_published
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
 _EP = edge_published("e")
+_LEVEL_N = attrs_level_int("n")
 
 # 节点类型 → (关系, 该类型是否带权重)
 _REL = {"major": ("covers", False), "occupation": ("requires", True)}
@@ -300,7 +301,7 @@ def _find_level_node(conn, skill_key: str, level: int | None, region: str) -> di
     """
     rows = conn.execute(
         f"""
-        SELECT n.id, (n.attrs::json->>'level')::int AS level, n.attrs
+        SELECT n.id, {_LEVEL_N} AS level, n.attrs
         FROM kg_node n
         WHERE n.type='skill_level' AND n.region=%s AND ({SKILL_KEY_SQL})=%s
           AND COALESCE(n.status,'published') <> 'archived'
@@ -346,7 +347,7 @@ def set_skill(
         if only_if_absent:
             cur = conn.execute(
                 f"""
-                SELECT (n.attrs::json->>'level')::int AS level
+                SELECT {_LEVEL_N} AS level
                 FROM kg_edge e
                 JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level'
                 WHERE e.src_id=%s AND e.rel_type=%s AND ({SKILL_KEY_SQL})=%s AND {_EP}

@@ -27,6 +27,60 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_biz_user_goal_user_occ
 CREATE UNIQUE INDEX IF NOT EXISTS uq_biz_user_goal_active
   ON biz_user_goal(user_id) WHERE status = 'active';
 
+-- 学员 × 岗位 × 学习计划 的关联。
+-- 学习计划由外部服务生成并返回 plan_id，本库只存关联关系（不存计划内容），
+-- 这样「岗位学习与自适应路径」列表能显示某岗位已生成过哪些计划，
+-- 综合能力报告也能回指到它是基于哪次诊断的哪些短板生成的。
+CREATE TABLE IF NOT EXISTS biz_user_learning_plan (
+  id            bigserial PRIMARY KEY,
+  user_id       TEXT NOT NULL,
+  occupation_id TEXT NOT NULL,
+  plan_id       TEXT NOT NULL,
+  session_id    BIGINT,
+  gap_skills    JSONB,
+  source        TEXT NOT NULL DEFAULT 'api',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, occupation_id, plan_id)
+);
+CREATE INDEX IF NOT EXISTS idx_biz_ulp_user_occ
+  ON biz_user_learning_plan(user_id, occupation_id, created_at DESC);
+
+-- 测评题目与作答。
+-- 之前这些存在 LangGraph checkpointer 的序列化 blob 里，运营连「哪道题所有人都选
+-- 最低档、是不是出得有问题」这种 SQL 都写不出来。题目与答案本就是要长期保存、
+-- 可统计可复盘的业务数据，checkpointer 只适合存「图跑到哪了」。
+CREATE TABLE IF NOT EXISTS biz_assessment_question (
+  id             BIGSERIAL PRIMARY KEY,
+  session_id     BIGINT NOT NULL REFERENCES biz_diagnosis_session(id) ON DELETE CASCADE,
+  idx            INT NOT NULL,
+  type           TEXT NOT NULL,                 -- choice | open
+  variant        TEXT,                          -- sjt | self_report | generic
+  skill_key      TEXT,
+  category       TEXT,
+  required_level INT,
+  weight         DOUBLE PRECISION,
+  payload        JSONB NOT NULL,                -- prompt / options / rubric
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (session_id, idx)
+);
+CREATE INDEX IF NOT EXISTS idx_biz_aq_skill ON biz_assessment_question(skill_key);
+
+CREATE TABLE IF NOT EXISTS biz_assessment_answer (
+  id           BIGSERIAL PRIMARY KEY,
+  session_id   BIGINT NOT NULL REFERENCES biz_diagnosis_session(id) ON DELETE CASCADE,
+  idx          INT NOT NULL,
+  raw_answer   TEXT,
+  level        INT,
+  score        INT,
+  grade_status TEXT NOT NULL DEFAULT 'pending', -- pending | graded | failed
+  grade_json   JSONB,
+  answered_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  graded_at    TIMESTAMPTZ,
+  UNIQUE (session_id, idx)
+);
+CREATE INDEX IF NOT EXISTS idx_biz_aa_pending
+  ON biz_assessment_answer(session_id) WHERE grade_status = 'pending';
+
 -- 用户技能画像
 CREATE TABLE IF NOT EXISTS biz_user_skill (
   user_id TEXT NOT NULL,

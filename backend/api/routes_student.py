@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field
 
 from backend.api.auth_temp import TempUser, require_temp_user
 from backend.api.schemas_biz import (
@@ -32,6 +33,7 @@ from backend.api.schemas_biz import (
     SkillListOut,
     SkillOut,
 )
+from backend import settings
 from backend.kg.pg_store import biz_store as biz
 
 router = APIRouter(prefix="/v1/student", tags=[])
@@ -169,27 +171,113 @@ def student_position_skill_composition_q(
 @router.get(
     "/positions/match",
     tags=["前台 · 岗位探索与详情"],
-    summary="岗位匹配度（原型：88% 匹配得分）",
+    summary="岗位匹配度（岗位详情页用）",
     description=(
-        "用户技能画像 × 岗位 requires 的**加权**匹配度，供原型 4 处使用："
-        "岗位卡片匹配得分、顶部锁定目标、诊断页基准匹配度、学习路径活跃目标卡。\n\n"
-        "算法：单项达标率 = `min(用户等级 / 要求等级, 1)`；"
-        "总分 = `Σ(达标率 × 权重) / Σ权重 × 100`。权重取自国家职业技能标准的权重表。\n\n"
-        "返回 `strengths`（已达标）与 `gaps`（未达标，按权重倒序）可直接渲染"
-        "「优势精通 / 关键能力缺口」两栏；`radar` 按技能大类聚合达标率。\n\n"
-        "> 用户画像为空时匹配度为 0，属正常——需先做一次 AI 诊断。"
+        "**级联取数，按证据强度从高到低**，命中即返回，不做无谓计算：\n\n"
+        "| 优先级 | source | 来源 | 是否调模型 |\n"
+        "| --- | --- | --- | --- |\n"
+        "| 1 | `diagnosis` | 该用户对**这个岗位**最近一次诊断报告的 match_score | 否 |\n"
+        "| 2 | `assessment` | 测评沉淀的实测技能画像（biz_user_skill）现算 | 否 |\n"
+        "| 3 | `memory` | 五维记忆经图谱召回 + 模型定级推断 | **是**（约 5–10s） |\n"
+        "| 4 | `none` | 无任何证据 | 否 |\n\n"
+        "做过诊断就直接用报告里的数——它由学员实际作答算出，比任何实时推断都准，"
+        "也省掉一次模型调用。因此**列表页不再展示匹配度**（避免整页触发模型），"
+        "只在进入岗位详情时按需计算。\n\n"
+        "算法与诊断报告同源：单项达标率 `min(用户档/要求档, 1)`，"
+        "总分 `Σ(达标率×权重)/Σ权重×100`。`estimated=true` 表示是推断值而非实测。"
     ),
-    response_description="{ occupation, match_score, items[], strengths[], gaps[], radar }",
+    response_description=(
+        "{ occupation, match_score, source, estimated, items[], strengths[], gaps[], radar }"
+    ),
 )
 def student_position_match(
     position_id: str = Query(..., description="岗位节点 id（含冒号，用 query 传）"),
     limit: int = Query(50, ge=1, le=200, description="参与比对的技能条数上限"),
+    allow_memory: bool = Query(
+        True, description="无实测证据时是否允许用五维记忆推断（会调模型，较慢）"
+    ),
     user: TempUser = Depends(require_temp_user),
 ) -> dict[str, Any]:
-    try:
-        return biz.position_match(user.user_id, position_id, limit=limit)
-    except ValueError as e:
-        raise HTTPException(404, str(e)) from e
+    from backend.kg.pg_store.query import get_node
+    from backend.kg.pg_store.skill_aggregate import occupation_skill_bundles
+    from backend.userprofile import assessment_levels, diagnosed_match, get_profile
+
+    occ = get_node(position_id)
+    if not occ or occ.get("type") != "occupation":
+        raise HTTPException(404, "position not found")
+    occ_brief = {"id": occ.get("id"), "name": occ.get("name"), "level": occ.get("level")}
+
+    # ① 诊断过就直接用报告里的匹配度
+    diag = diagnosed_match(user.user_id, position_id)
+
+    required = occupation_skill_bundles(position_id, limit=limit)
+    if not required:
+        return {
+            "occupation": occ_brief, "match_score": diag["match_score"] if diag else None,
+            "source": "diagnosis" if diag else "none", "estimated": False,
+            "reason": "该岗位尚未配置技能构成",
+            "items": [], "strengths": [], "gaps": [], "radar": {},
+            "diagnosis": diag,
+        }
+
+    if diag:
+        # 明细仍按实测画像现算（供优势/短板/雷达展示），但总分以报告为准
+        detail = biz.match_with_profile(occ_brief, required, assessment_levels(user.user_id))
+        detail.update({
+            "match_score": diag["match_score"],
+            "source": "diagnosis",
+            "estimated": False,
+            "diagnosis": diag,
+        })
+        return detail
+
+    # ② 有实测画像 → 现算（无模型调用）
+    no_overlap: dict[str, Any] | None = None   # 有画像但与该岗位零交集时的兜底明细
+    a = assessment_levels(user.user_id)
+    if a:
+        detail = biz.match_with_profile(occ_brief, required, a)
+        if detail.get("covered_count"):
+            detail.update({"source": "assessment", "estimated": True,
+                           "profile": {"assessment_count": len(a)}})
+            return detail
+        # 零交集时 0% 会被读成「完全不匹配」，实际是「这些技能一项都没测过」
+        no_overlap = detail
+
+    # ③ 退到五维记忆推断（会调模型）
+    if allow_memory:
+        prof = get_profile(user.user_id)
+        if prof["source"] != "none":
+            detail = biz.match_with_profile(occ_brief, required, prof["levels"])
+            if not detail.get("covered_count"):
+                detail.update({
+                    "match_score": None, "source": "no_overlap", "estimated": False,
+                    "reason": "你的能力画像未覆盖该岗位要求的技能，"
+                              "先针对该岗位做一次 AI 诊断才能得到匹配度",
+                })
+                return detail
+            detail.update({
+                "source": "memory", "estimated": True,
+                "profile": {
+                    "memory_count": prof["memory_count"],
+                    "engine": (prof.get("meta") or {}).get("engine"),
+                    "note": (prof.get("meta") or {}).get("error"),
+                },
+            })
+            return detail
+
+    # ④ 无任何证据：不要用 0% 冒充「完全不匹配」
+    if no_overlap is not None:
+        no_overlap.update({
+            "match_score": None, "source": "no_overlap", "estimated": False,
+            "reason": "你的能力画像未覆盖该岗位要求的技能，"
+                      "先针对该岗位做一次 AI 诊断才能得到匹配度",
+        })
+        return no_overlap
+    return {
+        "occupation": occ_brief, "match_score": None, "source": "none", "estimated": False,
+        "reason": "尚无测评记录与画像数据，先做一次 AI 诊断",
+        "items": [], "strengths": [], "gaps": [], "radar": {},
+    }
 
 
 @router.get(
@@ -341,6 +429,116 @@ def student_list_goals(user: TempUser = Depends(require_temp_user)) -> list[dict
     return biz.list_goals(user.user_id)
 
 
+class LearningPlanBody(BaseModel):
+    occupation_id: str | None = Field(None, description="留空取当前活跃目标")
+    session_id: int | None = Field(None, description="基于哪次诊断生成")
+    gap_skills: list[str] = Field(default_factory=list, description="生成依据的短板技能")
+
+
+@router.post(
+    "/goal/learning-plan",
+    tags=["前台 · 岗位探索与详情"],
+    summary="基于短板生成自适应学习计划（当前为 mock）",
+    description=(
+        "对应报告页「基于短板一键生成个人自适应学习计划」。\n\n"
+        "**学习计划由外部服务生成**，本接口只负责调用它并把返回的 `plan_id`（uuid 字符串）"
+        "与「学员 × 岗位」绑定入库（`biz_user_learning_plan`），同时写进该次诊断报告的 "
+        "`learning_plan_id`，两处都能查。\n\n"
+        "**调用方式**：配置了 BTS（`BTS_ENDPOINT`/`BTS_ACCOUNT`/`BTS_PASSWORD`）与 "
+        "`LEARNING_PLAN_PATH` 时，走 **BTS 服务间鉴权**请求外部学习计划服务，"
+        "取其返回的 `plan_id`，`source=bts`；\n\n"
+        "未配置或外部服务报错时**降级**为本地生成 uuid、`source=mock`，"
+        "并在 `upstream` 里带回原因——外部服务不可用不该挡住学员。"
+    ),
+)
+def student_create_learning_plan(
+    body: LearningPlanBody,
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    import uuid as _uuid
+
+    from backend.bts import BtsError, bts_client
+
+    occ = body.occupation_id or (biz.get_goal(user.user_id) or {}).get("occupation_id")
+    if not occ:
+        raise HTTPException(400, "缺少目标岗位：请先锁定学习目标或传 occupation_id")
+
+    client = bts_client()
+    source, plan_id, upstream = "mock", "", None
+    if client.available() and settings.LEARNING_PLAN_PATH:
+        # 外部学习计划服务：走 BTS 服务间鉴权
+        try:
+            upstream = client.post(
+                settings.LEARNING_PLAN_PATH,
+                json={
+                    "user_id": user.user_id,
+                    "user_name": user.user_name,
+                    "occupation_id": occ,
+                    "session_id": body.session_id,
+                    "gap_skills": body.gap_skills,
+                },
+            )
+            data = upstream.get("data") if isinstance(upstream, dict) else None
+            src = data if isinstance(data, dict) else (upstream if isinstance(upstream, dict) else {})
+            plan_id = str(src.get("plan_id") or src.get("id") or "").strip()
+            source = "bts" if plan_id else "mock"
+        except BtsError as e:
+            # 外部服务不可用不该挡住学员，降级为本地 mock 并把原因带回去
+            upstream = {"error": str(e), "status": e.status}
+    if not plan_id:
+        plan_id = str(_uuid.uuid4())
+
+    row = biz.save_learning_plan(
+        user.user_id, occ, plan_id,
+        session_id=body.session_id, gap_skills=body.gap_skills, source=source,
+    )
+    return {
+        "plan_id": plan_id,
+        "occupation_id": occ,
+        "session_id": body.session_id,
+        "gap_skills": body.gap_skills,
+        "source": source,
+        "created_at": row.get("created_at"),
+        "upstream": upstream if source != "bts" else None,
+    }
+
+
+@router.get(
+    "/goal/learning-plans",
+    tags=["前台 · 岗位探索与详情"],
+    summary="我的学习计划关联记录",
+    description="按岗位查该学员生成过的学习计划 id（内容在外部服务，这里只存关联）。",
+)
+def student_list_learning_plans(
+    occupation_id: str | None = Query(None),
+    user: TempUser = Depends(require_temp_user),
+) -> list[dict[str, Any]]:
+    return biz.list_learning_plans(user.user_id, occupation_id)
+
+
+@router.get(
+    "/goal/diagnosed",
+    tags=["前台 · 岗位探索与详情"],
+    summary="已诊断/锁定过的岗位列表",
+    description=(
+        "「岗位学习与自适应路径」页的一级视图：列出该用户做过诊断或锁定过的岗位，"
+        "每项带岗位基础信息（名称/职级/职责）、**当前匹配度**、**诊断时间**与测评次数。\n\n"
+        "点某一项后再用 `GET /goal/overview?occupation_id=...` 取该岗位的详情卡片。\n\n"
+        "**分页返回** `{items, total, page, page_size, pages}`：每换一次目标就多一条记录，"
+        "合并/排序/切片都在 SQL 层完成。活跃目标置顶，其余按最近诊断时间倒序；"
+        "刚锁定尚未测评的岗位 `match_score` 为 null，`plan_id` 未生成时为空串。"
+    ),
+)
+def student_diagnosed_occupations(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(12, ge=1, le=100),
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    from backend.kg.pg_store.goal_overview import diagnosed_occupations
+
+    return diagnosed_occupations(user.user_id, page=page, page_size=page_size)
+
+
 @router.get(
     "/goal/overview",
     tags=["前台 · 岗位探索与详情"],
@@ -362,6 +560,131 @@ def student_goal_overview(
     from backend.kg.pg_store.goal_overview import goal_overview
 
     return goal_overview(user.user_id, occupation_id)
+
+
+@router.get(
+    "/profile",
+    tags=["前台 · 岗位探索与详情"],
+    summary="我的画像（五维记忆 + 技能画像 + 诊断记录）",
+    description=(
+        "一次摊开匹配度用到的全部数据：\n\n"
+        "- `memory.facets` —— **五维记忆全量**（身份/情境/偏好/经验/活动），"
+        "每维带条数、逐条明细与一行摘要；`memory.raw` 是画像服务的**原始响应**\n"
+        "- `assessment` —— 测评/诊断沉淀的实测技能档位（biz_user_skill，跨岗位累积）\n"
+        "- `skills.merged` —— 参与匹配度计算的合并画像（实测覆盖记忆推断）\n"
+        "- `diagnoses` —— 各岗位最近一次诊断的匹配度\n\n"
+        "**默认只调画像服务（约 1–2s），不调模型**：五维原文直接展示即可。"
+        "技能画像那部分只读缓存；要重新解析（会调模型 5–10s）加 `parse=1`。"
+    ),
+)
+def student_profile(
+    parse: bool = Query(False, description="重新把记忆解析成技能画像（会调模型，5–10s）"),
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    from backend.kg.pg_store.client import connect
+    from backend.userprofile import assessment_levels, get_profile
+    from backend.userprofile import memories as mem
+    from backend.userprofile import skill_profile as sp
+
+    a = assessment_levels(user.user_id)
+
+    # 五维记忆：展示用，拉全量五维；只走 BTS，不调模型
+    memory: dict[str, Any] = {
+        "available": mem.available(),
+        "endpoint": settings.OPENQ_AI_MANAGER or None,
+        "path": mem.SEARCH_PATH,
+        "facets": [],
+        "raw": None,
+        "request": None,
+        "error": None,
+    }
+    if mem.available():
+        req_body = {"facets": [{"facet": f, "limit": n} for f, n in mem.ALL_FACETS]}
+        memory["request"] = {
+            "method": "POST",
+            "url": (settings.OPENQ_AI_MANAGER or "") + mem.SEARCH_PATH,
+            "headers": {
+                "Authorization": "BTS id=...,nonce=...,mac=...",
+                "Userid": str(user.user_id),
+                "sdp-app-id": settings.BTS_SDP_APP_ID or settings.SDP_APP_ID,
+                "Content-Type": "application/json",
+            },
+            "body": req_body,
+        }
+        try:
+            raw = mem.search_memories(user.user_id, facets=mem.ALL_FACETS)
+            memory["raw"] = raw
+            memory["facets"] = mem.facet_view(raw)
+            memory["total"] = sum(f["count"] for f in memory["facets"])
+        except Exception as e:  # noqa: BLE001 — 调试页要看见失败原因
+            memory["error"] = str(e)[:400]
+    else:
+        memory["error"] = "用户画像服务未配置（OPENQ_AI_MANAGER / BTS）"
+
+    # 技能画像：默认只读缓存，避免打开页面就触发模型
+    cached = sp._cached(str(user.user_id))
+    if parse or cached:
+        prof = get_profile(user.user_id, use_cache=not parse)
+    else:
+        prof = {"levels": dict(a), "source": "assessment" if a else "none",
+                "assessment_count": len(a), "memory_count": 0,
+                "meta": {"engine": "not_parsed"}}
+
+    with connect() as conn:
+        diag_rows = conn.execute(
+            """
+            SELECT s.target_occupation_id AS occupation_id,
+                   s.target_occupation_name AS occupation_name,
+                   s.channel, r.match_score, r.created_at
+            FROM biz_diagnosis_result r
+            JOIN biz_diagnosis_session s ON s.id = r.session_id
+            WHERE s.user_id = %s AND s.target_occupation_id IS NOT NULL
+            ORDER BY r.created_at DESC LIMIT 20
+            """,
+            (user.user_id,),
+        ).fetchall()
+        skill_rows = conn.execute(
+            "SELECT skill_name, level, score, source, updated_at "
+            "FROM biz_user_skill WHERE user_id=%s ORDER BY level DESC, skill_name",
+            (user.user_id,),
+        ).fetchall()
+
+    return {
+        "user": {"id": user.user_id, "name": user.user_name},
+        "memory": memory,
+        "skills": {
+            "source": prof["source"],
+            "parsed": (prof.get("meta") or {}).get("engine") != "not_parsed",
+            "counts": {
+                "assessment": prof["assessment_count"],
+                "memory": prof["memory_count"],
+                "merged": len(prof["levels"]),
+            },
+            "meta": prof.get("meta") or {},
+            "merged": [
+                {"skill_key": k, "level": v, "from": "assessment" if k in a else "memory"}
+                for k, v in sorted(prof["levels"].items(), key=lambda kv: -kv[1])
+            ],
+        },
+        "assessment": [
+            {
+                "skill_name": r["skill_name"], "level": r["level"], "score": r["score"],
+                "source": r["source"],
+                "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            }
+            for r in skill_rows
+        ],
+        "diagnoses": [
+            {
+                "occupation_id": r["occupation_id"],
+                "occupation_name": r["occupation_name"],
+                "channel": r["channel"],
+                "match_score": r["match_score"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+            for r in diag_rows
+        ],
+    }
 
 
 # ── AI 诊断 ──────────────────────────────────────────────────
@@ -434,6 +757,37 @@ async def diag_resume_upload(
         "chars": len(text),
     }
     return out
+
+
+@router.post(
+    "/diagnosis/resume/extract",
+    tags=["前台 · AI 诊断"],
+    summary="上传简历文件 · 仅抽取文本（不触发诊断）",
+    description=(
+        "测评工作流的第 1 步需要的是**简历原文**，随后由工作流自己解析画像；"
+        "而 `POST /diagnosis/resume/upload` 会直接跑完旧的一次性诊断流程，"
+        "两者副作用不同，故单独提供一个只抽文本的入口（共用同一个解析器）。\n\n"
+        "支持 PDF / DOCX / TXT，≤20MB；扫描件类图片型 PDF 提取不到文字会返回 400。"
+    ),
+)
+async def diag_resume_extract(
+    file: UploadFile = File(..., description="简历文件（PDF/DOCX/TXT，≤20MB）"),
+    user: TempUser = Depends(require_temp_user),
+) -> dict[str, Any]:
+    from backend.api.resume_parse import ResumeParseError, parse_resume_bytes
+
+    _ = user
+    data = await file.read()
+    try:
+        text = parse_resume_bytes(file.filename or "", data)
+    except ResumeParseError as e:
+        raise HTTPException(400, str(e)) from e
+    return {
+        "content_text": text,
+        "filename": file.filename,
+        "size": len(data),
+        "chars": len(text),
+    }
 
 
 @router.get(
