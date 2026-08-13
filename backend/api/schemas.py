@@ -276,8 +276,8 @@ class GraphMeta(BaseModel):
         None, description="闭包全量各类型节点数（截断前）"
     )
     full_total: int | None = Field(None, description="闭包全量节点总数（截断前）")
-    include_skills: bool | None = None
-    include_direct_occupations: bool | None = None
+    include_skills: bool | None = Field(None, description="是否下钻到技能层；默认不返回，数据量大")
+    include_direct_occupations: bool | None = Field(None, description="是否包含行业直挂的岗位（不经专业）")
 
 
 class GraphResponse(BaseModel):
@@ -450,7 +450,7 @@ class EdgeListItem(BaseModel):
     src_id: str = Field(..., description="起点节点 id")
     dst_id: str = Field(..., description="终点节点 id")
     rel_type: str = Field(..., description="关系类型")
-    neo4j_type: str | None = None
+    neo4j_type: str | None = Field(None, description="Neo4j 侧的关系类型（历史兼容字段）")
     region: str | None = Field(None, description="地区，如 CN")
     weight: float | None = Field(None, description="权重")
     confidence: str | None = Field(None, description="置信度")
@@ -469,9 +469,9 @@ class EdgeListResponse(BaseModel):
     page_size: int = Field(..., description="每页条数")
     total: int = Field(..., description="总条数")
     total_pages: int = Field(..., description="总页数")
-    rel_type: str | None = None
+    rel_type: str | None = Field(None, description="关系类型")
     node_id: str | None = Field(None, description="按节点过滤时传入的 node_id")
-    q: str | None = None
+    q: str | None = Field(None, description="本次查询用的关键词（回显）")
 
 
 class ProposalOut(BaseModel):
@@ -494,7 +494,7 @@ class ProposalOut(BaseModel):
 
 
 class HealthPostgres(BaseModel):
-    ok: bool
+    ok: bool = Field(..., description="是否通过")
     engine: str | None = None
     version: str | None = Field(None, description="版本号")
     nodes: int | None = None
@@ -507,21 +507,21 @@ class HealthResponse(BaseModel):
     service: str = Field(..., description="服务名")
     store: str = Field(..., description="postgresql")
     docs: str | None = Field(None, description="Swagger 路径")
-    postgresql: HealthPostgres | None = None
+    postgresql: HealthPostgres | None = Field(None, description="数据库连通性探测结果")
 
 
 class DocsLinks(BaseModel):
     swagger: str = Field(..., description="Swagger 文档地址")
-    redoc: str
-    openapi_json: str
-    guide: str
+    redoc: str = Field(..., description="ReDoc 文档地址")
+    openapi_json: str = Field(..., description="OpenAPI 规格地址")
+    guide: str = Field(..., description="对接说明页地址")
     note: str = Field(..., description="备注说明")
     servers: list[dict[str, str]] = Field(default_factory=list, description="服务地址列表")
 
 
 class AuthTempInfo(BaseModel):
     mode: str = Field(..., description="request_headers")
-    required_headers: list[str]
+    required_headers: list[str] = Field(..., description="调用必须携带的请求头")
     note: str = Field(..., description="备注说明")
 
 
@@ -531,13 +531,13 @@ class ServiceDiscovery(BaseModel):
     service: str = Field(..., description="服务名")
     version: str = Field(..., description="版本号")
     store: str = Field(..., description="存储后端")
-    default_region: str
-    docs: DocsLinks
+    default_region: str = Field(..., description="默认地区")
+    docs: DocsLinks = Field(..., description="Swagger 文档地址")
     auth_temp: AuthTempInfo
     health: str
-    api_prefix: str
+    api_prefix: str = Field(..., description="接口路径前缀")
     dev_ui_enabled: bool
-    dev_ui: dict[str, str] | None = None
+    dev_ui: dict[str, str] | None = Field(None, description="自测页地址；未开启为 null")
 
 
 # ── 写请求体 ─────────────────────────────────────────────────

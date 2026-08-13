@@ -60,7 +60,7 @@ class ProfessionOut(BaseModel):
     industry: str | None = Field(None, description="行业/门类提示")
     code: str | None = Field(None, description="专业代码")
     level: str | None = Field(None, description="等级")
-    level_zh: str | None = None
+    level_zh: str | None = Field(None, description="学历层次中文名")
     source_url: str | None = Field(None, description="来源链接")
     attrs: dict[str, Any] | None = Field(None, description="自由属性（无数据库约束的 JSON 列，键随数据来源而异）")
     counts: RelationCounts | None = Field(
@@ -165,9 +165,9 @@ class IndustryListOut(PageMeta):
 
 class LadderStep(BaseModel):
     tier: int = Field(..., description="阶梯层级 1..n")
-    position_id: str
-    position_name: str | None = None
-    position: PositionOut | None = None
+    position_id: str = Field(..., description="岗位节点 id")
+    position_name: str | None = Field(None, description="岗位名")
+    position: PositionOut | None = Field(None, description="岗位详情")
 
 
 class ProfessionDetailOut(BaseModel):
@@ -177,7 +177,7 @@ class ProfessionDetailOut(BaseModel):
 
 
 class PositionDetailOut(BaseModel):
-    position: PositionOut
+    position: PositionOut = Field(..., description="岗位详情")
     skills: list[SkillOut] = Field(default_factory=list, description="岗位技能要求")
 
 
@@ -185,11 +185,11 @@ class GoalOut(BaseModel):
     user_id: str = Field(..., description="UC 用户 id")
     user_name: str | None = Field(None, description="用户名（冗余字段，用户中心不在本服务）")
     occupation_id: str | None = Field(None, description="目标岗位 id")
-    occupation_name: str | None = None
+    occupation_name: str | None = Field(None, description="目标岗位名")
     major_id: str | None = Field(None, description="关联专业 id")
-    major_name: str | None = None
-    industry_id: str | None = None
-    industry_name: str | None = None
+    major_name: str | None = Field(None, description="关联专业名")
+    industry_id: str | None = Field(None, description="所属行业 id")
+    industry_name: str | None = Field(None, description="所属行业名")
     updated_at: str | None = Field(None, description="更新时间 ISO8601")
 
 
@@ -456,7 +456,7 @@ class BadgeDefOut(BaseModel):
 class AdminDashboardOut(BaseModel):
     kg_nodes: int | None = Field(None, description="图节点总数")
     kg_edges: int | None = Field(None, description="图边总数")
-    nodes_by_type: dict[str, int] = Field(default_factory=dict)
+    nodes_by_type: dict[str, int] = Field(default_factory=dict, description="各类型节点数，键为节点类型")
     users_with_goal: int = Field(0, description="已锁定学习目标的用户数")
     diagnosis_sessions: int = Field(0, description="诊断会话数")
     learning_paths: int = Field(0, description="学习路径数")
