@@ -10,6 +10,23 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from backend.api.auth_temp import TempUser, require_temp_user
+from backend.api.schemas_student import (
+    ChatMessageOut,
+    ChatSessionOut,
+    ClearGoalOut,
+    DiagnosedOccupationListOut,
+    GoalItem,
+    GoalOverviewOut,
+    LearningPlanBody,
+    LearningPlanCreatedOut,
+    LearningPlanItem,
+    PositionMatchOut,
+    ResumeExtractOut,
+    ResumeSampleOut,
+    SkillCompositionOut,
+    StudentProfileOut,
+    UserSkillItem,
+)
 from backend.api.schemas_biz import (
     BadgeDefOut,
     ChatMessageBody,
@@ -154,11 +171,12 @@ def student_positions(
     tags=["前台 · 岗位探索与详情"],
     summary="岗位技能构成（query id，推荐）",
     description="逻辑技能 + weight_sum；权重只认 requires 边。id 含冒号时用本接口。",
+    response_model=SkillCompositionOut,
 )
 def student_position_skill_composition_q(
     id: str = Query(..., description="岗位节点 id"),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> SkillCompositionOut:
     _ = user
     try:
         from backend.kg.pg_store.skill_aggregate import occupation_skill_composition
@@ -189,6 +207,7 @@ def student_position_skill_composition_q(
     response_description=(
         "{ occupation, match_score, source, estimated, items[], strengths[], gaps[], radar }"
     ),
+    response_model=PositionMatchOut,
 )
 def student_position_match(
     position_id: str = Query(..., description="岗位节点 id（含冒号，用 query 传）"),
@@ -197,7 +216,7 @@ def student_position_match(
         True, description="无实测证据时是否允许用五维记忆推断（会调模型，较慢）"
     ),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> PositionMatchOut:
     from backend.kg.pg_store.query import get_node
     from backend.kg.pg_store.skill_aggregate import occupation_skill_bundles
     from backend.userprofile import assessment_levels, diagnosed_match, get_profile
@@ -407,11 +426,12 @@ def student_set_goal(
     tags=["前台 · 岗位探索与详情"],
     summary="清除学习目标",
     description="对齐 clearGoal。传 occupation_id 只删该目标，否则清空全部。",
+    response_model=ClearGoalOut,
 )
 def student_clear_goal(
     occupation_id: str | None = Query(None, description="只清除该岗位目标"),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, str]:
+) -> ClearGoalOut:
     biz.clear_goal(user.user_id, occupation_id)
     return {"status": "cleared"}
 
@@ -424,8 +444,9 @@ def student_clear_goal(
         "一人可锁定多个岗位目标，其中至多一个 `status=active`。"
         "换目标时旧目标转为 `archived` 而非删除，其测评结果与进度仍可回看。"
     ),
+    response_model=list[GoalItem],
 )
-def student_list_goals(user: TempUser = Depends(require_temp_user)) -> list[dict[str, Any]]:
+def student_list_goals(user: TempUser = Depends(require_temp_user)) -> list[GoalItem]:
     return biz.list_goals(user.user_id)
 
 
@@ -450,11 +471,12 @@ class LearningPlanBody(BaseModel):
         "未配置或外部服务报错时**降级**为本地生成 uuid、`source=mock`，"
         "并在 `upstream` 里带回原因——外部服务不可用不该挡住学员。"
     ),
+    response_model=LearningPlanCreatedOut,
 )
 def student_create_learning_plan(
     body: LearningPlanBody,
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> LearningPlanCreatedOut:
     import uuid as _uuid
 
     from backend.bts import BtsError, bts_client
@@ -508,11 +530,12 @@ def student_create_learning_plan(
     tags=["前台 · 岗位探索与详情"],
     summary="我的学习计划关联记录",
     description="按岗位查该学员生成过的学习计划 id（内容在外部服务，这里只存关联）。",
+    response_model=list[LearningPlanItem],
 )
 def student_list_learning_plans(
     occupation_id: str | None = Query(None),
     user: TempUser = Depends(require_temp_user),
-) -> list[dict[str, Any]]:
+) -> list[LearningPlanItem]:
     return biz.list_learning_plans(user.user_id, occupation_id)
 
 
@@ -528,12 +551,13 @@ def student_list_learning_plans(
         "合并/排序/切片都在 SQL 层完成。活跃目标置顶，其余按最近诊断时间倒序；"
         "刚锁定尚未测评的岗位 `match_score` 为 null，`plan_id` 未生成时为空串。"
     ),
+    response_model=DiagnosedOccupationListOut,
 )
 def student_diagnosed_occupations(
     page: int = Query(1, ge=1),
     page_size: int = Query(12, ge=1, le=100),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> DiagnosedOccupationListOut:
     from backend.kg.pg_store.goal_overview import diagnosed_occupations
 
     return diagnosed_occupations(user.user_id, page=page, page_size=page_size)
@@ -552,11 +576,12 @@ def student_diagnosed_occupations(
         "注意：`advances_to` 边目前只覆盖约 1% 的岗位，多数情况下 `next_level` 为 null，"
         "前端应隐藏该区块而非报错。"
     ),
+    response_model=GoalOverviewOut,
 )
 def student_goal_overview(
     occupation_id: str | None = Query(None, description="留空取当前活跃目标"),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> GoalOverviewOut:
     from backend.kg.pg_store.goal_overview import goal_overview
 
     return goal_overview(user.user_id, occupation_id)
@@ -576,11 +601,12 @@ def student_goal_overview(
         "**默认只调画像服务（约 1–2s），不调模型**：五维原文直接展示即可。"
         "技能画像那部分只读缓存；要重新解析（会调模型 5–10s）加 `parse=1`。"
     ),
+    response_model=StudentProfileOut,
 )
 def student_profile(
     parse: bool = Query(False, description="重新把记忆解析成技能画像（会调模型，5–10s）"),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> StudentProfileOut:
     from backend.kg.pg_store.client import connect
     from backend.userprofile import assessment_levels, get_profile
     from backend.userprofile import memories as mem
@@ -695,11 +721,12 @@ def student_profile(
     tags=["前台 · AI 诊断"],
     summary="简历智能诊断",
     description="对齐 vDiagResume：粘贴简历 → 规则解析技能 → 可选对标岗位出报告。",
+    response_model=DiagnosisReportOut,
 )
 def diag_resume(
     body: ResumeDiagBody,
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> DiagnosisReportOut:
     occ = body.target_occupation_id
     if not occ:
         g = biz.get_goal(user.user_id)
@@ -725,6 +752,7 @@ def diag_resume(
         "- 未显式传 `target_occupation_id` 时自动取当前锁定目标岗位\n\n"
         "返回结构与 `POST /diagnosis/resume` 一致，额外带 `source_file`。"
     ),
+    response_model=DiagnosisReportOut,
 )
 async def diag_resume_upload(
     file: UploadFile = File(..., description="简历文件（PDF/DOCX/TXT，≤20MB）"),
@@ -732,7 +760,7 @@ async def diag_resume_upload(
         None, description="对标岗位 id；缺省取当前锁定目标"
     ),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> DiagnosisReportOut:
     from backend.api.resume_parse import ResumeParseError, parse_resume_bytes
 
     data = await file.read()
@@ -769,11 +797,12 @@ async def diag_resume_upload(
         "两者副作用不同，故单独提供一个只抽文本的入口（共用同一个解析器）。\n\n"
         "支持 PDF / DOCX / TXT，≤20MB；扫描件类图片型 PDF 提取不到文字会返回 400。"
     ),
+    response_model=ResumeExtractOut,
 )
 async def diag_resume_extract(
     file: UploadFile = File(..., description="简历文件（PDF/DOCX/TXT，≤20MB）"),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> ResumeExtractOut:
     from backend.api.resume_parse import ResumeParseError, parse_resume_bytes
 
     _ = user
@@ -800,8 +829,9 @@ async def diag_resume_extract(
         "因此解析后能命中技能库并算出有意义的匹配度。"
     ),
     response_description="{ content_text, note }",
+    response_model=ResumeSampleOut,
 )
-def diag_resume_sample(user: TempUser = Depends(require_temp_user)) -> dict[str, Any]:
+def diag_resume_sample(user: TempUser = Depends(require_temp_user)) -> ResumeSampleOut:
     _ = user
     from backend.api.resume_parse import SAMPLE_RESUME
 
@@ -816,11 +846,12 @@ def diag_resume_sample(user: TempUser = Depends(require_temp_user)) -> dict[str,
     tags=["前台 · AI 诊断"],
     summary="开启对话测评会话",
     description="对齐 vDiagChat：创建会话并返回首问。",
+    response_model=ChatSessionOut,
 )
 def diag_chat_start(
     body: ChatSessionBody,
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> ChatSessionOut:
     occ = body.target_occupation_id
     if not occ:
         g = biz.get_goal(user.user_id)
@@ -835,12 +866,13 @@ def diag_chat_start(
     tags=["前台 · AI 诊断"],
     summary="提交对话回答",
     description="学员回复后规则打分并结束会话，返回报告。",
+    response_model=ChatMessageOut,
 )
 def diag_chat_msg(
     session_id: int,
     body: ChatMessageBody,
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> ChatMessageOut:
     try:
         return biz.post_chat_message(session_id, user.user_id, body.content)
     except ValueError as e:
@@ -973,6 +1005,7 @@ def me_badge_defs(user: TempUser = Depends(require_temp_user)) -> list[BadgeDefO
     "/me/skills",
     tags=["前台 · 我的"],
     summary="我的技能画像",
+    response_model=list[UserSkillItem],
 )
-def me_skills(user: TempUser = Depends(require_temp_user)) -> list[dict[str, Any]]:
+def me_skills(user: TempUser = Depends(require_temp_user)) -> list[UserSkillItem]:
     return biz.me_summary(user.user_id, user.user_name).get("skills") or []

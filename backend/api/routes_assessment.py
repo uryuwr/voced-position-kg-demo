@@ -21,9 +21,20 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-
 from backend.api.auth_temp import TempUser, require_temp_user
+from backend.api.schemas_assessment import (
+    AnswerAcceptedOut,
+    AnswerBody,
+    AssessmentStateOut,
+    SseErrorEvent,
+    SsePlanEvent,
+    SseQuestionEndEvent,
+    SseQuestionEvent,
+    SseReportEvent,
+    SseSessionEvent,
+    SseStageEvent,
+    StartBody,
+)
 from backend.kg.pg_store import biz_store as biz
 
 router = APIRouter(prefix="/v1/student/assessment", tags=["前台 · AI 诊断"])
@@ -34,16 +45,6 @@ _SSE_HEADERS = {
     # 关掉 Nginx 缓冲，否则事件会被攒着一起下发，流式失去意义
     "X-Accel-Buffering": "no",
 }
-
-
-class StartBody(BaseModel):
-    occupation_id: str | None = Field(None, description="目标岗位；不传取当前活跃目标")
-    resume_text: str | None = Field(None, description="简历原文；留空则跳过解析")
-
-
-class AnswerBody(BaseModel):
-    index: int = Field(..., ge=0, description="题号（question.index）")
-    answer: Any = Field(..., description="选择题传选项 value（int）；问答题传文本")
 
 
 def _resolve_occupation(user: TempUser, occupation_id: str | None) -> str:
@@ -87,6 +88,35 @@ def _sse(events: Iterator[dict[str, Any]]) -> StreamingResponse:
         "即表示题目出完（它是服务端的确定信号，比按题数判断可靠——"
         "模型出题失败降级时实际条数可能少于计划）。"
     ),
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": (
+                "`text/event-stream`。每个事件的 `data` 是下列之一，按 `type` 区分：\n\n"
+                "- `session` —— SseSessionEvent\n"
+                "- `stage` —— SseStageEvent\n"
+                "- `plan` —— SsePlanEvent\n"
+                "- `question` —— SseQuestionEvent\n"
+                "- `question_end` —— SseQuestionEndEvent\n"
+                "- `error` —— SseErrorEvent"
+            ),
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "title": "出题流事件",
+                        "oneOf": [
+                            SseSessionEvent.model_json_schema(ref_template="#/components/schemas/{model}"),
+                            SseStageEvent.model_json_schema(ref_template="#/components/schemas/{model}"),
+                            SsePlanEvent.model_json_schema(ref_template="#/components/schemas/{model}"),
+                            SseQuestionEvent.model_json_schema(ref_template="#/components/schemas/{model}"),
+                            SseQuestionEndEvent.model_json_schema(ref_template="#/components/schemas/{model}"),
+                            SseErrorEvent.model_json_schema(ref_template="#/components/schemas/{model}"),
+                        ],
+                    }
+                }
+            },
+        }
+    },
 )
 def stream_questions(
     body: StartBody, user: TempUser = Depends(require_temp_user)
@@ -115,17 +145,20 @@ def stream_questions(
         "接口立即返回——学员不该为了等模型判分卡在这一题上。\n\n"
         "返回 `progress.grading` 表示还有几道在后台判分；结算接口会等它们收尾。"
     ),
+    response_model=AnswerAcceptedOut,
 )
 def submit_answer(
-    session_id: int = Path(..., ge=1),
+    session_id: int = Path(..., ge=1, description="测评会话 id"),
     body: AnswerBody = ...,
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> AnswerAcceptedOut:
     from backend.agent.assessment import service
 
     _own_session(session_id, user)
     try:
-        return service.submit_answer(session_id, body.index, body.answer)
+        return AnswerAcceptedOut.model_validate(
+            service.submit_answer(session_id, body.index, body.answer)
+        )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -137,10 +170,33 @@ def submit_answer(
         "等待后台判分收尾（推 `stage` 进度），再聚合实测结果与岗位标准，"
         "产出匹配度 / 双系列雷达 / 优势 / 短板，并落库到诊断报告。"
     ),
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": (
+                "`text/event-stream`。事件按 `type` 区分：`stage`（判分进度）→ "
+                "`report`（完整报告）；异常走 `error`。"
+            ),
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "title": "结算流事件",
+                        "oneOf": [
+                            SseStageEvent.model_json_schema(ref_template="#/components/schemas/{model}"),
+                            SseReportEvent.model_json_schema(ref_template="#/components/schemas/{model}"),
+                            SseErrorEvent.model_json_schema(ref_template="#/components/schemas/{model}"),
+                        ],
+                    }
+                }
+            },
+        }
+    },
 )
 def stream_report(
-    session_id: int = Path(..., ge=1),
-    occupation_id: str | None = Query(None),
+    session_id: int = Path(..., ge=1, description="测评会话 id"),
+    occupation_id: str | None = Query(
+        None, description="兜底目标岗位；会话已落库岗位时以库为准，此参数忽略"
+    ),
     user: TempUser = Depends(require_temp_user),
 ) -> StreamingResponse:
     from backend.agent.assessment import service
@@ -162,12 +218,15 @@ def stream_report(
         "状态来自业务表（biz_assessment_question / biz_assessment_answer），"
         "刷新恢复只是两条普通查询。"
     ),
+    response_model=AssessmentStateOut,
 )
 def get_session(
-    session_id: int = Path(..., ge=1),
-    occupation_id: str | None = Query(None),
+    session_id: int = Path(..., ge=1, description="测评会话 id"),
+    occupation_id: str | None = Query(
+        None, description="兜底目标岗位；会话已落库岗位时以库为准"
+    ),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> AssessmentStateOut:
     from backend.agent.assessment import service
 
     meta = _own_session(session_id, user)
@@ -176,4 +235,4 @@ def get_session(
     )
     if not st.get("exists"):
         raise HTTPException(404, "测评会话不存在或尚未出题")
-    return st
+    return AssessmentStateOut.model_validate(st)

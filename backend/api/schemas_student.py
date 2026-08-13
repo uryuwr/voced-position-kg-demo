@@ -1,0 +1,494 @@
+"""学员端契约：岗位匹配、学习目标、学习计划、画像、诊断。
+
+与 `schemas_biz.py` 的分工：那边是四维图谱的通用出参（ProfessionOut / PositionOut /
+SkillOut 等，管理台也在用），这里是**学员端独有的业务出参**。
+
+写在这里的每个字段都对应服务端实际返回的键，类型和注释以生产代码为准，
+不是「大概应该是这样」。有几处刻意不收紧：`attrs` 是无约束 JSON 列，
+`raw` 是外部画像服务的原样透传——它们的自由是事实，注释里写清楚为什么。
+"""
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+from backend.api.schemas_assessment import AssessmentReportOut
+from backend.api.schemas_biz import PageMeta, SkillOut
+
+# ── 岗位匹配度 ───────────────────────────────────────────────
+
+
+class OccupationBrief(BaseModel):
+    """岗位摘要（匹配度、总览等处的公共引用）。"""
+
+    id: str | None = Field(None, description="岗位节点 id")
+    name: str | None = Field(None, description="岗位名")
+    level: int | None = Field(None, description="岗位职级/层级")
+
+
+class MatchItem(BaseModel):
+    """匹配度明细的一项技能：岗位要求 vs 学员已有。"""
+
+    skill_key: str = Field(..., description="技能聚合主键")
+    skill_name: str | None = Field(None, description="技能展示名")
+    category: str | None = Field(None, description="技能大类")
+    required_level: int | None = Field(None, ge=1, le=5, description="岗位要求档 1–5")
+    user_level: int | None = Field(
+        None,
+        ge=0,
+        le=5,
+        description="学员已有档 1–5；**0 表示该技能无任何证据**（不是「水平为零」），null 同义",
+    )
+    weight: float = Field(..., description="该技能在岗位中的权重，Σ≈1")
+    is_core: bool | None = Field(None, description="是否核心技能")
+    ratio: float = Field(..., description="达成比 = 已有/要求，封顶 1.0")
+    ok: bool = Field(..., description="是否达标")
+    matched_by: str | None = Field(
+        None,
+        description="命中方式：exact=技能名精确匹配；fuzzy=模糊匹配；none=无证据",
+    )
+
+
+class MatchRadarOut(BaseModel):
+    """匹配度的雷达图。
+
+    与测评报告的 `RadarOut` 不同：那边是「学员实测 vs 岗位要求」双系列，
+    这里只有一条达成率曲线——匹配度算的是差距比例，没有独立的「要求」系列。
+    """
+
+    categories: list[str] = Field(default_factory=list, description="各轴名称（技能大类）")
+    scores: list[int] = Field(
+        default_factory=list, description="各轴达成率 0–100，顺序与 categories 一致"
+    )
+
+
+class PositionMatchOut(BaseModel):
+    """岗位匹配度。
+
+    `source` 是四级级联的结果，**决定这个分数可不可信**，前端必须据此区分展示：
+
+    - `diagnosis` —— 该岗位做过完整测评，直接读报告分，最准
+    - `assessment` —— 用其他场测评实测到的档位推算（技能有重叠时）
+    - `memory` —— 用五维记忆画像推断，最弱，`estimated=true`
+    - `no_overlap` —— 岗位技能与已有证据零交集，`match_score` 为 null
+    - `none` —— 该岗位尚未配置技能构成，无从算起
+
+    `match_score` 为 null 时不要显示 0%：那是「没有证据」，不是「完全不匹配」。
+    """
+
+    occupation: OccupationBrief = Field(..., description="岗位摘要")
+    match_score: float | None = Field(
+        None, description="匹配度 0–100；无证据时为 null，前端应显示「未评估」而非 0%"
+    )
+    source: Literal["diagnosis", "assessment", "memory", "no_overlap", "none"] = Field(
+        ..., description="分数来源，决定可信度；见模型说明"
+    )
+    estimated: bool = Field(
+        False, description="是否为推断值（memory 来源为 true），UI 上应与实测分区分"
+    )
+    reason: str | None = Field(None, description="无法计算时的原因说明")
+    skill_total: int | None = Field(None, ge=0, description="岗位技能总数")
+    matched_count: int | None = Field(None, ge=0, description="已达标技能数")
+    covered_count: int | None = Field(
+        None, ge=0, description="有证据覆盖的技能数；为 0 时 match_score 无意义"
+    )
+    coverage: float | None = Field(None, description="证据覆盖的权重百分比 0–100")
+    items: list[MatchItem] = Field(default_factory=list, description="全部技能明细")
+    strengths: list[MatchItem] = Field(default_factory=list, description="已达标项")
+    gaps: list[MatchItem] = Field(default_factory=list, description="未达标项，按权重降序")
+    radar: MatchRadarOut | None = Field(
+        None, description="单系列雷达图（按技能大类聚合的达成率）；无数据时为空对象"
+    )
+    diagnosis: "DiagnosedBrief | None" = Field(
+        None, description="该岗位的历史诊断摘要；没测过为 null"
+    )
+
+
+class DiagnosedBrief(BaseModel):
+    """某岗位的历史诊断摘要。"""
+
+    match_score: float = Field(..., description="诊断得出的匹配度 0–100")
+    session_id: int | None = Field(None, description="诊断会话 id")
+    channel: str | None = Field(None, description="诊断渠道：assessment / resume / chat")
+    diagnosed_at: str | None = Field(None, description="诊断时间 ISO8601")
+
+
+# ── 技能构成 ─────────────────────────────────────────────────
+
+
+class SkillCompositionOut(BaseModel):
+    """岗位技能构成（逻辑技能 + 边权重）。
+
+    权重只认 `requires` 边上的 weight，节点 `attrs.weight_pct` 仅历史兼容。
+    """
+
+    occupation: OccupationBrief = Field(..., description="岗位摘要")
+    skills: list[SkillOut] = Field(..., description="逻辑技能列表（多档已聚合成 bundle）")
+    skill_count: int = Field(..., ge=0, description="技能数")
+    weight_sum: float = Field(
+        ..., description="权重之和，**小数**；归一化后应≈1.0，不要声明成 int"
+    )
+    weighted_skill_count: int = Field(..., ge=0, description="带权重的技能数")
+    weight_sum_ok: bool = Field(
+        ..., description="权重和是否在容差内（0.85–1.15）；false 表示该岗位权重待归一化"
+    )
+    note: str | None = Field(None, description="口径说明")
+
+
+# ── 学习目标 ─────────────────────────────────────────────────
+
+
+class GoalItem(BaseModel):
+    """一个学习目标（对应 biz_user_goal 一行）。一人可有多个，其一为活跃。"""
+
+    user_id: str = Field(..., description="UC 用户 id")
+    user_name: str | None = Field(None, description="用户名（冗余字段，用户中心不在本服务）")
+    occupation_id: str | None = Field(None, description="目标岗位节点 id")
+    occupation_name: str | None = Field(None, description="目标岗位名")
+    major_id: str | None = Field(None, description="关联专业 id")
+    major_name: str | None = Field(None, description="关联专业名")
+    industry_id: str | None = Field(None, description="所属行业 id")
+    industry_name: str | None = Field(None, description="所属行业名")
+    status: str | None = Field(None, description="active=当前活跃目标；archived=历史目标")
+    created_at: str | None = Field(None, description="设定时间 ISO8601")
+    updated_at: str | None = Field(None, description="更新时间 ISO8601")
+
+
+class ClearGoalOut(BaseModel):
+    """清除目标的回执。"""
+
+    status: Literal["cleared"] = Field(..., description="固定 cleared")
+
+
+class NextLevelOut(BaseModel):
+    """晋升路径上的下一档岗位。"""
+
+    id: str = Field(..., description="岗位节点 id")
+    name: str | None = Field(None, description="岗位名")
+    level: int | None = Field(None, description="职级")
+    level_label: str | None = Field(None, description="职级文案，如 L3")
+
+
+class GoalOverviewOut(BaseModel):
+    """学习目标总览：当前目标 + 岗位详情 + 测评结果 + 晋升路径 + 学习计划 id。
+
+    原型上那张卡片一次就要这些数据，拆成多个接口会让首屏串行等待。
+    """
+
+    has_goal: bool = Field(..., description="是否已锁定目标；false 时其余字段多为 null")
+    goal: GoalItem | None = Field(None, description="当前活跃目标")
+    goals: list[GoalItem] = Field(default_factory=list, description="该用户全部目标（含历史）")
+    occupation: "GoalOccupationOut | None" = Field(None, description="目标岗位详情")
+    major: "RefOut | None" = Field(None, description="关联专业")
+    industry: "RefOut | None" = Field(None, description="所属行业")
+    match_score: float | None = Field(
+        None, description="该岗位最近一次诊断的匹配度 0–100；没测过为 null，前端显示「去测评」"
+    )
+    assessment: AssessmentReportOut | None = Field(
+        None, description="最近一次的完整测评报告；没测过为 null"
+    )
+    next_level: NextLevelOut | None = Field(
+        None, description="晋升路径的下一档岗位；无 advances_to 边时为 null"
+    )
+    learning_plan_id: str = Field(
+        "", description="学习计划 id（uuid 字符串）；尚未生成或外部接口未接通时为空串"
+    )
+    learning_plan_created_at: str | None = Field(None, description="学习计划生成时间 ISO8601")
+
+
+class RefOut(BaseModel):
+    """id + name 的轻引用。"""
+
+    id: str | None = Field(None, description="节点 id")
+    name: str | None = Field(None, description="展示名")
+
+
+class GoalOccupationOut(BaseModel):
+    """总览里的目标岗位详情。"""
+
+    id: str | None = Field(None, description="岗位节点 id")
+    name: str | None = Field(None, description="岗位名")
+    level: int | None = Field(None, description="职级")
+    level_label: str | None = Field(None, description="职级文案，如 L3")
+    description: str | None = Field(None, description="岗位职责描述")
+    salary: str | None = Field(None, description="薪资区间（来自 attrs）")
+    skill_count: int = Field(0, ge=0, description="该岗位技能数")
+
+
+# ── 已诊断岗位 ───────────────────────────────────────────────
+
+
+class DiagnosedOccupationItem(BaseModel):
+    """已诊断过的岗位一行。"""
+
+    occupation_id: str | None = Field(None, description="岗位节点 id")
+    occupation_name: str | None = Field(None, description="岗位名")
+    match_score: float | None = Field(None, description="最近一次匹配度 0–100")
+    channel: str | None = Field(None, description="诊断渠道：assessment / resume / chat")
+    last_session_id: int | None = Field(None, description="最近一次诊断会话 id")
+    session_count: int = Field(0, ge=0, description="累计诊断次数")
+    diagnosed_at: str | None = Field(None, description="最近诊断时间 ISO8601")
+    goal_status: str | None = Field(
+        None, description="该岗位的目标状态：active / archived；从未设为目标则为 null"
+    )
+    is_active_goal: bool = Field(False, description="是否为当前活跃目标")
+    major_name: str | None = Field(None, description="关联专业名")
+    goal_created_at: str | None = Field(None, description="设为目标的时间 ISO8601")
+    plan_id: str = Field("", description="学习计划 id；未生成为空串")
+    plan_created_at: str | None = Field(None, description="学习计划生成时间 ISO8601")
+
+
+class DiagnosedOccupationListOut(BaseModel):
+    """已诊断岗位分页列表。分页下沉到 SQL，不是取回内存再切。"""
+
+    items: list[DiagnosedOccupationItem] = Field(..., description="当前页数据")
+    total: int = Field(..., ge=0, description="总条数")
+    page: int = Field(..., ge=1, description="页码，从 1 起")
+    page_size: int = Field(..., ge=1, description="每页条数")
+    pages: int = Field(..., ge=0, description="总页数")
+
+
+# ── 学习计划 ─────────────────────────────────────────────────
+
+
+class LearningPlanBody(BaseModel):
+    """生成学习计划。"""
+
+    occupation_id: str | None = Field(None, description="目标岗位 id；不传取当前活跃目标")
+    session_id: int | None = Field(None, description="据以生成的诊断会话 id")
+    gap_skills: list[str] = Field(
+        default_factory=list, description="需要补齐的短板技能（skill_key 列表）"
+    )
+
+
+class LearningPlanItem(BaseModel):
+    """一条学习计划记录（对应 biz_user_learning_plan 一行）。"""
+
+    id: int = Field(..., description="本地记录 id")
+    user_id: str = Field(..., description="UC 用户 id")
+    occupation_id: str = Field(..., description="目标岗位 id")
+    plan_id: str = Field(..., description="学习计划 id（uuid 字符串），外部计划服务的主键")
+    session_id: int | None = Field(None, description="据以生成的诊断会话 id")
+    gap_skills: list[str] = Field(default_factory=list, description="短板技能列表")
+    source: Literal["bts", "mock", "api"] = Field(
+        ..., description="bts=外部计划服务生成；mock=服务不可用时的本地兜底"
+    )
+    created_at: str | None = Field(None, description="创建时间 ISO8601")
+
+
+class LearningPlanCreatedOut(LearningPlanItem):
+    """生成学习计划的回执。
+
+    外部服务不可用时不拖住学员：降级为 mock 并把上游原因原样带出去，
+    前端可据 `source` 与 `upstream_error` 提示「计划为本地兜底」。
+    """
+
+    upstream_error: str | None = Field(
+        None, description="外部计划服务的失败原因；成功或未调用时为 null"
+    )
+    upstream_status: int | None = Field(None, description="外部服务 HTTP 状态码")
+
+
+# ── 五维画像 ─────────────────────────────────────────────────
+
+
+class MemoryItemOut(BaseModel):
+    """一条记忆。"""
+
+    memory_id: str | None = Field(None, description="记忆 id，平台侧主键")
+    title: str | None = Field(None, description="标题（平台自动生成）")
+    summary: str | None = Field(None, description="摘要")
+    details: str | None = Field(None, description="详情")
+    subtype: str | None = Field(None, description="维度下的子类型标签")
+    tags: list[str] = Field(default_factory=list, description="记忆标签 + 维度标签")
+    captured_at: str | None = Field(None, description="记忆产生时间 ISO8601")
+    facet_details: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "各维专属字段，结构随 facet 而异（experience 有 situation/action/"
+            "keyLearning，context 有 currentStatus 等），由画像平台定义，故不收紧"
+        ),
+    )
+
+
+class MemoryFacetOut(BaseModel):
+    """五维记忆中的一维。"""
+
+    facet: Literal["identity", "context", "preference", "experience", "activity"] = Field(
+        ..., description="维度标识"
+    )
+    label: str = Field(..., description="维度中文名：身份/情境/偏好/经验/活动")
+    count: int = Field(..., ge=0, description="该维记忆条数")
+    next_cursor: str | None = Field(None, description="分页游标；无更多为 null")
+    items: list[MemoryItemOut] = Field(default_factory=list, description="该维记忆列表")
+    digest: str = Field(..., description="一行摘要，卡片直接展示；无数据时为「暂无数据」")
+
+
+class MemoryRequestEcho(BaseModel):
+    """回显发给画像服务的请求，便于前端核对参数。Authorization 已脱敏。"""
+
+    method: str = Field(..., description="HTTP 方法")
+    url: str = Field(..., description="完整请求地址")
+    headers: dict[str, str] = Field(..., description="请求头；Authorization 已脱敏")
+    body: dict[str, Any] = Field(
+        ..., description="请求体，形如 {\"facets\":[{\"facet\":\"identity\",\"limit\":10}]}"
+    )
+
+
+class MemoryBlockOut(BaseModel):
+    """画像服务返回的五维记忆块。服务不可用时 available=false，其余为空但不报错。"""
+
+    available: bool = Field(..., description="画像服务是否可用（BTS + 地址均已配置）")
+    endpoint: str | None = Field(None, description="画像服务地址")
+    path: str = Field(..., description="记忆查询接口路径")
+    facets: list[MemoryFacetOut] = Field(default_factory=list, description="五维记忆")
+    total: int = Field(0, ge=0, description="记忆总条数")
+    request: MemoryRequestEcho | None = Field(None, description="请求回显")
+    raw: dict[str, Any] | None = Field(
+        None, description="画像服务的原始响应，原样透传不做加工，供调试核对"
+    )
+    error: str | None = Field(None, description="调用失败原因；成功为 null")
+
+
+class MergedSkillEntry(BaseModel):
+    """合并后的一项技能档位，标明证据来自哪一侧。"""
+
+    skill_key: str = Field(..., description="技能聚合主键")
+    level: int = Field(..., ge=1, le=5, description="档位 1–5")
+    from_: Literal["assessment", "memory"] = Field(
+        ...,
+        alias="from",
+        description="证据来源：assessment=本系统实测；memory=五维记忆推断",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class SkillCounts(BaseModel):
+    """技能画像的分项计数。"""
+
+    assessment: int = Field(0, ge=0, description="实测得到的技能数")
+    memory: int = Field(0, ge=0, description="记忆推断出的技能数")
+    merged: int = Field(0, ge=0, description="合并去重后的技能数")
+
+
+class SkillProfileMeta(BaseModel):
+    """技能画像的解析元信息。"""
+
+    engine: str | None = Field(
+        None,
+        description="解析引擎：llm=模型抽取；rule=规则兜底；not_parsed=本次未解析（只读缓存）",
+    )
+    elapsed_ms: int | None = Field(None, description="解析耗时毫秒")
+    error: str | None = Field(None, description="解析失败原因")
+
+
+class SkillProfileBlock(BaseModel):
+    """技能画像块：实测与记忆两路证据合并后的档位表。"""
+
+    source: Literal["mixed", "assessment", "memory", "none"] = Field(
+        ...,
+        description="证据来源：mixed=实测与记忆都有；assessment=仅实测；memory=仅记忆；none=都没有",
+    )
+    parsed: bool = Field(
+        ..., description="本次是否真的解析了记忆。false 表示读的是缓存或仅用实测数据"
+    )
+    counts: SkillCounts = Field(..., description="分项计数")
+    meta: SkillProfileMeta = Field(..., description="解析元信息")
+    merged: list[MergedSkillEntry] = Field(
+        default_factory=list, description="合并后的技能档位，按档位降序"
+    )
+
+
+class AssessedSkillEntry(BaseModel):
+    """一项实测技能（来自 biz_user_skill）。"""
+
+    skill_name: str | None = Field(None, description="技能名")
+    level: int = Field(..., ge=1, le=5, description="实测档位 1–5")
+    score: int = Field(0, description="得分")
+    source: str | None = Field(None, description="来源：assessment / resume / self")
+    updated_at: str | None = Field(None, description="更新时间 ISO8601")
+
+
+class DiagnosisHistoryItem(BaseModel):
+    """一次历史诊断。"""
+
+    occupation_id: str | None = Field(None, description="岗位节点 id")
+    occupation_name: str | None = Field(None, description="岗位名")
+    channel: str | None = Field(None, description="诊断渠道：assessment / resume / chat")
+    match_score: float | None = Field(None, description="匹配度 0–100")
+    created_at: str | None = Field(None, description="诊断时间 ISO8601")
+
+
+class StudentProfileOut(BaseModel):
+    """学员画像：五维记忆 + 技能档位 + 历史诊断。
+
+    三块互补：`memory` 是用户中心沉淀的跨系统画像，`assessment` 是本系统测出来的
+    硬证据，`skills` 是两路合并后的档位表。匹配度级联时实测优先于记忆。
+    """
+
+    user: RefOut = Field(..., description="当前用户（id 为 UC user_id，name 为冗余展示名）")
+    memory: MemoryBlockOut = Field(..., description="五维记忆")
+    skills: SkillProfileBlock = Field(..., description="合并后的技能画像")
+    assessment: list[AssessedSkillEntry] = Field(
+        default_factory=list, description="实测技能明细，按档位降序"
+    )
+    diagnoses: list[DiagnosisHistoryItem] = Field(
+        default_factory=list, description="历史诊断记录，最近 20 条"
+    )
+
+
+# ── 诊断（简历 / 对话） ──────────────────────────────────────
+
+
+class ResumeSampleOut(BaseModel):
+    """示例简历，供前端一键填充。"""
+
+    content_text: str = Field(..., description="示例简历正文")
+    note: str = Field(..., description="用法说明")
+
+
+class ResumeExtractOut(BaseModel):
+    """简历文件 → 文本。"""
+
+    content_text: str = Field(..., description="抽取出的简历正文")
+    filename: str | None = Field(None, description="原始文件名")
+    chars: int = Field(0, ge=0, description="正文字数")
+    engine: str | None = Field(None, description="抽取引擎：docx / pdf / plain")
+
+
+class ChatSessionOut(BaseModel):
+    """对话诊断会话。"""
+
+    session_id: int = Field(..., description="会话 id")
+    channel: Literal["chat"] = Field(..., description="固定 chat")
+    status: str = Field(..., description="会话状态：active / done")
+    target_occupation_id: str | None = Field(None, description="目标岗位 id")
+    first_question: str | None = Field(None, description="开场提问")
+
+
+class ChatMessageOut(BaseModel):
+    """一轮对话的回复。轮次够了会同时给出报告。"""
+
+    session_id: int = Field(..., description="会话 id")
+    reply: str | None = Field(None, description="AI 追问或结语")
+    done: bool = Field(False, description="对话是否结束；true 时 report 有值")
+    turn: int | None = Field(None, ge=0, description="当前轮次")
+    report: AssessmentReportOut | None = Field(None, description="结束时产出的诊断报告")
+
+
+class UserSkillItem(BaseModel):
+    """学员技能画像的一项（对应 biz_user_skill 一行）。"""
+
+    user_id: str | None = Field(None, description="UC 用户 id")
+    skill_id: str = Field(..., description="技能 id 或 skill_key")
+    skill_name: str | None = Field(None, description="技能名")
+    level: int = Field(1, ge=1, le=5, description="档位 1–5")
+    score: int = Field(0, description="得分")
+    source: str = Field("self", description="来源：self=自评；assessment=测评；resume=简历解析")
+    updated_at: str | None = Field(None, description="更新时间 ISO8601")
+
+
+PositionMatchOut.model_rebuild()
+GoalOverviewOut.model_rebuild()
