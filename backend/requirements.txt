@@ -1,9 +1,14 @@
 # backend 独立部署依赖（不含爬虫专用库）
+#
+# ⚠ 这里是干净镜像里唯一会被安装的清单。backend 运行路径上 import 到的包**必须登记在此**。
+#    下面简历解析、PG checkpointer 的包都写在 try/except 里，漏装不会启动失败，
+#    只会让功能在线上悄悄降级（简历抽不出文字 / 测评断点丢失），最难排查。
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
-psycopg[binary]>=3.1.0
+# pool：agent/assessment/graph.py 的 PostgresSaver 连接池要 psycopg_pool
+psycopg[binary,pool]>=3.1.0
 httpx>=0.27.0
 
 # 学员诊断 Agent：AI 网关（OpenAI 兼容）+ LangGraph create_react_agent
@@ -11,6 +16,13 @@ langchain-core>=0.3.0
 langchain-openai>=0.2.0
 langgraph>=0.2.0
 openai>=1.40.0
+# 测评工作流的断点持久化；缺失会静默退回 MemorySaver（多 worker/重启即丢断点）
+langgraph-checkpoint-postgres>=2.0.0
 
-# 可选：历史 Neo 迁移对照（读路径已切 PG）
+# 简历解析 api/resume_parse.py：PDF 优先 pypdf，抽不出再回退 PyMuPDF
+pypdf>=4.0.0
+pymupdf>=1.24.0
+python-docx>=1.1.0
+
+# 可选：历史 Neo 迁移对照（读路径已切 PG，运行时不需要）
 # neo4j>=5.26.0

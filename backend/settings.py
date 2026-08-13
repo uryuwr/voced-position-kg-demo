@@ -70,6 +70,7 @@ UC_SDK_URL = os.getenv(
 UC_ENV = os.getenv("UC_ENV", "preproduction")
 UC_COMPONENT_HOST = os.getenv("UC_COMPONENT_HOST", "<uc-component-host>")
 UC_API_HOST = os.getenv("UC_API_HOST", "https://<uc-gateway-host>")
+# 仅供 BTS 等**服务端出站**调用兜底；UC 校验一律用前端透传的 sdp-app-id，不读这里
 SDP_APP_ID = os.getenv("SDP_APP_ID", "") or os.getenv("BCS_SDP_APP_ID", "")
 
 # —— 数据 ——
@@ -78,6 +79,26 @@ DATABASE_URL = os.getenv(
     "postgresql://voced:<your-password>@localhost:5432/voced_kg",
 )
 KG_REGION = os.getenv("KG_REGION", "CN")
+
+# —— BTS 服务间鉴权（对齐 bcs-ai-agent）：本服务调用外部/BCS 内部接口 ——
+# 与 UC MAC Token 不同：那是「浏览器→本服务」的用户鉴权，这是「本服务→外部」的应用鉴权。
+BTS_ENDPOINT = os.getenv("BTS_ENDPOINT", "")          # 取 token 的服务，如 https://ucbts.101.com
+BTS_ACCOUNT = os.getenv("BTS_ACCOUNT", "")            # 服务账号
+BTS_PASSWORD = os.getenv("BTS_PASSWORD", "")          # 服务账号密钥
+BTS_API_ENDPOINT = os.getenv("BTS_API_ENDPOINT", "")  # 被调用的外部接口基址
+BTS_SDP_APP_ID = os.getenv("BTS_SDP_APP_ID", "") or os.getenv("SDP_APP_ID", "")
+BTS_REQUEST_TIMEOUT = int(os.getenv("BTS_REQUEST_TIMEOUT", "30"))
+# 外部学习计划服务的路径（相对 BTS_API_ENDPOINT）；留空则学习计划走本地 mock
+LEARNING_PLAN_PATH = os.getenv("LEARNING_PLAN_PATH", "")
+# 用户画像服务（五维记忆），走 BTS 鉴权；留空则匹配度只用测评画像
+OPENQ_AI_MANAGER = (
+    os.getenv("OPENQ_AI_MANAGER", "") or os.getenv("openq-ai-manager", "")
+).rstrip("/")
+
+
+def bts_configured() -> bool:
+    return bool(BTS_ENDPOINT and BTS_ACCOUNT and BTS_PASSWORD)
+
 
 # —— AI 网关（对齐 bcs-ai-agent：OpenAI 兼容协议）——
 # bcs 使用 GITHUB_TOKEN 作网关 Authorization；LLM_BASE_URL 须以 /v1 结尾（SDK 会拼 /chat/completions）
@@ -104,7 +125,8 @@ def frontend_config() -> dict:
         "uc_env": UC_ENV,
         "uc_component_host": UC_COMPONENT_HOST,
         "uc_api_host": UC_API_HOST,
-        "sdp_app_id": SDP_APP_ID,
+        # sdp_app_id 不再下发：它由前端自己持有并透传（见 frontend/js/api-client.js），
+        # 服务端持有一份只会和真实调用方悄悄错开
         "auth_bypass": AUTH_BYPASS,
         "review_required": REVIEW_REQUIRED,
         "api_version": os.getenv("API_VERSION", "0.6.1"),

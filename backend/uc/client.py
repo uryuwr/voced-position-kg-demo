@@ -46,9 +46,9 @@ async def validate_uc_token(
 ) -> dict[str, Any]:
     """验证 MAC token，返回至少含 user_id；若响应有 nick_name/user_name 一并返回。
 
-    sdp_app_id：优先用调用方（前端请求头 `sdp-app-id`）透传的值，
-    缺失时回落 settings.SDP_APP_ID。多应用共用本服务时，前端各自带自己的
-    app-id，避免服务端配置写死某一个。
+    sdp_app_id：**一律用调用方（前端请求头 `sdp-app-id`）透传的值**，服务端不再
+    回落 .env 的 SDP_APP_ID。同一后端可能同时服务多个前端应用，写死或兜底会让
+    「服务端配置」和「实际调用方」悄悄错开，出问题很难查；缺失时直接报错更清楚。
     """
     url = f"{settings.UC_API_HOST.rstrip('/')}/v1.1/tokens/{access_token}/actions/valid"
     body = {
@@ -58,13 +58,14 @@ async def validate_uc_token(
         "request_uri": request_uri,
         "host": host,
     }
-    app_id = (sdp_app_id or "").strip() or settings.SDP_APP_ID
+    app_id = (sdp_app_id or "").strip()
+    if not app_id:
+        raise UCAuthError("缺少 sdp-app-id 请求头（应由前端透传）")
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
+        "sdp-app-id": app_id,
     }
-    if app_id:
-        headers["sdp-app-id"] = app_id
     try:
         async with httpx.AsyncClient(timeout=10, verify=False) as client:
             resp = await client.post(url, json=body, headers=headers)
