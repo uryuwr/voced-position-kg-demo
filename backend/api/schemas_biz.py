@@ -16,11 +16,11 @@ class PageMeta(BaseModel):
 class RelationCounts(BaseModel):
     """关联节点数量（联读聚合；按 type 有意义键非 0）。"""
 
-    major: int = 0
-    occupation: int = 0
+    major: int = Field(0, description="关联专业数")
+    occupation: int = Field(0, description="关联岗位数")
     skill: int = Field(0, description="逻辑技能数（DISTINCT skill_key），非 L 扁平行数")
-    industry: int = 0
-    course: int = 0
+    industry: int = Field(0, description="关联行业数")
+    course: int = Field(0, description="关联课程数")
     level: int = Field(0, description="技能 bundle 下已有 L 档数")
     skill_aggregated: int = Field(0, description="专业经岗位两跳汇总的技能数（skill 为直连数）")
     weight_sum: float = Field(0.0, description="岗位 requires 权重和，**小数**；归一化后应为 1.0")
@@ -54,15 +54,15 @@ class ProfessionOut(BaseModel):
     raw_name: str | None = Field(None, description="原始 name")
     type: str = Field("profession", description="固定 profession")
     kg_type: str | None = Field(None, description="图节点类型 major")
-    region: str | None = None
+    region: str | None = Field(None, description="地区，如 CN")
     status: int | None = Field(None, description="1=已发布 0=草稿 2=停用（映射）")
     desc: str | None = Field(None, description="简介")
     industry: str | None = Field(None, description="行业/门类提示")
     code: str | None = Field(None, description="专业代码")
-    level: str | None = None
+    level: str | None = Field(None, description="等级")
     level_zh: str | None = None
-    source_url: str | None = None
-    attrs: dict[str, Any] | None = None
+    source_url: str | None = Field(None, description="来源链接")
+    attrs: dict[str, Any] | None = Field(None, description="自由属性（无数据库约束的 JSON 列，键随数据来源而异）")
     counts: RelationCounts | None = Field(
         None, description="occupation=对口岗数；skill=关联逻辑技能数"
     )
@@ -71,19 +71,19 @@ class ProfessionOut(BaseModel):
 class PositionOut(BaseModel):
     """岗位（产品 position，图侧 occupation）。"""
 
-    id: str
-    name: str | None = None
-    raw_name: str | None = None
-    type: str = "position"
-    kg_type: str | None = None
-    region: str | None = None
-    status: int | None = None
-    desc: str | None = None
+    id: str = Field(..., description="节点 id")
+    name: str | None = Field(None, description="名称")
+    raw_name: str | None = Field(None, description="原始名称（未做展示名替换）")
+    type: str = Field("position", description="类型")
+    kg_type: str | None = Field(None, description="图侧节点类型")
+    region: str | None = Field(None, description="地区，如 CN")
+    status: int | None = Field(None, description="状态")
+    desc: str | None = Field(None, description="简介")
     tier: str | int | None = Field(None, description="职级/推荐档")
-    demand: str | None = None
-    salary: str | None = None
-    source_url: str | None = None
-    attrs: dict[str, Any] | None = None
+    demand: str | None = Field(None, description="需求热度")
+    salary: str | None = Field(None, description="薪资区间")
+    source_url: str | None = Field(None, description="来源链接")
+    attrs: dict[str, Any] | None = Field(None, description="自由属性（无数据库约束的 JSON 列，键随数据来源而异）")
     edge: EdgeBrief | None = Field(None, description="与专业/行业的连边摘要")
     counts: RelationCounts | None = Field(
         None, description="skill=逻辑技能数；major=对口专业数；industry=归属行业数"
@@ -99,27 +99,27 @@ class SkillLevelItem(BaseModel):
     level: int | None = Field(None, description="产品等级 1–5（1 了解 → 5 专家），唯一判定依据")
     level_label: str | None = Field(None, description="档位文案，取自 skill_level_meta")
     node_id: str | None = None
-    description: str | None = None
-    status: str | None = None
-    weight: float | None = None
+    description: str | None = Field(None, description="描述")
+    status: str | None = Field(None, description="状态")
+    weight: float | None = Field(None, description="权重")
 
 
 class SkillOut(BaseModel):
     """技能：默认逻辑技能 bundle（多 L 已聚合）；view=level 时为单档扁平行。"""
 
     id: str = Field(..., description="bundle:{region}:{skill_key} 或 skill_level 节点 id")
-    name: str | None = None
+    name: str | None = Field(None, description="名称")
     skill_name: str | None = Field(None, description="技能名（去等级后缀）")
     skill_key: str | None = Field(None, description="聚合主键")
     level_label: str | None = Field(None, description="等级文案或要求档")
-    type: str = "skill"
-    kg_type: str | None = None
-    region: str | None = None
-    desc: str | None = None
+    type: str = Field("skill", description="类型")
+    kg_type: str | None = Field(None, description="图侧节点类型")
+    region: str | None = Field(None, description="地区，如 CN")
+    desc: str | None = Field(None, description="简介")
     required_level: int | None = Field(None, description="岗位要求档 L1–L5（int）")
     weight: float | None = Field(None, description="岗位要求权重")
-    source_url: str | None = None
-    attrs: dict[str, Any] | None = None
+    source_url: str | None = Field(None, description="来源链接")
+    attrs: dict[str, Any] | None = Field(None, description="自由属性（无数据库约束的 JSON 列，键随数据来源而异）")
     edge: EdgeBrief | None = Field(
         None, description="与岗位/专业的连边摘要——岗位要求的权重就在这里"
     )
@@ -135,32 +135,32 @@ class SkillOut(BaseModel):
 
 
 class ProfessionListOut(PageMeta):
-    items: list[ProfessionOut]
+    items: list[ProfessionOut] = Field(..., description="当前页数据")
 
 
 class PositionListOut(PageMeta):
-    items: list[PositionOut]
+    items: list[PositionOut] = Field(..., description="当前页数据")
 
 
 class SkillListOut(PageMeta):
-    items: list[SkillOut]
+    items: list[SkillOut] = Field(..., description="当前页数据")
     view: str | None = Field(None, description="bundle | level")
 
 
 class IndustryItem(BaseModel):
-    id: str
-    name: str | None = None
-    code: str | None = None
-    level: int | str | None = None
-    parent_code: str | None = None
-    desc: str | None = None
+    id: str = Field(..., description="节点 id")
+    name: str | None = Field(None, description="名称")
+    code: str | None = Field(None, description="编码")
+    level: int | str | None = Field(None, description="等级")
+    parent_code: str | None = Field(None, description="父级编码")
+    desc: str | None = Field(None, description="简介")
     counts: RelationCounts | None = Field(
         None, description="major / occupation 直连计数"
     )
 
 
 class IndustryListOut(PageMeta):
-    items: list[IndustryItem]
+    items: list[IndustryItem] = Field(..., description="当前页数据")
 
 
 class LadderStep(BaseModel):
@@ -182,15 +182,15 @@ class PositionDetailOut(BaseModel):
 
 
 class GoalOut(BaseModel):
-    user_id: str
-    user_name: str | None = None
+    user_id: str = Field(..., description="UC 用户 id")
+    user_name: str | None = Field(None, description="用户名（冗余字段，用户中心不在本服务）")
     occupation_id: str | None = Field(None, description="目标岗位 id")
     occupation_name: str | None = None
     major_id: str | None = Field(None, description="关联专业 id")
     major_name: str | None = None
     industry_id: str | None = None
     industry_name: str | None = None
-    updated_at: str | None = None
+    updated_at: str | None = Field(None, description="更新时间 ISO8601")
 
 
 class GoalPutBody(BaseModel):
@@ -216,8 +216,8 @@ class SkillLevelMeta(BaseModel):
 
 
 class SkillCategory(BaseModel):
-    id: str
-    name: str
+    id: str = Field(..., description="节点 id")
+    name: str = Field(..., description="名称")
 
 
 class ResumeDiagBody(BaseModel):
@@ -300,17 +300,17 @@ class PathGenerateBody(BaseModel):
 
 
 class LearningStepOut(BaseModel):
-    id: int
-    path_id: int
-    seq: int
-    kind: str
-    skill_id: str | None = None
-    skill_name: str | None = None
-    resource_id: str | None = None
-    resource_title: str | None = None
-    title: str
-    status: str
-    completed_at: str | None = None
+    id: int = Field(..., description="节点 id")
+    path_id: int = Field(..., description="学习路径 id")
+    seq: int = Field(..., description="序号")
+    kind: str = Field(..., description="任务类型")
+    skill_id: str | None = Field(None, description="技能 id")
+    skill_name: str | None = Field(None, description="技能名")
+    resource_id: str | None = Field(None, description="资源 id")
+    resource_title: str | None = Field(None, description="资源标题")
+    title: str = Field(..., description="标题")
+    status: str = Field(..., description="状态")
+    completed_at: str | None = Field(None, description="完成时间 ISO8601")
 
 
 class LearningPathHead(BaseModel):
@@ -380,18 +380,18 @@ class LearningPathOut(BaseModel):
 
 
 class ResourceItem(BaseModel):
-    id: str
-    title: str | None = None
+    id: str = Field(..., description="节点 id")
+    title: str | None = Field(None, description="标题")
     type: str | None = Field(None, description="video|practice|article|course…")
-    status: int | None = None
-    provider: str | None = None
-    url: str | None = None
-    skill_hint: str | None = None
-    desc: str | None = None
+    status: int | None = Field(None, description="状态")
+    provider: str | None = Field(None, description="提供方")
+    url: str | None = Field(None, description="链接")
+    skill_hint: str | None = Field(None, description="技能提示")
+    desc: str | None = Field(None, description="简介")
 
 
 class ResourceListOut(PageMeta):
-    items: list[ResourceItem]
+    items: list[ResourceItem] = Field(..., description="当前页数据")
 
 
 class UserGoalBrief(BaseModel):
@@ -446,18 +446,18 @@ class MeOut(BaseModel):
 
 
 class BadgeDefOut(BaseModel):
-    code: str
-    name: str
-    description: str | None = None
-    points: int
-    category: str | None = None
+    code: str = Field(..., description="编码")
+    name: str = Field(..., description="名称")
+    description: str | None = Field(None, description="描述")
+    points: int = Field(..., description="成长值/积分")
+    category: str | None = Field(None, description="分类")
 
 
 class AdminDashboardOut(BaseModel):
-    kg_nodes: int | None = None
-    kg_edges: int | None = None
+    kg_nodes: int | None = Field(None, description="图节点总数")
+    kg_edges: int | None = Field(None, description="图边总数")
     nodes_by_type: dict[str, int] = Field(default_factory=dict)
-    users_with_goal: int = 0
-    diagnosis_sessions: int = 0
-    learning_paths: int = 0
-    pending_proposals: int = 0
+    users_with_goal: int = Field(0, description="已锁定学习目标的用户数")
+    diagnosis_sessions: int = Field(0, description="诊断会话数")
+    learning_paths: int = Field(0, description="学习路径数")
+    pending_proposals: int = Field(0, description="待审提案数")

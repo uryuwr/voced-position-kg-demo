@@ -299,7 +299,7 @@ class AssessmentStateOut(BaseModel):
 class SseSessionEvent(BaseModel):
     """`event: session` —— 长连接建立，携带会话 id。"""
 
-    type: Literal["session"] = "session"
+    type: Literal["session"] = Field("session", description="类型")
     session_id: int = Field(..., description="本场会话 id，后续答题/结算都用它")
     occupation_id: str = Field(..., description="本场对标的岗位 id")
 
@@ -307,7 +307,7 @@ class SseSessionEvent(BaseModel):
 class SseStageEvent(BaseModel):
     """`event: stage` —— 阶段状态推进，前端据此点亮步骤条。"""
 
-    type: Literal["stage"] = "stage"
+    type: Literal["stage"] = Field("stage", description="类型")
     key: Literal["parse", "assess", "report"] = Field(..., description="阶段标识")
     status: Literal["pending", "active", "done"] = Field(..., description="阶段状态")
     output: dict[str, Any] = Field(
@@ -318,7 +318,7 @@ class SseStageEvent(BaseModel):
 class SsePlanEvent(BaseModel):
     """`event: plan` —— 出题计划，让前端先把进度条总数显示出来。"""
 
-    type: Literal["plan"] = "plan"
+    type: Literal["plan"] = Field("plan", description="类型")
     total: int = Field(..., ge=0, description="预计总题数")
     cover: int = Field(..., ge=0, description="覆盖型题数（广度，每项核心技能各一道）")
     verify: int = Field(..., ge=0, description="验证型题数（深度，高要求档技能追加开放题）")
@@ -328,7 +328,7 @@ class SsePlanEvent(BaseModel):
 class SseQuestionEvent(BaseModel):
     """`event: question` —— 推送一道题。前端压入本地队列，答题零等待。"""
 
-    type: Literal["question"] = "question"
+    type: Literal["question"] = Field("question", description="类型")
     question: QuestionOut = Field(..., description="题目内容")
 
 
@@ -338,7 +338,7 @@ class SseQuestionEndEvent(BaseModel):
     比按题数判断可靠：模型出题失败降级时，实际条数可能少于 plan.total。
     """
 
-    type: Literal["question_end"] = "question_end"
+    type: Literal["question_end"] = Field("question_end", description="类型")
     total: int = Field(..., ge=0, description="实际出题数")
     stop_reason: str = Field(
         ..., description="收敛原因：coverage_met / max_questions / max_batches / no_more_skills"
@@ -348,14 +348,14 @@ class SseQuestionEndEvent(BaseModel):
 class SseReportEvent(BaseModel):
     """`event: report` —— 结算完成，携带完整报告。"""
 
-    type: Literal["report"] = "report"
+    type: Literal["report"] = Field("report", description="类型")
     report: AssessmentReportOut = Field(..., description="综合能力报告")
 
 
 class SseErrorEvent(BaseModel):
     """`event: error` —— 流中异常。不静默断开，前端要能拿到原因。"""
 
-    type: Literal["error"] = "error"
+    type: Literal["error"] = Field("error", description="类型")
     code: str | None = Field(
         None, description="错误码，如 no_skill_composition=该岗位尚未配置技能构成"
     )

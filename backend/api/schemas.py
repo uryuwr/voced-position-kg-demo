@@ -147,7 +147,7 @@ class KgNode(BaseModel):
     pending_action: str | None = Field(
         None, description="待审动作 create|update|delete|disable|enable（通过后才改库）"
     )
-    pending_title: str | None = None
+    pending_title: str | None = Field(None, description="待审变更的标题")
     counts: dict[str, int | float] | None = Field(
         None,
         description=(
@@ -325,9 +325,9 @@ class EdgeBrief(BaseModel):
 
     id: str | None = Field(None, description="边 ID")
     rel_type: str | None = Field(None, description="关系类型")
-    weight: float | None = None
-    confidence: str | None = None
-    evidence: str | None = None
+    weight: float | None = Field(None, description="权重")
+    confidence: str | None = Field(None, description="置信度")
+    evidence: str | None = Field(None, description="判定依据")
 
 
 class KgNodeWithEdge(KgNode):
@@ -358,8 +358,8 @@ class OccupationRequiresRow(BaseModel):
     skill_level: str = Field(..., description="技能/等级名称")
     skill_url: str | None = Field(None, description="技能来源 URL")
     weight: float | None = Field(None, description="要求权重")
-    confidence: str | None = None
-    evidence: str | None = None
+    confidence: str | None = Field(None, description="置信度")
+    evidence: str | None = Field(None, description="判定依据")
 
 
 class NodeListResponse(BaseModel):
@@ -451,11 +451,11 @@ class EdgeListItem(BaseModel):
     dst_id: str = Field(..., description="终点节点 id")
     rel_type: str = Field(..., description="关系类型")
     neo4j_type: str | None = None
-    region: str | None = None
-    weight: float | None = None
-    confidence: str | None = None
-    evidence: str | None = None
-    source_url: str | None = None
+    region: str | None = Field(None, description="地区，如 CN")
+    weight: float | None = Field(None, description="权重")
+    confidence: str | None = Field(None, description="置信度")
+    evidence: str | None = Field(None, description="判定依据")
+    source_url: str | None = Field(None, description="来源链接")
     status: str | None = Field(None, description="published|disabled|…")
     src_name: str | None = Field(None, description="起点名称")
     src_type: str | None = Field(None, description="起点类型")
@@ -464,11 +464,11 @@ class EdgeListItem(BaseModel):
 
 
 class EdgeListResponse(BaseModel):
-    items: list[EdgeListItem] = Field(default_factory=list)
-    page: int
-    page_size: int
-    total: int
-    total_pages: int
+    items: list[EdgeListItem] = Field(default_factory=list, description="当前页数据")
+    page: int = Field(..., description="页码，从 1 起")
+    page_size: int = Field(..., description="每页条数")
+    total: int = Field(..., description="总条数")
+    total_pages: int = Field(..., description="总页数")
     rel_type: str | None = None
     node_id: str | None = Field(None, description="按节点过滤时传入的 node_id")
     q: str | None = None
@@ -484,8 +484,8 @@ class ProposalOut(BaseModel):
     reason: str | None = Field(None, description="驳回原因等")
     created_by: str | None = Field(None, description="提交人 user-id")
     created_by_name: str | None = Field(None, description="提交人姓名")
-    reviewed_by: str | None = None
-    reviewed_by_name: str | None = None
+    reviewed_by: str | None = Field(None, description="审核人 id")
+    reviewed_by_name: str | None = Field(None, description="审核人姓名")
     created_at: str | None = Field(None, description="创建时间 ISO")
     reviewed_at: str | None = Field(None, description="审核时间 ISO")
     applied: dict[str, Any] | None = Field(
@@ -496,7 +496,7 @@ class ProposalOut(BaseModel):
 class HealthPostgres(BaseModel):
     ok: bool
     engine: str | None = None
-    version: str | None = None
+    version: str | None = Field(None, description="版本号")
     nodes: int | None = None
     edges: int | None = None
     error: str | None = None
@@ -504,33 +504,33 @@ class HealthPostgres(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str = Field(..., description="ok | degraded")
-    service: str
+    service: str = Field(..., description="服务名")
     store: str = Field(..., description="postgresql")
     docs: str | None = Field(None, description="Swagger 路径")
     postgresql: HealthPostgres | None = None
 
 
 class DocsLinks(BaseModel):
-    swagger: str
+    swagger: str = Field(..., description="Swagger 文档地址")
     redoc: str
     openapi_json: str
     guide: str
-    note: str
-    servers: list[dict[str, str]] = Field(default_factory=list)
+    note: str = Field(..., description="备注说明")
+    servers: list[dict[str, str]] = Field(default_factory=list, description="服务地址列表")
 
 
 class AuthTempInfo(BaseModel):
     mode: str = Field(..., description="request_headers")
     required_headers: list[str]
-    note: str
+    note: str = Field(..., description="备注说明")
 
 
 class ServiceDiscovery(BaseModel):
     """GET / 服务发现。"""
 
-    service: str
-    version: str
-    store: str
+    service: str = Field(..., description="服务名")
+    version: str = Field(..., description="版本号")
+    store: str = Field(..., description="存储后端")
     default_region: str
     docs: DocsLinks
     auth_temp: AuthTempInfo
