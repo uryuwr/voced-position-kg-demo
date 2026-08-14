@@ -8,7 +8,10 @@ uvicorn[standard]>=0.30.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 psycopg[binary,pool]>=3.1.0
+# httpx：BTS/LLM 出站调用，以及 sdp_config.py 拉配置中心
 httpx>=0.27.0
+# sdp_config.py 解析配置中心返回的 YAML（Portal 直传 .yml 时走这条分支）
+pyyaml>=6.0
 # 简历上传 routes_student.py 的 UploadFile/File：FastAPI 在**导入期**就检查它，
 # 缺失不是降级而是整个服务起不来（RuntimeError: Form data requires "python-multipart"）
 python-multipart>=0.0.9

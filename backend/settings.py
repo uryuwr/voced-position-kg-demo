@@ -1,22 +1,24 @@
 """
 集中读取环境变量。
 
-独立部署约定：
-  - 配置真源在 **backend 包内** `backend/.env`（与 `settings.py` 同级）
-  - 模板：`backend/.env.example`
-  - Docker/K8s 可用环境变量注入，不必打包 .env
+**配置真源是 SDP 配置中心**（颗粒 voced-position-kg，见 `sdp_config.py`）。
+`backend/.env` 只承载 bootstrap 键（`SDP_CLOUD_CONFIG_SECRET` + profile），
+业务配置一律从配置中心下发；本地无 secret 时才回落到 `.env` 里的业务键。
 
 加载顺序（后者覆盖前者）：
   1. 进程环境变量（已有）
   2. 可选：仓库根 `.env`（仅 monorepo 本地兼容，不覆盖已有键）
-  3. `backend/.env`（override=True，独立部署以它为准）
+  3. `backend/.env`（override=True）
+  4. **SDP 配置中心**（有 secret 才拉，override=True —— 线上以它为准）
+
+拉不到不拦启动：降级用 1~3 的值，`GET /health` 的 `config_source` 会显示 `local`。
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 # backend/ 目录（本文件所在包根；Docker 内为 /app/backend）
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -24,18 +26,61 @@ BACKEND_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BACKEND_DIR.parent
 
 
-def _load_env_files() -> None:
+def _load_env_files() -> set[str]:
+    """加载 .env，返回 backend/.env 里**显式声明**的键名。
+
+    这批键随后会传给 SDP bootstrap 作保护名单：远端不覆盖它们，本地开发才能
+    临时改 `SERVE_DEV_UI`/`DATABASE_URL` 之类做调试（否则远端一注入就被盖掉）。
+    线上镜像没有 .env（Dockerfile 已 rm），保护名单为空，配置中心说了算。
+    """
     # monorepo 本地：根 .env 作兜底（不抢占已 export 的变量）
     repo_env = REPO_ROOT / ".env"
     if repo_env.is_file() and REPO_ROOT != BACKEND_DIR:
         load_dotenv(repo_env, override=False)
     # 后端包内配置优先
     backend_env = BACKEND_DIR / ".env"
-    if backend_env.is_file():
-        load_dotenv(backend_env, override=True)
+    if not backend_env.is_file():
+        return set()
+    declared = {k.upper() for k in dotenv_values(backend_env) if k}
+    load_dotenv(backend_env, override=True)
+    return declared
 
 
-_load_env_files()
+_LOCAL_ENV_KEYS = _load_env_files()
+
+# —— SDP 配置中心 ——
+# 有 SDP_CLOUD_CONFIG_SECRET 就把远端业务配置注入 os.environ；`.env` 里显式写的键
+# 不被覆盖（本地调试用，见 _load_env_files）。
+# **必须在下面任何 os.getenv 求值之前完成**：本模块的配置是模块级常量，import 即固化；
+# 绕过本模块直接 os.getenv 的地方（api/main.py、kg/pg_store/config.py 等）也都靠
+# `import backend.settings` 触发这里，所以放在这个位置就能全覆盖。
+_SDP_CONFIG = None
+try:
+    from backend.sdp_config import bootstrap as _sdp_bootstrap
+
+    _SDP_CONFIG = _sdp_bootstrap(protect=_LOCAL_ENV_KEYS)
+except Exception:  # noqa: BLE001 —— 配置中心不可达不拦启动，降级本地
+    _SDP_CONFIG = None
+
+
+def config_source() -> str:
+    """`remote`=本进程的业务配置来自 SDP 配置中心；`local`=来自 .env / 环境变量。
+
+    线上排查第一问「这台实例的配置到底从哪来」，别只靠翻日志里那行 bootstrap_ok。
+    """
+    return "remote" if _SDP_CONFIG else "local"
+
+
+def config_detail() -> dict:
+    if not _SDP_CONFIG:
+        return {"source": "local", "keys": 0, "profile": None, "local_override": []}
+    return {
+        "source": "remote",
+        "keys": len(_SDP_CONFIG.applied),
+        "profile": os.getenv("APP_ENV") or None,
+        # 被本地 .env 挡下、没吃到远端值的键 —— 「配置中心改了没生效」多半就是它
+        "local_override": _SDP_CONFIG.overridden_locally,
+    }
 
 
 def _bool(name: str, default: str = "0") -> bool:
@@ -133,4 +178,5 @@ def frontend_config() -> dict:
         "api_version": os.getenv("API_VERSION", "0.6.1"),
         "llm_enabled": LLM_ENABLED,
         "llm_model": LLM_MODEL if LLM_ENABLED else None,
+        "config_source": config_source(),
     }

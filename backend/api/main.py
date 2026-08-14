@@ -31,6 +31,7 @@ if str(ROOT) not in sys.path:
 
 # 尽早加载 .env
 import backend.settings  # noqa: F401
+from backend import settings
 
 from backend.api.auth import UCAuthMiddleware
 from backend.api.auth_temp import USER_HEADER_NOTE, TempUser, require_temp_user
@@ -290,6 +291,7 @@ def health() -> HealthOut:
         "docs": "/docs",
         "postgresql": pg,
         "ai_gateway": gateway_info(),
+        "config": settings.config_detail(),
     }
 
 

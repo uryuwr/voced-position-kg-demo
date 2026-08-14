@@ -1015,6 +1015,14 @@ class HealthOut(BaseModel):
     ai_gateway: AiGatewayStatus | None = Field(
         None, description="AI 网关就绪态，同 GET /v1/admin/ai-gateway"
     )
+    config: dict | None = Field(
+        None,
+        description=(
+            "本进程业务配置的来源：`source=remote` 来自 SDP 配置中心（含 profile 与注入键数），"
+            "`local` 来自 .env / 环境变量。线上配置改了没生效时先看这里。"
+        ),
+        json_schema_extra={"example": {"source": "remote", "keys": 27, "profile": "development"}},
+    )
 
 
 class FrontendConfigOut(BaseModel):

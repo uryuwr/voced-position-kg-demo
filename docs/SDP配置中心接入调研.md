@@ -1,7 +1,7 @@
 # 从 backend/.env 改读 SDP 配置中心 —— 改动点清单
 
 调研日期：2026-08-14 · 参考实现：`D:\workspace\bcs-ai-agent`（`src/agent/core/sdp_config_client.py`，373 行）
-状态：**仅调研，未改任何代码。**
+状态：**已实施并验证通过（2026-08-14），见文末「实施记录」。**
 
 前提：本仓库将转 private，`backend/` 最终整体迁到内网独立仓库 **`voced-position-kg`**（SDP 颗粒同名，已建，见第 9 条）。所以本文所有判断的落点是「搬过去之后还成不成立」，而不是「在当前仓库能不能跑」。已完成的 P1 修复（Dockerfile 只 COPY `backend/`、两种 build 上下文都通）正是为这次搬迁铺路 —— 迁过去后 backend 无论是仓库根还是子目录，构建都不用改。
 
@@ -178,3 +178,50 @@ SDP 颗粒 **`voced-position-kg`** 已存在，PYTHON / K8S_IMAGE，与 bcs-ai-a
 | Portal 侧建应用/配置/secret | 不在代码里 |
 
 代码改动集中在两个文件，风险主要不在代码量，而在**优先级语义**（第 2 条）和**凭据外置**（第三节）这两个决策上。
+
+---
+
+## 五、实施记录（2026-08-14 完成）
+
+### 落地的文件
+
+| 文件 | 改动 |
+|---|---|
+| `backend/sdp_config.py` | **新增** ~270 行。`bootstrap()` / `fetch_config()` / `apply_to_environ()`，四条 URL 依次 fallback，JSON `propertySources` 与 YAML 双解析 |
+| `backend/settings.py` | `_load_env_files()` 改为返回 `.env` 显式声明的键；其后调 `bootstrap(protect=...)`；新增 `config_source()` / `config_detail()` |
+| `backend/api/main.py` | `/health` 增加 `config` 字段；`from backend import settings` |
+| `backend/api/schemas.py` | `HealthOut` 增加 `config` 字段与示例 |
+| `backend/requirements.txt` | 加 `pyyaml>=6.0`，并给 `httpx` 补注释 |
+| `backend/.env` | 业务键全部移除，只留 `SDP_CLOUD_CONFIG_SECRET` + `SDP_ENV_NAME` + 本地覆盖区 |
+| `backend/.env.example` | 重构成「首选配置中心 / 降级本地」两段式 |
+
+### 与调研方案的一处偏离：本地覆盖优先，而不是远端绝对优先
+
+调研第 2 条推荐的方案 A 是「远端最高」。**实施时发现这个方案在本地开发下不可用**：配置中心的 `SERVE_DEV_UI=0`（镜像不含 `frontend/`）会覆盖本地 `.env` 的 `1`，导致自测页全部 404 —— 实测 `/admin` 直接 `{"detail":"Not Found"}`。
+
+改成：**`backend/.env` 里显式写出的键，远端不覆盖**（`_load_env_files()` 用 `dotenv_values` 收集键名，传给 `bootstrap(protect=...)`）。
+
+这不会削弱线上的确定性：镜像里根本没有 `.env`（Dockerfile 已 `rm` + `.dockerignore` 双保险），保护名单为空集，配置中心说了算。已实测两种形态：
+
+- 有 `.env`（本地）：远端注入 26 键，`SERVE_DEV_UI` 被挡下 → `local_override: ["SERVE_DEV_UI"]`
+- 无 `.env`、纯环境变量注入 secret（模拟 K8s）：27 键全注入 → `local_override: []`
+
+被挡下的键会如实列在 `GET /health` 的 `config.local_override` 里 —— 「配置中心改了没生效」第一眼就能看到原因，比翻日志强。
+
+### 验证结果
+
+| 项 | 结果 |
+|---|---|
+| `GET /health` | `config = {source: remote, keys: 26, profile: development, local_override: [SERVE_DEV_UI]}`，`status: ok`，PG 连通 |
+| `GET /v1/config` | `config_source: remote`，`llm_enabled: true`，各项均为配置中心的值 |
+| 前端 7 个页面 | `/admin` `/dev` `/student` `/assessment` `/kg-explorer` `/capability` `/cn-sources` 全 200 |
+| `tests/e2e_robustness.py` | **12/12 通过**（1306 次参数 fuzz + 209 组合开关，无 5xx） |
+| `scripts/p0_e2e_acceptance.py` | 6 OK / 2 FAIL —— **两个 FAIL 与本次改动无关**，用改动前的 `.env` 跑对照组得到完全相同的结果（`admin skills create pending`、`diagnosis resume`，属既有问题） |
+| 独立部署自查 | 纯 `backend/` 目录 + 无 `.env`：41 routes / 82 paths，`config_source=local` 优雅降级 |
+
+### 遗留
+
+1. ⚠️ **`backend/sdp_config.py` 含内网平台 Basic 账密与 token SALT，仓库转 private 前不要提交**（详见第三节的权限模型分析：它们不是关键密钥，但不该进公开仓库）
+2. 配置中心的 `DATABASE_URL` 目前是 `localhost:5432`，上线前要换成 SDP 申请的 PG 实例
+3. preproduction / product 两套配置仍为空，等 dev 稳定后再同步（值不该照抄 dev）
+4. 无热更新：改配置中心后必须重启进程
