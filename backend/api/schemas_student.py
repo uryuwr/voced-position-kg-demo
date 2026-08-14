@@ -325,15 +325,27 @@ class MemoryFacetOut(BaseModel):
     digest: str = Field(..., description="一行摘要，卡片直接展示；无数据时为「暂无数据」")
 
 
+class MemoryFacetRequest(BaseModel):
+    """请求某一维记忆时的参数。"""
+
+    facet: str = Field(..., description="维度：identity / context / preference / experience / activity")
+    limit: int = Field(..., ge=1, le=20, description="该维取多少条，平台上限 20")
+
+
+class MemorySearchBody(BaseModel):
+    """发给画像服务 /memories/search 的请求体。"""
+
+    facets: list[MemoryFacetRequest] = Field(..., description="要查的维度与条数")
+    query: str | None = Field(None, description="语义检索词；不传则按维度取最近的")
+
+
 class MemoryRequestEcho(BaseModel):
     """回显发给画像服务的请求，便于前端核对参数。Authorization 已脱敏。"""
 
     method: str = Field(..., description="HTTP 方法")
     url: str = Field(..., description="完整请求地址")
     headers: dict[str, str] = Field(..., description="请求头；Authorization 已脱敏")
-    body: dict[str, Any] = Field(
-        ..., description="请求体，形如 {\"facets\":[{\"facet\":\"identity\",\"limit\":10}]}"
-    )
+    body: MemorySearchBody = Field(..., description="请求体")
 
 
 class MemoryBlockOut(BaseModel):

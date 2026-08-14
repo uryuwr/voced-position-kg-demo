@@ -21,6 +21,7 @@ from backend.api.schemas_admin import (
     SkillCompositionAdminOut,
     SkillOptionOut,
 )
+from backend.api.schemas import AppliedResult, ChangePayload
 from backend.api.schemas_biz import AdminDashboardOut, SkillOut
 from backend.kg.pg_store import biz_store as biz
 from backend.kg.pg_store import review as rev
@@ -86,8 +87,8 @@ class ChangeSubmitBody(BaseModel):
     )
     target_id: str | None = Field(None, description="编辑/删除/停用/发布时的目标 id")
     title: str | None = Field(None, description="列表展示标题")
-    payload: dict[str, Any] = Field(
-        default_factory=dict,
+    payload: ChangePayload = Field(
+        default_factory=ChangePayload,
         description=(
             "节点字段 + 可选关联 id 列表（多选，服务端自动建边，客户端无需构造 edge）：\n"
             "- **专业 major**：`industry_ids: string[]` → 自动 major -belongs_to→ industry\n"
@@ -99,21 +100,21 @@ class ChangeSubmitBody(BaseModel):
 
 
 class ChangeOut(BaseModel):
-    id: int
-    entity_kind: str
-    action: str
-    dim_type: str | None = None
-    target_id: str | None = None
-    title: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
-    status: str = "pending"
-    created_by: str | None = None
-    created_by_name: str | None = None
-    created_at: str | None = None
+    id: int = Field(..., description="节点 id")
+    entity_kind: str = Field(..., description="实体种类：node / edge")
+    action: str = Field(..., description="变更动作：create / update / delete")
+    dim_type: str | None = Field(None, description="维度类型：industry / major / occupation / skill")
+    target_id: str | None = Field(None, description="目标节点 id")
+    title: str | None = Field(None, description="标题")
+    payload: ChangePayload = Field(default_factory=ChangePayload, description="变更内容；结构随 action 与 dim_type 而异（建节点的字段集与改边的完全不同）")
+    status: str = Field("pending", description="状态")
+    created_by: str | None = Field(None, description="提交人 id")
+    created_by_name: str | None = Field(None, description="提交人姓名")
+    created_at: str | None = Field(None, description="创建时间 ISO8601")
     # REVIEW_REQUIRED=0 直写时
-    applied: dict[str, Any] | None = None
-    direct: bool | None = None
-    review_required: bool | None = None
+    applied: AppliedResult | None = Field(None, description="实际落库的内容；结构随变更类型而异，未通过时为 null")
+    direct: bool | None = Field(None, description="true=直写生效；false=进待审队列")
+    review_required: bool | None = Field(None, description="是否开启审核（0=直写，1=进待审队列）")
 
 
 @router.get(
@@ -208,7 +209,9 @@ def submit_change(
         row = rev.submit_change(
             entity_kind=body.entity_kind,
             action=body.action,
-            payload=body.payload,
+            # 下游按 dict 处理（json.dumps / .get），必须摊平；
+            # exclude_none 是为了不把「没传」写成显式 null 覆盖已有值
+            payload=body.payload.model_dump(exclude_none=True),
             dim_type=body.dim_type,
             target_id=body.target_id,
             title=body.title,
@@ -277,7 +280,7 @@ class PublishValidateBody(BaseModel):
     )
     node_id: str | None = Field(None, description="节点 id（专业/岗位）")
     skill_key: str | None = Field(None, description="逻辑技能 key")
-    region: str = "CN"
+    region: str = Field("CN", description="地区，如 CN")
     action: str = Field(
         "enable", description="enable=发布校验 | delete=删除引用校验(BR-06)"
     )
@@ -336,7 +339,7 @@ def admin_publish_validate_get(
 
 
 class PublishDemoteBody(BaseModel):
-    region: str = "CN"
+    region: str = Field("CN", description="地区，如 CN")
     dry_run: bool = Field(True, description="true=只报告不落库；false=降级为 draft")
     limit: int | None = Field(
         None, description="每类最多降级数（调试用）；空=全量"
@@ -389,8 +392,10 @@ class SkillLevelObjIn(BaseModel):
 
     label: str | None = Field(None, description="了解/掌握/…")
     description: str | None = Field(None, description="能力等级描述")
-    criteria: list[Any] | None = None
-    evidence: str | None = None
+    criteria: list[str] | None = Field(
+        None, description="该档的考核要点，一条一句；不要塞对象"
+    )
+    evidence: str | None = Field(None, description="判定依据")
 
 
 class SkillBundleBody(BaseModel):
@@ -426,7 +431,7 @@ class SkillBundleBody(BaseModel):
 
     skill_key: str | None = Field(None, description="聚合主键；缺省用 name")
     name: str | None = Field(None, description="展示名；缺省用 skill_key")
-    region: str = "CN"
+    region: str = Field("CN", description="地区，如 CN")
     scale: str = Field("l1_l5", description="等级尺度")
     levels: dict[str, SkillLevelObjIn | str | dict[str, Any]] = Field(
         default_factory=dict,
@@ -440,10 +445,10 @@ class SkillBundleBody(BaseModel):
         default_factory=list,
         description="兼容：无权重时的岗位 id 列表",
     )
-    description: str | None = None
-    source_url: str | None = None
-    confidence: str | None = "manual_seed"
-    attrs: dict[str, Any] | None = None
+    description: str | None = Field(None, description="描述")
+    source_url: str | None = Field(None, description="来源链接")
+    confidence: str | None = Field("manual_seed", description="置信度")
+    attrs: dict[str, Any] | None = Field(None, description="自由属性（无数据库约束的 JSON 列，键随数据来源而异）")
 
 
 @router.get(
@@ -621,13 +626,13 @@ def admin_get_skill_bundle(
 
 class PrereqBody(BaseModel):
     prereq_skill_key: str = Field(..., description="先修逻辑技能 key")
-    evidence: str | None = None
-    region: str = "CN"
+    evidence: str | None = Field(None, description="判定依据")
+    region: str = Field("CN", description="地区，如 CN")
 
 
 class PrereqSetBody(BaseModel):
-    prereq_skill_keys: list[str] = Field(default_factory=list)
-    region: str = "CN"
+    prereq_skill_keys: list[str] = Field(default_factory=list, description="先修技能的聚合主键列表")
+    region: str = Field("CN", description="地区，如 CN")
 
 
 class CompositionSkillBody(BaseModel):

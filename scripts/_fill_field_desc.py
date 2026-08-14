@@ -129,6 +129,11 @@ DESC = {
     "ok": "是否通过",
     "checked": "扫描数",
     "demoted": "降级数",
+    "dev_ui_enabled": "是否挂载了自测页（SERVE_DEV_UI）",
+    "health": "健康检查地址",
+    "criteria": "该档的考核要点",
+    "counts": "关联计数",
+    "node_id": "对应的图节点 id",
 }
 
 # 形如：    field: TYPE                （无默认值）
@@ -141,10 +146,31 @@ FIELD1 = re.compile(
 )
 
 
+#  FastAPI 的路由参数长得和模型字段一模一样（`x: int = Query(1)`），但把它包进
+#  Field() 会直接产出非法语法。所以只在「class 体内」动手，且见到这些依赖注入
+#  构造器就跳过——路由文件里也有内联模型，不能整个文件排除。
+PARAM_MARKERS = ("Query(", "Path(", "Body(", "Depends(", "Header(", "Cookie(", "File(", "Form(")
+CLASS_DEF = re.compile(r"^class\s+\w+")
+FUNC_DEF = re.compile(r"^\s*(async\s+)?def\s+\w+")
+
+
 def patch(path: Path) -> int:
     src = io.open(path, encoding="utf-8").read()
     out, n = [], 0
+    in_class = False
     for line in src.split("\n"):
+        # 顶格的 class 进入类体；顶格的 def 或其它顶格语句退出
+        if CLASS_DEF.match(line):
+            in_class = True
+        elif line and not line[0].isspace() and not line.startswith(("#", ")", "]", "}")):
+            in_class = False
+        if FUNC_DEF.match(line):
+            in_class = False          # 方法/函数的参数一律不动
+
+        if not in_class or any(k in line for k in PARAM_MARKERS):
+            out.append(line)
+            continue
+
         m = FIELD1.match(line)
         if m and "description" not in m.group(4):
             ind, fname, typ, args = m.groups()
@@ -179,8 +205,12 @@ def patch(path: Path) -> int:
 
 if __name__ == "__main__":
     total = 0
-    for f in sorted((ROOT / "backend" / "api").glob("schemas*.py")):
+    api = ROOT / "backend" / "api"
+    # 路由文件里也有内联定义的请求/响应模型（ChangeOut、PrereqBody 等）
+    files = sorted(api.glob("schemas*.py")) + sorted(api.glob("routes*.py"))
+    for f in files:
         c = patch(f)
         total += c
-        print(f"{c:4d}  {f.name}")
+        if c:
+            print(f"{c:4d}  {f.name}")
     print(f"合计补 {total} 处")

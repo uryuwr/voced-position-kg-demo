@@ -26,10 +26,18 @@ if str(ROOT) not in sys.path:
 
 # 这些字段天生自由：attrs 是无约束 JSON 列，raw/response 是外部服务原样透传。
 # 它们仍应有 description 说明「为什么自由」，但不算 free_object 缺陷。
+#  这些字段的「自由」是事实而非疏漏，逐个记明原因；不在此表内的一律算缺陷。
+#  加新条目前先问：真的没有稳定形状，还是只是懒得查生产代码？
 ALLOW_FREE = {
-    "attrs",           # kg_node.attrs，无数据库约束的 TEXT/JSON
-    "raw",             # 外部服务原始响应
+    "attrs",           # kg_node.attrs 是无约束 TEXT/JSON 列，键随数据来源而异
+    "raw",             # 外部画像服务的原始响应，原样透传供调试核对
     "response",        # 同上
+    "facet_details",   # 五维记忆各维的专属字段，由画像平台定义，本服务不该替它收敛
+    "detail",          # 门禁规则的取证细节，BR-02~BR-08 每条结构都不同
+    "output",          # 测评阶段产出，已按 key 给出联合类型，dict 分支是未完成态的 {}
+    "levels",          # 技能 bundle 的 L1–L5 内容，键是档位号、值随档位模板而变
+    "gate",            # 嵌套的门禁结果，等同 PublishValidateOut，避免循环引用
+    "link_ids",        # {industry_ids|major_ids|occupation_ids: [...]}，键按维度动态
     "extra",
     "json_schema_extra",
 }

@@ -23,6 +23,22 @@ Confidence = Literal[
 # ── 图节点 / 边 ───────────────────────────────────────────────
 
 
+class IndustryLink(BaseModel):
+    """岗位挂到的一个行业。"""
+
+    id: str = Field(..., description="行业节点 id")
+    name: str | None = Field(None, description="行业名")
+
+
+class GraphCounts(BaseModel):
+    """图查询的计数口径。"""
+
+    node_count: int = Field(0, ge=0, description="返回的节点数")
+    edge_count: int = Field(0, ge=0, description="返回的边数")
+    root_count: int = Field(0, ge=0, description="根节点数（无父行业的顶层）")
+    region: str | None = Field(None, description="地区，如 CN")
+
+
 class KgNode(BaseModel):
     """知识图谱节点（专业/岗位/技能/课程/认证/行业等）。"""
 
@@ -158,11 +174,11 @@ class KgNode(BaseModel):
             "另有 weight_sum（岗位 requires 权重和）是**小数**，故值类型为 int | float"
         ),
     )
-    industries: list[dict[str, Any]] | None = Field(
+    industries: list[IndustryLink] | None = Field(
         None,
         description=(
             "岗位所属行业列表（occupation + include_counts）："
-            "直连 belongs_to + 经专业 prepares_for→belongs_to 两跳"
+            "直连 belongs_to + 经专业 prepares_for→belongs_to 两跳，按 name, id 稳定排序"
         ),
     )
     industry_id: str | None = Field(None, description="industries[0].id")
@@ -344,9 +360,9 @@ class IndustryTreeResponse(BaseModel):
         default_factory=list, description="parent_of 边（父→子）"
     )
     roots: list[KgNode] = Field(default_factory=list, description="无父节点的根行业")
-    meta: dict[str, Any] = Field(
-        default_factory=dict,
-        description="region / node_count / edge_count / root_count",
+    meta: GraphCounts = Field(
+        default_factory=GraphCounts,
+        description="本次查询的计数与地区口径",
     )
 
 
@@ -474,12 +490,98 @@ class EdgeListResponse(BaseModel):
     q: str | None = Field(None, description="本次查询用的关键词（回显）")
 
 
+class SkillBundleBrief(BaseModel):
+    """聚合后的技能 bundle 摘要（一个 skill_key 下的 L1–L5 汇总）。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str | None = Field(None, description="bundle:{region}:{skill_key}")
+    skill_key: str | None = Field(None, description="技能聚合主键")
+    skill_name: str | None = Field(None, description="技能名（去等级后缀）")
+    region: str | None = Field(None, description="地区，如 CN")
+    category: str | None = Field(None, description="技能大类")
+    available_levels: list[int] = Field(
+        default_factory=list, description="已配齐的档位 1–5"
+    )
+    missing_levels: list[int] = Field(default_factory=list, description="尚缺的档位 1–5")
+
+
+class ChangePayload(BaseModel):
+    """变更内容。
+
+    真实形状随 `entity_kind` + `action` + `dim_type` 而变，无法收敛成单一结构，
+    所以这里把**各分支可能出现的键**都列出来（都是可选），并允许额外字段。
+    这样 Swagger 上看到的是真实键名，而不是一个 `any`。
+
+    建节点时传节点字段；关联关系用 `*_ids` 列表表达，服务端自动建边，
+    客户端不需要自己构造 edge：
+
+    - 专业 major → `industry_ids`（major -belongs_to→ industry）
+    - 岗位 occupation → `major_ids`（major -prepares_for→ occupation）
+    - 技能 skill_level → `occupation_ids`（occupation -requires→ skill）
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str | None = Field(None, description="节点类型：industry / major / occupation / skill_level")
+    id: str | None = Field(None, description="节点 id（编辑/删除时必填）")
+    name: str | None = Field(None, description="名称")
+    region: str | None = Field(None, description="地区，默认 CN")
+    status: str | None = Field(None, description="状态；新建一律先落 draft，门禁通过才升 published")
+    code: str | None = Field(None, description="编码")
+    description: str | None = Field(None, description="描述")
+    attrs: dict[str, Any] | None = Field(
+        None, description="自由属性（无数据库约束的 JSON 列）"
+    )
+    industry_ids: list[str] | None = Field(None, description="关联行业 id 列表（专业用）")
+    major_ids: list[str] | None = Field(None, description="关联专业 id 列表（岗位用）")
+    occupation_ids: list[str] | None = Field(None, description="关联岗位 id 列表（技能用）")
+    skill_key: str | None = Field(None, description="技能聚合主键（技能 bundle 用）")
+    levels: dict[str, Any] | None = Field(
+        None, description="L1–L5 各档内容（技能 bundle 用），键为档位号"
+    )
+    src_id: str | None = Field(None, description="边的源节点 id（entity_kind=edge）")
+    dst_id: str | None = Field(None, description="边的目标节点 id")
+    rel_type: str | None = Field(None, description="边的关系类型")
+    weight: float | None = Field(None, description="边权重")
+
+
+class AppliedResult(BaseModel):
+    """变更实际落库的结果。
+
+    与 `ChangePayload` 同理——建普通节点、建技能 bundle、改边三条路径返回的键
+    各不相同，这里列出全部可能键（都是可选）并允许额外字段。
+
+    `status=draft` + `gate` 一起出现时，表示写入成功但**发布门禁没过**，
+    节点停在草稿态——这不是失败，前台看不到而已，要看 `gate.failed` 补数据。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    node: KgNode | None = Field(None, description="落库后的节点对象")
+    nodes: list[KgNode] | None = Field(
+        None, description="技能 bundle 一次建出的多个档位节点"
+    )
+    linked_edges: list[KgEdge] | None = Field(None, description="自动建出的边")
+    skill_bundle: bool | None = Field(None, description="true=走的是技能 bundle 写入路径")
+    skill_key: str | None = Field(None, description="技能聚合主键")
+    levels: list[dict[str, Any]] | None = Field(None, description="各档明细")
+    bundle: SkillBundleBrief | None = Field(None, description="聚合后的技能 bundle")
+    status: str | None = Field(
+        None, description="落库后的状态；draft 表示门禁未过，停在草稿"
+    )
+    gate: dict[str, Any] | None = Field(
+        None, description="发布门禁结果（同 PublishValidateOut）；仅未通过时出现"
+    )
+    deleted: bool | None = Field(None, description="删除类变更的结果")
+
+
 class ProposalOut(BaseModel):
     """审核提案。"""
 
     id: int = Field(..., description="提案 ID")
     kind: str = Field(..., description="node|edge|patch_node")
-    payload: dict[str, Any] = Field(..., description="待写入内容")
+    payload: ChangePayload = Field(..., description="待写入内容")
     status: str = Field(..., description="pending|approved|rejected")
     reason: str | None = Field(None, description="驳回原因等")
     created_by: str | None = Field(None, description="提交人 user-id")
@@ -488,7 +590,7 @@ class ProposalOut(BaseModel):
     reviewed_by_name: str | None = Field(None, description="审核人姓名")
     created_at: str | None = Field(None, description="创建时间 ISO")
     reviewed_at: str | None = Field(None, description="审核时间 ISO")
-    applied: dict[str, Any] | None = Field(
+    applied: AppliedResult | None = Field(
         None, description="approve 后实际写入结果（node/edge）"
     )
 
@@ -534,9 +636,9 @@ class ServiceDiscovery(BaseModel):
     default_region: str = Field(..., description="默认地区")
     docs: DocsLinks = Field(..., description="Swagger 文档地址")
     auth_temp: AuthTempInfo
-    health: str
+    health: str = Field(..., description="健康检查地址")
     api_prefix: str = Field(..., description="接口路径前缀")
-    dev_ui_enabled: bool
+    dev_ui_enabled: bool = Field(..., description="是否挂载了自测页（SERVE_DEV_UI）")
     dev_ui: dict[str, str] | None = Field(None, description="自测页地址；未开启为 null")
 
 
@@ -591,7 +693,7 @@ class NodeCreate(BaseModel):
     name_en: str | None = Field(None, description="英文名称（可选）")
     name_zh: str | None = Field(None, description="中文名称（可选；可与 name 相同）")
     description: str | None = Field(None, description="简介/备注（可选）")
-    aliases: list[str] | dict[str, Any] | None = Field(
+    aliases: list[str] | dict[str, str] | None = Field(
         None,
         description="别名列表或别名结构（可选），用于扩展检索",
     )
@@ -634,7 +736,7 @@ class NodePatch(BaseModel):
     name_en: str | None = Field(None, description="新英文名（可选）")
     name_zh: str | None = Field(None, description="新中文名（可选）")
     description: str | None = Field(None, description="新简介（可选）")
-    aliases: list[str] | dict[str, Any] | None = Field(
+    aliases: list[str] | dict[str, str] | None = Field(
         None, description="覆盖别名（可选）"
     )
     attrs: dict[str, Any] | None = Field(
@@ -744,7 +846,7 @@ class ProposalCreate(BaseModel):
         ),
         examples=["edge"],
     )
-    payload: dict[str, Any] = Field(
+    payload: ChangePayload = Field(
         ...,
         description=(
             "提案内容（必填）。字段与对应写接口请求体一致；"
@@ -765,3 +867,343 @@ class ProposalReviewBody(BaseModel):
         None,
         description="原因说明（可选）。驳回时建议填写，便于提交人修改",
     )
+
+
+# ── 系统与图查询（原先无 response_model，文档上看不到形状） ────
+
+
+class PgProbe(BaseModel):
+    """数据库连通性探测。`ok=false` 时只有 error，没有计数。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    ok: bool = Field(..., description="是否连通")
+    engine: str | None = Field(None, description="引擎，固定 postgresql")
+    version: str | None = Field(None, description="数据库版本（截断至 80 字符）")
+    nodes: int | None = Field(None, ge=0, description="kg_node 行数")
+    edges: int | None = Field(None, ge=0, description="kg_edge 行数")
+    error: str | None = Field(None, description="连接失败原因；ok=true 时为 null")
+
+
+class AiGatewayStatus(BaseModel):
+    """AI 网关就绪态。"""
+
+    enabled: bool = Field(..., description="网关是否就绪（地址、token、模型三者齐备）")
+    base_url: str | None = Field(None, description="网关地址；未配置为 null")
+    model: str | None = Field(None, description="模型名；未配置为 null")
+    has_token: bool = Field(..., description="是否已配置访问 token（不回显 token 本身）")
+
+
+class GraphLink(BaseModel):
+    """行业图的层间连边（专业 → 岗位）。"""
+
+    from_: str = Field(..., alias="from", description="源节点 id")
+    to: str = Field(..., description="目标节点 id")
+    rel: str = Field(..., description="关系类型，如 prepares_for")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ProgressionLink(BaseModel):
+    """晋升链的一段。只保留两端都在当前画布内的边，否则会画出断头箭头。"""
+
+    from_: str = Field(..., alias="from", description="低阶岗位 id")
+    to: str = Field(..., description="高阶岗位 id")
+    from_name: str | None = Field(None, description="低阶岗位名")
+    to_name: str | None = Field(None, description="高阶岗位名")
+    rel_type: str = Field("advances_to", description="固定 advances_to")
+    confidence: str | None = Field(None, description="置信度")
+    evidence: str | None = Field(None, description="建边依据")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class GraphOccupationNode(BaseModel):
+    """行业图里的岗位层节点。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str = Field(..., description="岗位节点 id")
+    name: str | None = Field(None, description="岗位名")
+    level: int | None = Field(None, description="岗位层级")
+    major_ids: list[str] = Field(default_factory=list, description="对口专业 id 列表")
+
+
+class MatrixCell(BaseModel):
+    """矩阵里的一个非零格。用行列下标而非二维数组——矩阵很稀疏，摊平会浪费大量 0。"""
+
+    r: int = Field(..., ge=0, description="行下标，对应 rows[r]")
+    c: int = Field(..., ge=0, description="列下标，对应 cols[c]")
+    v: int = Field(..., description="格值，含义见 metric")
+
+
+class MajorOccupationMatrix(BaseModel):
+    """专业 × 岗位热力图矩阵（layout=matrix 时才有）。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    rows: list[str] = Field(default_factory=list, description="行：专业节点 id，按顺序")
+    cols: list[str] = Field(default_factory=list, description="列：岗位节点 id，按顺序")
+    cells: list[MatrixCell] = Field(
+        default_factory=list, description="非零格；未出现的格视为 0"
+    )
+    max: int = Field(0, description="全矩阵最大格值，配色归一化用")
+    metric: str | None = Field(
+        None, description="格值口径，如 skill_affinity=专业与岗位的共同技能数"
+    )
+
+
+class SkillNodeBrief(BaseModel):
+    """技能图里的一个技能节点。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    skill_key: str | None = Field(None, description="技能聚合主键")
+    name: str | None = Field(None, description="技能名")
+    depth: int | None = Field(
+        None, ge=0, description="前置层深；0 表示无前置，可直接学"
+    )
+    required_level: int | None = Field(None, ge=1, le=5, description="岗位要求档 1–5")
+    weight: float | None = Field(None, description="权重")
+
+
+class SkillCategoryGroup(BaseModel):
+    """技能大类分区。按职业功能推进顺序排，不按技能数量——否则展示顺序会和箭头方向矛盾。"""
+
+    key: str = Field(..., description="技能大类名")
+    rank: int = Field(..., description="推进顺序序号，越小越靠前")
+    skills: list[SkillNodeBrief] = Field(default_factory=list, description="该区技能")
+
+
+class SkillPrereqLink(BaseModel):
+    """技能前置关系：学 `to` 之前应先具备 `from`。"""
+
+    from_: str = Field(..., alias="from", description="先修技能的 skill_key")
+    to: str = Field(..., description="后继技能的 skill_key")
+    confidence: float | str | None = Field(None, description="置信度")
+    evidence: str | None = Field(None, description="判定依据")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class NodeRef(BaseModel):
+    """节点详情里的关联引用。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str | None = Field(None, description="节点 id")
+    name: str | None = Field(None, description="名称")
+    skill_key: str | None = Field(None, description="技能聚合主键（技能类引用）")
+    level: int | None = Field(None, description="等级 / 要求档")
+    weight: float | None = Field(None, description="权重")
+
+
+class HealthOut(BaseModel):
+    """健康检查。
+
+    `status=degraded` 表示服务起来了但依赖不健康（通常是连不上 PG），
+    此时接口仍会应答，但业务查询会失败——探活别只看 HTTP 200。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    status: Literal["ok", "degraded"] = Field(..., description="ok=依赖全通；degraded=有依赖不可用")
+    service: str = Field(..., description="服务名")
+    store: str = Field(..., description="存储后端")
+    docs: str = Field(..., description="Swagger 文档地址")
+    postgresql: PgProbe | None = Field(None, description="数据库连通性探测结果")
+    ai_gateway: AiGatewayStatus | None = Field(
+        None, description="AI 网关就绪态，同 GET /v1/admin/ai-gateway"
+    )
+
+
+class FrontendConfigOut(BaseModel):
+    """前端启动配置。
+
+    只暴露前端确实需要的开关，**不含任何密钥**；`auth_bypass` 在生产必须是 0。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    api_version: str | None = Field(None, description="接口版本号")
+    uc_sdk_url: str | None = Field(None, description="用户中心 SDK 地址")
+    uc_env: str | None = Field(None, description="用户中心环境")
+    uc_component_host: str | None = Field(None, description="用户中心组件域名")
+    uc_api_host: str | None = Field(None, description="用户中心接口域名")
+    auth_bypass: bool | int | None = Field(
+        None, description="是否跳过审核门禁；**生产必须为 0**"
+    )
+    review_required: bool | int | None = Field(
+        None, description="0=修改直写生效；1=进待审队列"
+    )
+    llm_enabled: bool | None = Field(None, description="AI 网关是否可用；false 时 AI 功能走规则兜底")
+    llm_model: str | None = Field(None, description="模型名；网关不可用时为 null")
+
+
+class SharedSkill(BaseModel):
+    """多个对口岗位共同要求的技能。命中岗位越多，越是这个专业的「专业基本功」。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    skill_key: str | None = Field(None, description="技能聚合主键")
+    name: str | None = Field(None, description="技能名")
+    category: str | None = Field(None, description="技能大类")
+    occupation_count: int | None = Field(
+        None, ge=0, description="有多少个对口岗位要求它"
+    )
+    max_required_level: int | None = Field(
+        None, ge=1, le=5, description="这些岗位里要求最高的档 1–5"
+    )
+
+
+class CapabilityMeta(BaseModel):
+    """能力全景的查询口径。"""
+
+    matched: int = Field(0, description="是否命中专业：0=没找到，其余字段为空")
+    occupation_count: int = Field(0, ge=0, description="对口岗位数")
+    skill_total: int = Field(0, ge=0, description="技能总数")
+    skills_included: bool = Field(
+        False, description="是否下钻返回了技能明细；默认 false，数据量大"
+    )
+    progression_count: int = Field(0, ge=0, description="晋升链条数")
+    shared_skill_count: int = Field(0, ge=0, description="共性技能数")
+    region: str | None = Field(None, description="地区")
+
+
+class CapabilityOut(BaseModel):
+    """专业能力全景：以一个专业为根，一次给出它的行业、对口岗位、晋升链与共性技能。
+
+    前半段（node_types / rel_types / regions / endpoints）是服务能力自描述，
+    与查的是哪个专业无关；后半段才是这次查询的结果。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    node_types: list[str] = Field(default_factory=list, description="支持的节点类型")
+    rel_types: list[str] = Field(default_factory=list, description="支持的关系类型")
+    regions: list[str] = Field(default_factory=list, description="已有数据的地区")
+    endpoints: list[str] = Field(default_factory=list, description="主要查询入口")
+    counts: dict[str, int] = Field(default_factory=dict, description="各类型节点数")
+    root: KgNode | None = Field(None, description="作为根的专业节点；没匹配到为 null")
+    industries: list[KgNode] = Field(
+        default_factory=list, description="该专业所属行业（major -belongs_to→ industry）"
+    )
+    occupations: list[KgNode] = Field(
+        default_factory=list, description="对口岗位（major -prepares_for→ occupation）"
+    )
+    progressions: list[ProgressionLink] = Field(
+        default_factory=list, description="岗位间的晋升链"
+    )
+    shared_skills: list[SharedSkill] = Field(
+        default_factory=list, description="多个对口岗位共同要求的技能，按命中岗位数降序"
+    )
+    meta: CapabilityMeta = Field(
+        default_factory=lambda: CapabilityMeta(), description="本次查询的口径与计数"
+    )
+
+
+class GraphIndustryBrief(BaseModel):
+    """图上的行业根节点。"""
+
+    id: str = Field(..., description="行业节点 id")
+    name: str | None = Field(None, description="行业名")
+    region: str | None = Field(None, description="地区")
+
+
+class GraphMajorNode(BaseModel):
+    """行业图里的专业层节点。"""
+
+    id: str = Field(..., description="专业节点 id")
+    name: str | None = Field(None, description="专业名")
+    occupation_count: int = Field(0, ge=0, description="对口岗位数；截断按它倒序，先丢弱关联的")
+
+
+class GraphLayers(BaseModel):
+    """行业图的分层节点。"""
+
+    majors: list[GraphMajorNode] = Field(default_factory=list, description="专业层")
+    occupations: list[GraphOccupationNode] = Field(
+        default_factory=list, description="岗位层"
+    )
+
+
+class IndustryGraphMeta(BaseModel):
+    """行业图的口径与截断说明。"""
+
+    matched: int = Field(0, description="是否命中行业：0=没找到，此时各层为空")
+    major_total: int = Field(0, ge=0, description="专业总数")
+    major_shown: int = Field(0, ge=0, description="本次返回的专业数")
+    occupation_total: int = Field(0, ge=0, description="岗位总数")
+    occupation_shown: int = Field(0, ge=0, description="本次返回的岗位数")
+    truncated: bool = Field(False, description="是否发生截断；true 表示你看到的不是全量")
+    layout: str | None = Field(None, description="布局：layered / matrix")
+    region: str | None = Field(None, description="地区")
+
+
+class IndustryGraphOut(BaseModel):
+    """行业图谱：行业 → 专业 → 岗位 三层 + 晋升链。"""
+
+    industry: GraphIndustryBrief | None = Field(None, description="行业根节点；没命中为 null")
+    layers: GraphLayers = Field(default_factory=GraphLayers, description="分层节点")
+    links: list[GraphLink] = Field(default_factory=list, description="层间连边")
+    progressions: list[ProgressionLink] = Field(
+        default_factory=list, description="同岗位族内按 level 递进的晋升链"
+    )
+    matrix: MajorOccupationMatrix | None = Field(
+        None, description="专业×岗位矩阵；仅 layout=matrix 时返回"
+    )
+    meta: IndustryGraphMeta = Field(
+        default_factory=IndustryGraphMeta, description="口径与截断说明"
+    )
+
+
+class SkillsGraphMeta(BaseModel):
+    """岗位技能图的口径。"""
+
+    matched: int = Field(0, description="是否命中岗位")
+    skill_total: int = Field(0, ge=0, description="技能总数")
+    category_count: int = Field(0, ge=0, description="技能大类数")
+    uncategorized: int = Field(0, ge=0, description="未分类的技能数")
+    prereq_total: int = Field(0, ge=0, description="前置关系数")
+    max_depth: int = Field(0, ge=0, description="前置层最大深度")
+    order: str | None = Field(None, description="排序口径说明")
+    region: str | None = Field(None, description="地区")
+
+
+class OccupationSkillsGraphOut(BaseModel):
+    """岗位技能图谱：技能按大类分区 + 区内前置关系。"""
+
+    occupation: GraphOccupationNode | None = Field(None, description="岗位摘要")
+    categories: list[SkillCategoryGroup] = Field(
+        default_factory=list,
+        description="技能大类分区，按学习顺序排；每区 skills[].depth 为前置层深（0=可直接学）",
+    )
+    prereqs: list[SkillPrereqLink] = Field(default_factory=list, description="前置关系边")
+    meta: SkillsGraphMeta = Field(default_factory=SkillsGraphMeta, description="口径说明")
+
+
+class NodeDetailOut(BaseModel):
+    """节点详情。
+
+    返回键随节点类型而变（技能有 levels / prereqs，岗位有 skills / majors），
+    这里列出全部可能键；`extra=allow` 兜住未列出的。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str | None = Field(None, description="节点 id")
+    type: str | None = Field(None, description="节点类型")
+    name: str | None = Field(None, description="名称")
+    skill_key: str | None = Field(None, description="技能聚合主键（技能详情）")
+    category: str | None = Field(None, description="技能大类")
+    levels: list[dict[str, Any]] | None = Field(
+        None, description="L1–L5 档位栅格，缺档的位置为空"
+    )
+    level_completeness: str | None = Field(None, description="档位完整度，形如「3/5」")
+    level_descriptions: dict[str, str] | None = Field(
+        None, description="各档能力描述，键为档位号"
+    )
+    occupations: list[NodeRef] | None = Field(None, description="引用该技能的岗位")
+    prereqs: list[NodeRef] | None = Field(None, description="前置技能")
+    unlocks: list[NodeRef] | None = Field(None, description="学完可解锁的技能")
+    counts: dict[str, int] | None = Field(None, description="关联计数")

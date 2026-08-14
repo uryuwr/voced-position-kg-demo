@@ -98,7 +98,7 @@ class PositionOut(BaseModel):
 class SkillLevelItem(BaseModel):
     level: int | None = Field(None, description="产品等级 1–5（1 了解 → 5 专家），唯一判定依据")
     level_label: str | None = Field(None, description="档位文案，取自 skill_level_meta")
-    node_id: str | None = None
+    node_id: str | None = Field(None, description="对应的图节点 id")
     description: str | None = Field(None, description="描述")
     status: str | None = Field(None, description="状态")
     weight: float | None = Field(None, description="权重")
@@ -131,7 +131,7 @@ class SkillOut(BaseModel):
     )
     available_levels: list[int] = Field(default_factory=list, description="已配齐的档位 1–5")
     missing_levels: list[int] = Field(default_factory=list, description="尚缺的档位 1–5")
-    counts: RelationCounts | None = None
+    counts: RelationCounts | None = Field(None, description="关联计数")
 
 
 class ProfessionListOut(PageMeta):

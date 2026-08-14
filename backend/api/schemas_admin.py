@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from backend.api.schemas import AppliedResult
 from backend.api.schemas_biz import SkillOut
 
 # ── AI 网关 ──────────────────────────────────────────────────
@@ -118,7 +119,7 @@ class ChangeApprovedOut(BaseModel):
 
     approved: Literal[True] = Field(..., description="固定 true")
     id: int = Field(..., description="变更单 id")
-    applied: dict[str, Any] | None = Field(
+    applied: AppliedResult | None = Field(
         None, description="实际落库的内容；结构随变更类型而异（建节点 / 改边 / 改属性）"
     )
 

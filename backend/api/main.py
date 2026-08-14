@@ -44,6 +44,12 @@ from backend.api.openapi_docs import (
     openapi_servers,
 )
 from backend.api.schemas import (
+    CapabilityOut,
+    FrontendConfigOut,
+    HealthOut,
+    IndustryGraphOut,
+    NodeDetailOut,
+    OccupationSkillsGraphOut,
     ArchiveEdgeResponse,
     AuthTempInfo,
     DocsLinks,
@@ -214,8 +220,9 @@ app.include_router(admin_biz_router)
     "/v1/config",
     tags=["系统"],
     summary="前端配置（UC SDK 等，无需登录）",
+    response_model=FrontendConfigOut,
 )
-def frontend_config() -> dict[str, Any]:
+def frontend_config() -> FrontendConfigOut:
     """对齐 bcs-ai-agent /api/v1/config；UC 项来自仓库根 .env。"""
     from backend import settings as app_settings
 
@@ -270,8 +277,8 @@ def root() -> ServiceDiscovery:
     )
 
 
-@app.get("/health", tags=["系统"], summary="健康检查（含 AI 网关就绪态）")
-def health() -> dict[str, Any]:
+@app.get("/health", tags=["系统"], summary="健康检查（含 AI 网关就绪态）", response_model=HealthOut)
+def health() -> HealthOut:
     pg = verify_connectivity()
     status = "ok" if pg.get("ok") else "degraded"
     from backend.agent.llm import gateway_info
@@ -835,6 +842,7 @@ def explore(
             },
         }
     },
+    response_model=CapabilityOut,
 )
 def capability(
     major: str | None = Query(
@@ -871,7 +879,7 @@ def capability(
         ),
     ),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> CapabilityOut:
     _ = user
     if not major and not major_id:
         raise HTTPException(status_code=400, detail="major or major_id required")
@@ -913,11 +921,12 @@ def capability(
     ),
     response_description="{ node, …（按类型的段）, counts, meta }",
     operation_id="kg_node_detail",
+    response_model=NodeDetailOut,
 )
 def api_kg_node_detail(
     id: str = Query(..., description="节点全局 id（含冒号，故用 query 传）"),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> NodeDetailOut:
     _ = user
     from backend.kg.pg_store.node_detail import node_detail
 
@@ -966,6 +975,7 @@ def api_industries_search(
     ),
     response_description="{ industry, layers{majors,occupations}, links[], progressions[], matrix?, meta }",
     operation_id="industry_graph",
+    response_model=IndustryGraphOut,
 )
 def api_industry_graph(
     industry_id: str | None = Query(None, description="行业节点全局 id（优先于 industry）"),
@@ -981,7 +991,7 @@ def api_industry_graph(
         pattern="^(layered|matrix)$",
     ),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> IndustryGraphOut:
     _ = user
     if not industry and not industry_id:
         raise HTTPException(status_code=400, detail="industry or industry_id required")
@@ -1013,13 +1023,14 @@ def api_industry_graph(
     ),
     response_description="{ occupation, categories[{key,skills[]}], prereqs[{from,to}], meta }",
     operation_id="occupation_skills_graph",
+    response_model=OccupationSkillsGraphOut,
 )
 def api_occupation_skills_graph(
     occupation_id: str = Query(..., description="岗位节点全局 id"),
     region: str | None = Query(None, description="区域：CN | EU | US；默认 CN"),
     limit: int = Query(200, ge=1, le=500, description="技能条数上限"),
     user: TempUser = Depends(require_temp_user),
-) -> dict[str, Any]:
+) -> OccupationSkillsGraphOut:
     _ = user
     data = occupation_skills_graph(occupation_id, region=region, limit=limit)
     if data.get("meta", {}).get("matched", 0) == 0:
@@ -1355,7 +1366,9 @@ def api_create_proposal(
     return ProposalOut.model_validate(
         create_proposal(
             body.kind,
-            body.payload,
+            body.payload.model_dump(exclude_none=True)
+            if hasattr(body.payload, "model_dump")
+            else body.payload,
             user_id=user.user_id,
             user_name=user.user_name,
         )
