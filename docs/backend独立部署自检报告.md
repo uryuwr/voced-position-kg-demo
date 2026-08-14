@@ -59,7 +59,9 @@ RuntimeError: Form data requires "python-multipart" to be installed.
 ### 5. `.env.example` 缺三个变量
 
 `settings.py` 读了但模板未列：`OPENQ_AI_MANAGER`（用户画像服务地址，留空则匹配度只用测评画像）、`API_VERSION`、`DEBUG`。部署方照模板配会漏掉画像服务。
-（`BCS_SDP_APP_ID`、`openq-ai-manager` 是同名别名，不必单列。）
+（`BCS_SDP_APP_ID` 是 `SDP_APP_ID` 的别名，不必单列。）
+
+> 补记 2026-08-14：`openq-ai-manager` 这个连字符别名**已从 `settings.py` 删除**，`.env` 也统一成 `OPENQ_AI_MANAGER`。原因见 `docs/SDP配置中心接入调研.md` 9.1 —— 配置中心的扁平化只做 `upper()` 不转连字符，连字符键会下发成 `OPENQ-AI-MANAGER` 而读不到，功能静默降级。
 
 ### 6. `requirements.txt` 两处注释已过时
 

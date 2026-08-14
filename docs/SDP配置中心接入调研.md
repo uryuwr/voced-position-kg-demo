@@ -3,6 +3,8 @@
 调研日期：2026-08-14 · 参考实现：`D:\workspace\bcs-ai-agent`（`src/agent/core/sdp_config_client.py`，373 行）
 状态：**仅调研，未改任何代码。**
 
+前提：本仓库将转 private，`backend/` 最终整体迁到内网独立仓库 **`voced-position-kg`**（SDP 颗粒同名，已建，见第 9 条）。所以本文所有判断的落点是「搬过去之后还成不成立」，而不是「在当前仓库能不能跑」。已完成的 P1 修复（Dockerfile 只 COPY `backend/`、两种 build 上下文都通）正是为这次搬迁铺路 —— 迁过去后 backend 无论是仓库根还是子目录，构建都不用改。
+
 ## 一、bcs-ai-agent 是怎么做的
 
 一句话：**启动时用一个 secret 去 Spring Cloud Config Server 拉一份配置，扁平化成大写下划线的环境变量写进 `os.environ`，后面所有配置读取照旧走环境变量。** 配置中心只是「环境变量的另一个来源」，业务代码零感知。
@@ -92,11 +94,46 @@
 - `backend/.env.example`：加 SDP 段（只有 `SDP_CLOUD_CONFIG_SECRET=` 和注释，**不要填值**）
 - `tests/_e2e_server.py` 的模块 docstring：它改 `settings` 模块属性的做法仍然有效，但注释里的因果解释要更新
 
-### 9. 前置：需要先确认的三件事
+### 9. 前置条件 —— 已用 sdp-portal-cli 查清，大部分已就绪
 
-1. **本项目在 SDP 上的应用名**（`SDP_APP_NAME`）—— 未知，要去 Portal 查或新建
-2. **颗粒配置中心 secret** —— 要在 Portal 申请
-3. **配置文件与 profile** —— 在 Portal 建好 `development` / `preproduction` / `product` 三档，label `master`
+SDP 颗粒 **`voced-position-kg`** 已存在，PYTHON / K8S_IMAGE，与 bcs-ai-agent 同型：
+
+- appId `6a79477d81abbd168b76aed2`
+- `SDP_APP_NAME` 即 `voced-position-kg`
+
+| 环境 | `--env-type` | `--env-id`(oid) | 开通 | 配置中心账密 | 配置文件 |
+|---|---|---|---|---|---|
+| development | 1 | `6a79477f81abbd168b76aed4` | ✅ | ✅ 已创建 | ❌ 空 |
+| test | 2 | `6a79477f81abbd168b76aed5` | ❌ 未开通 | — | — |
+| preproduction | 5 | `6a79477f81abbd168b76aed6` | ✅ | ✅ 已创建 | ❌ 空 |
+| product | 8 | `6a79477f81abbd168b76aed7` | ✅ | ✅ 已创建 | ❌ 空 |
+
+### 9.1 development 配置已写入（2026-08-14 实操）
+
+`backend/.env` 的 27 个键已同步进 development 的 `application` 文件（label `master`），`config fetch` 读回逐键核对 **27/27 一致，零丢失**。写入时做的 4 处调整：
+
+| 项 | `.env` 原值 | 写入值 | 原因 |
+|---|---|---|---|
+| `SERVE_DEV_UI` | `1` | `0` | 镜像不含 `frontend/` |
+| `openq-ai-manager` | 小写连字符 | `OPENQ_AI_MANAGER` | 扁平化只做 `upper()` 不转连字符，会得到 `OPENQ-AI-MANAGER`，而 Linux 环境变量名大小写敏感，`settings.py` 读不到 |
+| `BTS_ACCOUNT` | 尾部 5 个空格 | 已 strip | 避免鉴权串带空格 |
+| `NEO4J_*` / `SQLITE_PATH` | 有 | 不写入 | `neo4j_store` 已无引用者 |
+
+`DATABASE_URL` 按原样写了 `localhost:5432` —— **容器里连不上**，上线前要换成 SDP 申请的 PG 实例地址。
+
+### 9.2 踩到的四个坑（都会再遇到，记下来）
+
+1. **`config update` 是 CLI v0.3.4 的 bug**。`dist/src/commands/config.js` 里它把 `envId` 用驼峰塞进 body，而服务端和其它所有命令都用 `query: { env_id }`，直接调必报 `envId may not be empty`。本机已打补丁（原文件备份 `D:\tmp\config.js.bak`），**升级 CLI 会被覆盖**
+2. **`file-delete` 需要门户账号**，API Key 认证会被拒；而 `file-create` 不是 upsert（文件已存在直接报错）。所以改内容只能靠 `update`，绕不开第 1 条
+3. **`config get` 返回 `undefined`，要用 `config fetch`**。`history` 也查不到这次写入（`total_elements: 0`）
+4. **配置中心存的是解析后的 kv，不是原始文本**：写进去的 YAML 会被按字母序重排，**注释全部丢失**。所以别指望在配置里写说明，注释要留在 `.env.example` 或本文档里
+
+### 9.3 还差的两步
+
+1. **secret 取真值** —— `config credential-get` 无论带不带 `--show-secret` 都返回 `null`（拿 bcs-ai-agent 作对照验证过：它线上明明在用 secret，同样返回 `null`），不带参数时显示的 `"***"` 只是 CLI 掩码。**所以从 CLI 无法判断 secret 是否已创建**，只能 `config credential-get-web` 开网页看。没有它就没法做端到端拉取验证
+2. **preproduction / product 的配置文件仍为空**，要等 dev 验证通过后再同步（值也不该照抄 dev）
+
+`test` 环境未开通；测试环境要跑得先 `apps env-open`。
 
 ## 三、平台凭据是否由 SDP 自动注入 —— 用 sdp-portal-cli 实查
 
@@ -121,19 +158,14 @@
 
 ### 由此修正的安全判断
 
-原先的担心（「把内网平台级凭据推到公网」）需要按实际权限模型收敛：
+先前按「public 仓库」提的三方案已作废 —— 本仓库将转 private，且 backend 最终迁到内网的 `voced-position-kg`。结论变成：**照抄 bcs 的写法即可，平台 Basic 账密与 SALT 直接写死常量，不必外置。**
 
-配置中心是**双层鉴权**——平台 Basic 只是第一道门，第二道 `x-sdp-cloud-config-token` 必须用**每个颗粒各自的 secret** 才算得出来。所以单独泄露平台 Basic 账密和 SALT，**并不能拉到任何一个颗粒的配置**；真正的密钥始终是 secret。
+两个理由：
 
-但仍不建议原样落进 public 仓库：这三个值是全平台共享的固定常量，公开等于替攻击者省掉一层，且一旦被平台方发现，很可能按安全事件处理。
+1. **权限模型上它们本就不是关键密钥。** 配置中心是双层鉴权，平台 Basic 只是第一道门，第二道 `x-sdp-cloud-config-token` 必须用每个颗粒各自的 secret 才算得出来。单独拿到平台 Basic 和 SALT 拉不到任何颗粒的配置
+2. **仓库不再公开。** 外置这三个常量的唯一收益是防公网泄露；转 private 后这个收益归零，却要多背 3 个部署期变量和一条"缺值就静默降级"的排查路径
 
-| 方案 | 说明 |
-|---|---|
-| **A（推荐）** 平台 Basic 账密与 SALT 从环境变量读、代码里只留键名 | 缺值就跳过 bootstrap 降级本地，与现有降级风格一致。代价：部署期变量从 2 个（secret + profile）变成 5 个 |
-| B 本仓库不落这份代码 | 配置中心接入只在内网私有仓库维护，public 仓库保持 `.env` 方案 |
-| C 仓库转私有 | 影响面超出本次改造 |
-
-⚠️ 另外提醒：bcs-ai-agent 的 `README.md:415` 把该颗粒的**真实 secret 明文写进了仓库文档**。本项目接入时，`.env.example` 和任何文档里都只留空键名。
+真正要守住的是 **secret 本身**：它绝不能进代码、进 `.env.example`、进任何文档，只能由 SDP 部署配置注入。⚠️ bcs-ai-agent 的 `README.md:415` 就把该颗粒的真实 secret 明文写进了仓库文档 —— 内网仓库也不该这么写，本项目别学。
 
 ## 四、工作量估计
 

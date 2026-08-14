@@ -90,10 +90,11 @@ BTS_SDP_APP_ID = os.getenv("BTS_SDP_APP_ID", "") or os.getenv("SDP_APP_ID", "")
 BTS_REQUEST_TIMEOUT = int(os.getenv("BTS_REQUEST_TIMEOUT", "30"))
 # 外部学习计划服务的路径（相对 BTS_API_ENDPOINT）；留空则学习计划走本地 mock
 LEARNING_PLAN_PATH = os.getenv("LEARNING_PLAN_PATH", "")
-# 用户画像服务（五维记忆），走 BTS 鉴权；留空则匹配度只用测评画像
-OPENQ_AI_MANAGER = (
-    os.getenv("OPENQ_AI_MANAGER", "") or os.getenv("openq-ai-manager", "")
-).rstrip("/")
+# 用户画像服务（五维记忆），走 BTS 鉴权；留空则匹配度只用测评画像。
+# 键名只认下划线：连字符写法（openq-ai-manager）过不了 SDP 配置中心——它的扁平化
+# 只做 upper() 不转连字符，会下发成 OPENQ-AI-MANAGER，而 Linux 环境变量名大小写
+# 与字符都敏感，这里就读不到，画像功能会静默降级。别再加回连字符别名。
+OPENQ_AI_MANAGER = os.getenv("OPENQ_AI_MANAGER", "").rstrip("/")
 
 
 def bts_configured() -> bool:
