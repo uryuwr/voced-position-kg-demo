@@ -7,17 +7,19 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
-# pool：agent/assessment/graph.py 的 PostgresSaver 连接池要 psycopg_pool
 psycopg[binary,pool]>=3.1.0
 httpx>=0.27.0
+# 简历上传 routes_student.py 的 UploadFile/File：FastAPI 在**导入期**就检查它，
+# 缺失不是降级而是整个服务起不来（RuntimeError: Form data requires "python-multipart"）
+python-multipart>=0.0.9
 
 # 学员诊断 Agent：AI 网关（OpenAI 兼容）+ LangGraph create_react_agent
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
 langgraph>=0.2.0
 openai>=1.40.0
-# 测评工作流的断点持久化；缺失会静默退回 MemorySaver（多 worker/重启即丢断点）
-langgraph-checkpoint-postgres>=2.0.0
+# 注：测评断点已改为业务表存储（见 agent/assessment/store.py），不再需要
+# langgraph-checkpoint-postgres / PostgresSaver
 
 # 简历解析 api/resume_parse.py：PDF 优先 pypdf，抽不出再回退 PyMuPDF
 pypdf>=4.0.0

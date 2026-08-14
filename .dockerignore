@@ -1,4 +1,4 @@
-# docker build 上下文是仓库根，但镜像只需要 backend/ 与 schemas/。
+# docker build 上下文是仓库根，但镜像只 COPY backend/。
 # 这里既为瘦身，也为**防止把密钥打进镜像**。
 
 # —— 密钥：backend/.env 是 override=True 加载的配置真源，
@@ -8,12 +8,12 @@
 .env.*
 !**/.env.example
 
-# Python
-__pycache__/
-*.py[cod]
+# Python（模式不递归，要写 ** 才能挡住 backend/**/__pycache__）
+**/__pycache__/
+**/*.py[cod]
 .venv/
 venv/
-*.egg-info/
+**/*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -27,6 +27,7 @@ reports/
 scripts/
 tests/
 data/
+schemas/
 design-system/
 830前台原型/
 知识图谱接口预研/

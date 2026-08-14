@@ -87,7 +87,7 @@ python -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8088
 ## Docker / SDP
 
 ```bash
-# 在仓库根
+# 在仓库根（上下文里只需有 backend/ 一个子目录，其余目录都不进镜像）
 docker build -f backend/Dockerfile -t voced-kg-api .
 docker run --rm -p 8088:8088 ^
   -e SERVE_DEV_UI=0 ^
@@ -98,6 +98,8 @@ docker run --rm -p 8088:8088 ^
 ```
 
 SDP：只发布 **backend 镜像 + 环境变量 + PG 连接**；不要打 crawlers、不要挂 frontend。
+
+base 镜像须 **Python 3.13+**（`api/schemas_assessment.py` 的联合类型里混了字符串前向引用，3.12 在 import 期就 `TypeError`）。仓库根的 `schemas/` 不进镜像，要对外暴露本体文件就挂卷：`-v $PWD/schemas:/app/schemas`。
 
 ## 配置（独立部署）
 
