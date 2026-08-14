@@ -72,3 +72,6 @@ reports/mock/*.pdf
 # 飞书 API 文档的目标 token（本地态，不同人不同文档）
 docs/.lark_api_doc
 .tmp_lark/
+
+# codegraph MCP 的本地索引（勿提交）
+.codegraph/
