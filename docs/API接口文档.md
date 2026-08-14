@@ -1,0 +1,3281 @@
+# 职业教育知识图谱 API
+
+版本 0.6.3　·　75 个端点（另有 21 个内部接口未收录）
+
+> 本文由 `scripts/openapi_to_md.py` 从 `/openapi.json` 生成，**不要手工编辑**。
+> 契约的唯一真源是代码里的 Pydantic 模型与路由注解；改代码后重新生成即可。
+>
+> 只收录**前端页面实际调用**的接口；运维、离线工具、内部调试接口不在此列。
+
+## 公共约定
+
+**鉴权**　所有 `/v1/**` 端点都走 UC MAC Token，请求头：
+
+| 请求头 | 必填 | 说明 |
+| --- | --- | --- |
+| `Authorization` | 是 | UC MAC Token；签名基于 `raw_path`（保留 %XX 编码） |
+| `X-User-Name` | | 可选展示名，中文需 `encodeURIComponent` |
+| `sdp-app-id` | 是 | 应用标识，由前端透传，服务端不写死 |
+
+以下端点文档中不再重复列出这几项。
+
+**状态可见性**　`published` 前后台都可见；`draft`/`disabled` 仅管理台可见；
+`archived` 是逻辑删除，任何接口都不返回。
+
+**技能等级**　产品档 1–5（1 了解 → 5 专家）。一个技能在库里是 5 个 `skill_level`
+节点，读路径按 `attrs.skill_key` 聚合成逻辑 bundle；「要求哪一档」由边指向哪个
+等级节点表达。
+
+---
+
+## 目录
+
+- 前台 · 岗位探索与详情（19）
+- 前台 · AI 诊断（11）
+- 前台 · 学习路径（4）
+- 前台 · 我的（3）
+- 管理台 · 运营看板（2）
+- 管理台 · 审核发布（5）
+- 管理台 · 技能多档（9）
+- 管理台 · 数据列表（8）
+- 系统（1）
+- 前台 · 图谱检索（8）
+- 管理台 · 数据维护（5）
+- 数据模型
+
+## 前台 · 岗位探索与详情
+
+### `GET` /v1/student/goal
+
+**当前学习目标岗位**
+
+对齐 state.goal；未设置返回 null。
+
+**响应**：`GoalOut`
+
+---
+
+### `PUT` /v1/student/goal
+
+**设定学习目标岗位**
+
+对齐 setGoal：锁定目标并记成就 first_goal。
+
+**请求体**：`GoalPutBody`
+
+**响应**：`GoalOut`
+
+---
+
+### `DELETE` /v1/student/goal
+
+**清除学习目标**
+
+对齐 clearGoal。传 occupation_id 只删该目标，否则清空全部。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `occupation_id` | query | string |  | 只清除该岗位目标 |
+
+**响应**：`ClearGoalOut`
+
+---
+
+### `GET` /v1/student/goal/diagnosed
+
+**已诊断/锁定过的岗位列表**
+
+「岗位学习与自适应路径」页的一级视图：列出该用户做过诊断或锁定过的岗位，每项带岗位基础信息（名称/职级/职责）、**当前匹配度**、**诊断时间**与测评次数。
+
+点某一项后再用 `GET /goal/overview?occupation_id=...` 取该岗位的详情卡片。
+
+**分页返回** `{items, total, page, page_size, pages}`：每换一次目标就多一条记录，合并/排序/切片都在 SQL 层完成。活跃目标置顶，其余按最近诊断时间倒序；刚锁定尚未测评的岗位 `match_score` 为 null，`plan_id` 未生成时为空串。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `page` | query | integer |  | ≥1，默认 `1` |
+| `page_size` | query | integer |  | ≥1，≤100，默认 `12` |
+
+**响应**：`DiagnosedOccupationListOut`
+
+---
+
+### `POST` /v1/student/goal/learning-plan
+
+**基于短板生成自适应学习计划（当前为 mock）**
+
+对应报告页「基于短板一键生成个人自适应学习计划」。
+
+**学习计划由外部服务生成**，本接口只负责调用它并把返回的 `plan_id`（uuid 字符串）与「学员 × 岗位」绑定入库（`biz_user_learning_plan`），同时写进该次诊断报告的 `learning_plan_id`，两处都能查。
+
+**调用方式**：配置了 BTS（`BTS_ENDPOINT`/`BTS_ACCOUNT`/`BTS_PASSWORD`）与 `LEARNING_PLAN_PATH` 时，走 **BTS 服务间鉴权**请求外部学习计划服务，取其返回的 `plan_id`，`source=bts`；
+
+未配置或外部服务报错时**降级**为本地生成 uuid、`source=mock`，并在 `upstream` 里带回原因——外部服务不可用不该挡住学员。
+
+**请求体**：`LearningPlanBody`
+
+**响应**：`LearningPlanCreatedOut`
+
+---
+
+### `GET` /v1/student/goal/learning-plans
+
+**我的学习计划关联记录**
+
+按岗位查该学员生成过的学习计划 id（内容在外部服务，这里只存关联）。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `occupation_id` | query | string |  |  |
+
+**响应**：`LearningPlanItem` 数组
+
+---
+
+### `GET` /v1/student/goal/overview
+
+**目标概览（当前目标 + 晋升路径 + 测评结果）**
+
+「岗位学习与自适应路径」页顶部卡片的数据源，一次取齐三块：
+
+- **当前活跃目标**：岗位名/职级/职责/归属专业、技能项数
+- **下一级成长目标**：沿 `advances_to` 的下一级岗位，及进阶需补的关键技能
+- **测评结果**：该用户针对**这个岗位**最近一次报告（匹配度/雷达/优势/短板）
+
+三者都按岗位绑定，换目标即换整套数据。
+
+注意：`advances_to` 边目前只覆盖约 1% 的岗位，多数情况下 `next_level` 为 null，前端应隐藏该区块而非报错。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `occupation_id` | query | string |  | 留空取当前活跃目标 |
+
+**响应**：`GoalOverviewOut`
+
+---
+
+### `GET` /v1/student/goals
+
+**我的全部目标（活跃 + 历史）**
+
+一人可锁定多个岗位目标，其中至多一个 `status=active`。换目标时旧目标转为 `archived` 而非删除，其测评结果与进度仍可回看。
+
+**响应**：`GoalItem` 数组
+
+---
+
+### `GET` /v1/student/industries
+
+**行业列表（分页）**
+
+探索筛选项；树形仍可用图检索 `GET /v1/industries/tree`。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `q` | query | string |  | 名称关键字 |
+| `page` | query | integer |  | ≥1，默认 `1` |
+| `page_size` | query | integer |  | ≥1，≤200，默认 `50` |
+| `region` | query | string |  | 默认 CN |
+
+**响应**：`IndustryListOut`
+
+---
+
+### `GET` /v1/student/meta/skill-categories
+
+**技能类目字典**
+
+**响应**：`SkillCategory` 数组
+
+---
+
+### `GET` /v1/student/meta/skill-levels
+
+**技能等级字典 L1–L5**
+
+对齐原型 SKILL_LEVEL_META：了解/掌握/熟练/精通/专家。
+
+**响应**：`SkillLevelMeta` 数组
+
+---
+
+### `GET` /v1/student/positions
+
+**岗位列表**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `q` | query | string |  |  |
+| `page` | query | integer |  | ≥1，默认 `1` |
+| `page_size` | query | integer |  | ≥1，≤100，默认 `20` |
+| `region` | query | string |  |  |
+
+**响应**：`PositionListOut`
+
+---
+
+### `GET` /v1/student/positions/match
+
+**岗位匹配度（岗位详情页用）**
+
+**级联取数，按证据强度从高到低**，命中即返回，不做无谓计算：
+
+| 优先级 | source | 来源 | 是否调模型 |
+| --- | --- | --- | --- |
+| 1 | `diagnosis` | 该用户对**这个岗位**最近一次诊断报告的 match_score | 否 |
+| 2 | `assessment` | 测评沉淀的实测技能画像（biz_user_skill）现算 | 否 |
+| 3 | `memory` | 五维记忆经图谱召回 + 模型定级推断 | **是**（约 5–10s） |
+| 4 | `none` | 无任何证据 | 否 |
+
+做过诊断就直接用报告里的数——它由学员实际作答算出，比任何实时推断都准，也省掉一次模型调用。因此**列表页不再展示匹配度**（避免整页触发模型），只在进入岗位详情时按需计算。
+
+算法与诊断报告同源：单项达标率 `min(用户档/要求档, 1)`，总分 `Σ(达标率×权重)/Σ权重×100`。`estimated=true` 表示是推断值而非实测。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `position_id` | query | string | 是 | 岗位节点 id（含冒号，用 query 传） |
+| `limit` | query | integer |  | 参与比对的技能条数上限（≥1，≤200，默认 `50`） |
+| `allow_memory` | query | boolean |  | 无实测证据时是否允许用五维记忆推断（会调模型，较慢）（默认 `True`） |
+
+**响应**：`PositionMatchOut`
+
+---
+
+### `GET` /v1/student/positions/skill-composition
+
+**岗位技能构成（query id，推荐）**
+
+逻辑技能 + weight_sum；权重只认 requires 边。id 含冒号时用本接口。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | query | string | 是 | 岗位节点 id |
+
+**响应**：`SkillCompositionOut`
+
+---
+
+### `GET` /v1/student/positions/{position_id}
+
+**岗位详情 + 技能要求**
+
+对齐 vPosition：岗位含 industries / counts；skills 默认按 skill_key 聚合为逻辑技能（含 levels / level_descriptions），前端无需再 group。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `position_id` | path | string | 是 |  |
+| `aggregate` | query | boolean |  | True=逻辑技能聚合；False=skill_level 扁平行（默认 `True`） |
+
+**响应**：`PositionDetailOut`
+
+---
+
+### `GET` /v1/student/professions
+
+**专业列表（探索首页）**
+
+对应原型「搜索专业 / 专业卡片列表」。底层 type=major。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `q` | query | string |  | 搜索专业 / 关键词 |
+| `page` | query | integer |  | ≥1，默认 `1` |
+| `page_size` | query | integer |  | ≥1，≤100，默认 `20` |
+| `region` | query | string |  |  |
+
+**响应**：`ProfessionListOut`
+
+---
+
+### `GET` /v1/student/professions/{profession_id}
+
+**专业详情 + 岗位 + 成长阶梯**
+
+对齐 vProfession：专业信息、对口岗位、ladder。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `profession_id` | path | string | 是 |  |
+
+**响应**：`ProfessionDetailOut`
+
+---
+
+### `GET` /v1/student/skills
+
+**技能库列表（分页，默认逻辑技能聚合）**
+
+view=bundle（默认）：按 skill_key 聚合，一页一行逻辑技能；view=level：原始 skill_level 扁平行。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `q` | query | string |  |  |
+| `page` | query | integer |  | ≥1，默认 `1` |
+| `page_size` | query | integer |  | ≥1，≤100，默认 `20` |
+| `region` | query | string |  |  |
+| `view` | query | string |  | bundle \| level（默认 `bundle`） |
+| `occupation_id` | query | string |  | 仅该岗位 requires 覆盖的技能 |
+| `has_level` | query | string |  | 至少含该档，如 L3 |
+
+**响应**：`SkillListOut`
+
+---
+
+### `GET` /v1/student/skills/bundles/{skill_key}
+
+**逻辑技能详情（L1–L5 聚合）**
+
+skill_key 或 bundle:{region}:{key}；返回 levels / level_descriptions / counts。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `skill_key` | path | string | 是 |  |
+| `region` | query | string |  |  |
+
+**响应**：`SkillOut`
+
+---
+
+## 前台 · AI 诊断
+
+### `POST` /v1/student/assessment/sessions/questions/stream
+
+**① 出题 · 一条长连接推完全部题目（SSE）**
+
+建会话 → 解析简历 → 规划题数 → 生成并**陆续推送全部题目**。
+
+事件顺序：`session` → `stage`(解析) → `plan`(含确定题数) → `stage`(出题) → `question` × N → `question_end`。
+
+前端把 `question` 事件压进本地队列，一次展示一道；收到 `question_end` 即表示题目出完（它是服务端的确定信号，比按题数判断可靠——模型出题失败降级时实际条数可能少于计划）。
+
+**请求体**：`StartBody`
+
+**响应**：`text/event-stream`（SSE 长连接）
+
+`text/event-stream`。每个事件的 `data` 是下列之一，按 `type` 区分：
+
+- `session` —— SseSessionEvent
+- `stage` —— SseStageEvent
+- `plan` —— SsePlanEvent
+- `question` —— SseQuestionEvent
+- `question_end` —— SseQuestionEndEvent
+- `error` —— SseErrorEvent
+
+---
+
+### `GET` /v1/student/assessment/sessions/{session_id}
+
+**测评 · 当前状态（刷新恢复）**
+
+三阶段状态 + 全部题目 + 已作答 + 下一道未答题。状态来自业务表（biz_assessment_question / biz_assessment_answer），刷新恢复只是两条普通查询。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `session_id` | path | integer | 是 | 测评会话 id（≥1） |
+| `occupation_id` | query | string |  | 兜底目标岗位；会话已落库岗位时以库为准 |
+
+**响应**：`AssessmentStateOut`
+
+---
+
+### `POST` /v1/student/assessment/sessions/{session_id}/answers
+
+**② 答题 · 提交一题（即答即走）**
+
+选择题**当场判分**（选项自带档位，纯查表）；问答题落库后交后台线程判分，接口立即返回——学员不该为了等模型判分卡在这一题上。
+
+返回 `progress.grading` 表示还有几道在后台判分；结算接口会等它们收尾。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `session_id` | path | integer | 是 | 测评会话 id（≥1） |
+
+**请求体**：`AnswerBody`
+
+**响应**：`AnswerAcceptedOut`
+
+---
+
+### `POST` /v1/student/assessment/sessions/{session_id}/report/stream
+
+**③ 结算 · 生成综合能力报告（SSE）**
+
+等待后台判分收尾（推 `stage` 进度），再聚合实测结果与岗位标准，产出匹配度 / 双系列雷达 / 优势 / 短板，并落库到诊断报告。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `session_id` | path | integer | 是 | 测评会话 id（≥1） |
+| `occupation_id` | query | string |  | 兜底目标岗位；会话已落库岗位时以库为准，此参数忽略 |
+
+**响应**：`text/event-stream`（SSE 长连接）
+
+`text/event-stream`。事件按 `type` 区分：`stage`（判分进度）→ `report`（完整报告）；异常走 `error`。
+
+---
+
+### `POST` /v1/student/diagnosis/chat/sessions
+
+**开启对话测评会话**
+
+对齐 vDiagChat：创建会话并返回首问。
+
+**请求体**：`ChatSessionBody`
+
+**响应**：`ChatSessionOut`
+
+---
+
+### `POST` /v1/student/diagnosis/chat/sessions/{session_id}/messages
+
+**提交对话回答**
+
+学员回复后规则打分并结束会话，返回报告。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `session_id` | path | integer | 是 |  |
+
+**请求体**：`ChatMessageBody`
+
+**响应**：`ChatMessageOut`
+
+---
+
+### `GET` /v1/student/diagnosis/report
+
+**能力诊断报告**
+
+对齐 vDiagReport：匹配度、雷达、缺口。可按 session_id 或最近一次。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `session_id` | query | integer |  |  |
+| `occupation_id` | query | string |  | 无报告时按画像+岗位现算 |
+
+**响应**：`DiagnosisReportOut`
+
+---
+
+### `POST` /v1/student/diagnosis/resume
+
+**简历智能诊断**
+
+对齐 vDiagResume：粘贴简历 → 规则解析技能 → 可选对标岗位出报告。
+
+**请求体**：`ResumeDiagBody`
+
+**响应**：`DiagnosisReportOut`
+
+---
+
+### `POST` /v1/student/diagnosis/resume/extract
+
+**上传简历文件 · 仅抽取文本（不触发诊断）**
+
+测评工作流的第 1 步需要的是**简历原文**，随后由工作流自己解析画像；而 `POST /diagnosis/resume/upload` 会直接跑完旧的一次性诊断流程，两者副作用不同，故单独提供一个只抽文本的入口（共用同一个解析器）。
+
+支持 PDF / DOCX / TXT，≤20MB；扫描件类图片型 PDF 提取不到文字会返回 400。
+
+**响应**：`ResumeExtractOut`
+
+---
+
+### `GET` /v1/student/diagnosis/resume/sample
+
+**范例简历（一键体验用）**
+
+对应原型「使用标准范例简历一键体验解析」。范例文本刻意使用库内真实存在的技能名（配料准备 / 搅拌操作 / 泵送操作 …），因此解析后能命中技能库并算出有意义的匹配度。
+
+**响应**：`ResumeSampleOut`
+
+---
+
+### `POST` /v1/student/diagnosis/resume/upload
+
+**上传简历文件诊断（PDF / DOCX / TXT）**
+
+对应原型「拖拽简历文件到此处」：`multipart/form-data` 上传，服务端抽取文本后走与 `POST /diagnosis/resume` 相同的诊断流程。
+
+- 支持 **PDF / DOCX / TXT**，单文件 ≤ 20MB
+- PDF 优先 pypdf 抽取，失败回退 PyMuPDF；**扫描件/图片型 PDF 无法提取文字**，此时返回 400 并提示改用文本粘贴
+- 未显式传 `target_occupation_id` 时自动取当前锁定目标岗位
+
+返回结构与 `POST /diagnosis/resume` 一致，额外带 `source_file`。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `target_occupation_id` | query | string |  | 对标岗位 id；缺省取当前锁定目标 |
+
+**响应**：`DiagnosisReportOut`
+
+---
+
+## 前台 · 学习路径
+
+### `GET` /v1/student/learn/path
+
+**当前学习路径**
+
+对齐 vLearnPath / vLearnCenter 路径进度。
+
+**响应**：`LearningPathOut`
+
+---
+
+### `POST` /v1/student/learn/path/generate
+
+**按目标/诊断生成学习路径**
+
+缺口技能优先；无 goal 时 body.occupation_id 必填。
+
+**请求体**：`PathGenerateBody`
+
+**响应**：`LearningPathOut`
+
+---
+
+### `GET` /v1/student/learn/resources
+
+**学习资源列表**
+
+对齐资源卡片；当前映射 KG course 节点。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `skill_id` | query | string |  | 关联技能 id（提示用） |
+| `q` | query | string |  | 资源标题关键字 |
+| `page` | query | integer |  | ≥1，默认 `1` |
+| `page_size` | query | integer |  | ≥1，≤100，默认 `20` |
+
+**响应**：`ResourceListOut`
+
+---
+
+### `POST` /v1/student/learn/steps/{step_id}/complete
+
+**完成学习步骤**
+
+对齐「已标记学完」。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `step_id` | path | integer | 是 |  |
+
+**响应**：`LearningPathOut`
+
+---
+
+## 前台 · 我的
+
+### `GET` /v1/student/me
+
+**我的主页摘要**
+
+对齐 vMe：目标、成长值、徽章、技能画像、当前路径。
+
+**响应**：`MeOut`
+
+---
+
+### `GET` /v1/student/me/badges
+
+**成就定义列表**
+
+全部徽章配置；已解锁见 GET /me.badges。
+
+**响应**：`BadgeDefOut` 数组
+
+---
+
+### `GET` /v1/student/me/skills
+
+**我的技能画像**
+
+**响应**：`UserSkillItem` 数组
+
+---
+
+## 管理台 · 运营看板
+
+### `GET` /v1/admin/ai-gateway
+
+**AI 网关就绪态（非 UC）**
+
+**响应**：`AiGatewayOut`
+
+---
+
+### `GET` /v1/admin/dashboard/summary
+
+**运营看板摘要**
+
+**响应**：`AdminDashboardOut`
+
+---
+
+## 管理台 · 审核发布
+
+### `GET` /v1/admin/changes
+
+**待审变更列表**
+
+队列内仅待审；通过/驳回后记录删除。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `dim_type` | query | string |  | 按四维类型过滤 |
+| `limit` | query | integer |  | ≥1，≤200，默认 `50` |
+
+**响应**：`ChangeOut` 数组
+
+---
+
+### `POST` /v1/admin/changes
+
+**提交变更（默认直写；REVIEW_REQUIRED=1 时进待审）**
+
+四维节点与边的 新建/编辑/删除/停用/发布 均走此接口。
+
+- **REVIEW_REQUIRED=0（默认）**：服务端立即写主库，`status=applied`，发布仍受 BR 门禁；不入待审队列。
+- **REVIEW_REQUIRED=1**：入待审，须 approve 后生效。
+
+**请求体**：`ChangeSubmitBody`
+
+**响应**：`ChangeOut`
+
+---
+
+### `POST` /v1/admin/changes/{change_id}/approve
+
+**审核通过并生效**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `change_id` | path | integer | 是 |  |
+
+**响应**：`ChangeApprovedOut`
+
+---
+
+### `POST` /v1/admin/changes/{change_id}/reject
+
+**驳回（删除待审记录）**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `change_id` | path | integer | 是 |  |
+
+**响应**：`ChangeRejectedOut`
+
+---
+
+### `GET` /v1/admin/edges/review
+
+**低置信/AI 边抽检列表**
+
+默认 confidence=ai_inferred；可筛 prepares_for / requires。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `confidence` | query | string |  | 默认 `ai_inferred` |
+| `rel_type` | query | string |  |  |
+| `page` | query | integer |  | ≥1，默认 `1` |
+| `page_size` | query | integer |  | ≥1，≤100，默认 `20` |
+| `region` | query | string |  | 默认 `CN` |
+
+**响应**：`EdgeReviewListOut`
+
+---
+
+## 管理台 · 技能多档
+
+### `GET` /v1/admin/skills
+
+**逻辑技能列表（管理端，含草稿）**
+
+按 skill_key 聚合。默认 scope=manage 可见 draft/disabled；可按 status=published|draft|disabled 筛选。含聚合 status 字段。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `q` | query | string |  |  |
+| `page` | query | integer |  | ≥1，默认 `1` |
+| `page_size` | query | integer |  | ≥1，≤100，默认 `20` |
+| `region` | query | string |  | 默认 `CN` |
+| `status` | query | string |  | published\|draft\|disabled；空=全部（不含 archived） |
+| `has_level` | query | string |  |  |
+| `occupation_id` | query | string |  |  |
+
+**响应**：`SkillBundleListOut`
+
+---
+
+### `POST` /v1/admin/skills
+
+**新建逻辑技能（一次多档，进待审）**
+
+提交 skill_key + levels.L1..L5 对象 + occupation_links（含 weight）。审核通过后拆成 N 条 skill_level，requires 边写入岗位侧权重。不直接写库。
+
+**请求体**：`SkillBundleBody`
+
+**响应**：`ChangeOut`
+
+---
+
+### `POST` /v1/admin/skills/preview
+
+**预览多档拆分结果（不写库、不进审）**
+
+**请求体**：`SkillBundleBody`
+
+**响应**：`SkillBundlePreviewOut`
+
+---
+
+### `PATCH` /v1/admin/skills/{skill_key}
+
+**更新逻辑技能（多档/岗链，进待审）**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `skill_key` | path | string | 是 |  |
+
+**请求体**：`SkillBundleBody`
+
+**响应**：`ChangeOut`
+
+---
+
+### `GET` /v1/admin/skills/{skill_key}
+
+**查询逻辑技能详情（聚合读）**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `skill_key` | path | string | 是 |  |
+| `region` | query | string |  | 默认 `CN` |
+
+**响应**：`SkillOut`
+
+---
+
+### `GET` /v1/admin/skills/{skill_key}/prerequisites
+
+**列出先修技能**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `skill_key` | path | string | 是 |  |
+| `region` | query | string |  | 默认 `CN` |
+
+**响应**：`PrereqOut` 数组
+
+---
+
+### `POST` /v1/admin/skills/{skill_key}/prerequisites
+
+**添加先修（无环校验）**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `skill_key` | path | string | 是 |  |
+
+**请求体**：`PrereqBody`
+
+**响应**：`PrereqOut`
+
+---
+
+### `PUT` /v1/admin/skills/{skill_key}/prerequisites
+
+**整体替换先修列表（无环）**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `skill_key` | path | string | 是 |  |
+
+**请求体**：`PrereqSetBody`
+
+**响应**：`PrereqOut` 数组
+
+---
+
+### `DELETE` /v1/admin/skills/{skill_key}/prerequisites/{prereq_key}
+
+**删除一条先修**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `skill_key` | path | string | 是 |  |
+| `prereq_key` | path | string | 是 |  |
+| `region` | query | string |  | 默认 `CN` |
+
+**响应**：`PrereqDeletedOut`
+
+---
+
+## 管理台 · 数据列表
+
+### `GET` /v1/admin/composition
+
+**技能构成（专业直连技能 / 岗位技能）**
+
+同时服务**专业**与**岗位**的技能构成页，字段对齐管理端原型。
+
+| 节点类型 | 关系 | 权重 |
+| --- | --- | --- |
+| `occupation` | `requires` | 有，可归一化 |
+| `major` | `covers`（E4） | **无**，专业技能不做归一化 |
+
+`node` 段为页面头部：所属行业 / 关联专业 / 职级 / 薪资 / 状态 / 版本 / 编码。
+每项技能返回 `available_levels`（该技能全部档）与 `selected_level`（当前选中档），前端即可渲染 L1–L5 档位按钮并高亮选中项。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `node_id` | query | string | 是 | 专业或岗位的节点 id（含冒号，用 query 传） |
+
+**响应**：`SkillCompositionAdminOut`
+
+---
+
+### `PUT` /v1/admin/composition
+
+**技能构成 · 添加或改档（幂等）**
+
+从已有技能中选一项加入构成，或改已有项的等级/权重。
+
+「选中等级」由**边指向哪个等级节点**表达，因此改档实现为先删该 skill_key 的旧边再建新边——对同一 skill_key 重复调用是幂等的。
+
+**一个技能只保留一个要求档**（高级天然含低级；同时挂多档会让管理台按边求和的权重与前台按 skill_key 聚合的权重对不上）。因此：
+- `mode=add`（添加入口）：该技能已存在则返回 **409**，附 `current_level`
+- `mode=set`（默认，改档入口）：直接替换档位/权重
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `node_id` | query | string | 是 | 专业或岗位的节点 id |
+| `mode` | query | string |  | set=改档（默认，覆盖）；add=新增（已存在则 409）（默认 `set`） |
+
+**请求体**：`CompositionSkillBody`
+
+**响应**：`SkillCompositionAdminOut`
+
+---
+
+### `DELETE` /v1/admin/composition
+
+**技能构成 · 移除一项技能**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `node_id` | query | string | 是 | 专业或岗位的节点 id |
+| `skill_key` | query | string | 是 | 要移除的逻辑技能名 |
+
+**响应**：`SkillCompositionAdminOut`
+
+---
+
+### `POST` /v1/admin/composition/normalize
+
+**技能构成 · 权重归一化（仅岗位）**
+
+把该岗位所有技能权重**等比缩放**到和为 1.00 —— 等比而非均分，保留运营已设定的相对重要性；末位吸收舍入误差以保证精确为 1.00。
+
+原权重全为空/0 时退化为均分（此时无从推断相对重要性）。
+**专业技能不带权重，调用会返回 400。**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `node_id` | query | string | 是 | 岗位节点 id |
+
+**响应**：`SkillCompositionAdminOut`
+
+---
+
+### `GET` /v1/admin/composition/options
+
+**技能构成 · 可选技能（支持按名称搜索）**
+
+技能构成抽屉底部下拉的数据源：按 `skill_key` 聚合的已有技能。
+
+- `q` 按**技能名模糊搜索**（技能上千条，下拉必须能搜）
+- 每项附 `available_levels`（该技能已配齐的档位）与 `level_completeness`，前端据此决定 L1–L5 哪些档可选
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `q` | query | string |  | 技能名关键字，模糊匹配 |
+| `region` | query | string |  | 区域，默认 CN（默认 `CN`） |
+| `limit` | query | integer |  | ≥1，≤200，默认 `50` |
+
+**响应**：`SkillOptionOut` 数组
+
+---
+
+### `GET` /v1/kg/edges
+
+**边列表（分页）**
+
+管理端边管理：按关系类型 / 端点节点 id / 端点名称检索。删节点后可按 `node_id` 查询，确认关联边是否已清空（total=0）。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `rel_type` | query | string |  | 关系类型：prepares_for\|requires\|belongs_to\|parent_of\|related_to\|… |
+| `node_id` | query | string |  | 匹配 src_id 或 dst_id（核对某节点关联边） |
+| `src_id` | query | string |  | 仅起点 id |
+| `dst_id` | query | string |  | 仅终点 id |
+| `q` | query | string |  | 端点名称或边 id 关键字 |
+| `status` | query | string |  | 状态过滤：published（默认只返回这个）\| draft \| archived \| disabled。归档边只留在库里、默认不返回；要核对或恢复时显式传 archived |
+| `scope` | query | string |  | manage=不限状态（管理端核对用）；缺省仅 published |
+| `page` | query | integer |  | ≥1，默认 `1` |
+| `page_size` | query | integer |  | ≥1，≤200，默认 `20` |
+
+**响应**：`EdgeListResponse`
+
+---
+
+### `GET` /v1/kg/node-detail
+
+**四维详情（行业 / 专业 / 岗位 / 技能）**
+
+管理台详情面板一站式取数，按节点 `type` 返回对应结构。字段对齐 `backend.html` 管理端原型，逐项依据见 `docs/管理台详情接口-原型对照.md`。
+
+| type | 返回段 |
+| --- | --- |
+| `industry` | `majors[]`（含各专业的岗位数）、`occupations[]`（直连岗位）、`counts` |
+| `major` | `industries[]`、`occupations[]`（含 level / skill_count / weight_sum）、`aggregated_skills[]`（**按被引用岗位数倒序**，含 required_level 与 used_by[]） |
+| `occupation` | `industries[]`、`majors[]`、`skills[]`（含 required_level / weight_pct / prereqs 先修 / levels 五档格）、`weight_sum` |
+| `skill_level` | `levels[]`、`level_completeness`、`occupations[]`（引用它的岗位）、`prereqs[]` 先修、`unlocks[]` 后继 |
+
+**可见状态**：published + draft + disabled；archived 不返回。
+
+> 聚合技能的 `used_by` 按岗位去重——同一技能在一个岗位下有 L1–L5 多个节点，只保留该岗位的最高要求档，避免同名岗位重复出现。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | query | string | 是 | 节点全局 id（含冒号，故用 query 传） |
+
+**响应**：`NodeDetailOut`
+
+---
+
+### `GET` /v1/kg/nodes
+
+**四维管理列表 · 分页列出节点**
+
+【对齐参考后台 backend.html / 本仓 Admin Table】
+
+按**维度 type** 分页列出节点，供管理表格使用（非图探索）。
+
+| 四维 | type 参数 |
+| --- | --- |
+| 行业 | `industry` |
+| 专业 | `major` |
+| 岗位 | `occupation` |
+| 技能 | `skill_level` |
+
+示例：
+- 专业第 1 页：`GET /v1/kg/nodes?type=major&page=1&page_size=20`
+- 岗位搜「软件」：`GET /v1/kg/nodes?type=occupation&q=软件&page=1`
+- 行业：`type=industry`；技能：`type=skill_level`
+
+返回 `items` + `total` + `page` + `page_size` + `total_pages`，前端可直接做分页器。
+
+说明：旧 Admin 曾用 `GET /v1/graph/explore?q=*&type=major&depth=0` 凑列表且**无服务端分页**（最多 500 条客户端翻页）；**新对接请用本接口**。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `type` | query | string |  | 维度/节点类型（管理 Table 必传其一）。四维：industry\|major\|occupation\|skill_level；也可 course\|credential。不传则混列所有类型（一般不推荐） |
+| `region` | query | string |  | 区域，默认 CN；all=不限 |
+| `q` | query | string |  | 名称关键字模糊搜索（可选）；不传或空=该维度全量分页 |
+| `status` | query | string |  | 按状态过滤：published\|disabled\|…；默认仅 published |
+| `scope` | query | string |  | 默认仅已发布（图谱 Table/探索/学员同源）。scope=manage 时管理控制台可看全状态（含停用） |
+| `page` | query | integer |  | 页码，从 1 开始（≥1，默认 `1`） |
+| `page_size` | query | integer |  | 每页条数，默认 20（≥1，≤200，默认 `20`） |
+| `include_counts` | query | boolean |  | True 时联读附加 counts（行业/专业/岗位）；岗位另带 industries（默认 `False`） |
+| `order_by` | query | string |  | 排序：`created_desc` 按创建时间倒序（**新建的排最前**，scope=manage 时的默认） \| `sort_order` 人工序（前台/图谱默认）\| `name` 按名称。注意：新建节点 sort_order 为空，用人工序会被排到最后一页 |
+
+**响应**：`NodeListResponse`
+
+---
+
+## 系统
+
+### `GET` /v1/config
+
+**前端配置（UC SDK 等，无需登录）**
+
+对齐 bcs-ai-agent /api/v1/config；UC 项来自仓库根 .env。
+
+**响应**：`FrontendConfigOut`
+
+---
+
+## 前台 · 图谱检索
+
+### `GET` /v1/capability
+
+**能力全景（专业 → 行业/岗位(层级) → 技能，渐进式）**
+
+面向「能力体系结构化全景」的聚合读接口，一次返回（仅 published）：
+
+| 层 | 关系 | 内容 |
+| --- | --- | --- |
+| 归属（上） | major -belongs_to-> industry | 该专业所属行业 |
+| 岗位（中） | major -prepares_for-> occupation | 对口岗位，含 `level` 岗位层级(1..N)、`skill_count` |
+| 技能（下） | occupation -requires-> skill_level | 每岗位技能明细，**默认不返回**，见 `include_skills` |
+| 晋升链 | occupation -advances_to-> occupation | `progressions[]`，同岗位族内按 level 递进派生 |
+| 共享技能 | — | `shared_skills[]`，被多个岗位共同要求，供侧栏展示（不画线） |
+
+**渐进式展示约定**：默认视图只回答「这个专业有哪些岗位、怎么晋升」，技能是二级信息。
+因此 `include_skills` 默认为 `false`——每个岗位只给 `skill_count` 角标，用户 hover 单个岗位时再调 `GET /v1/occupations/skills?occupation_id=...` 按需拉取，
+避免一次把上百条技能边全画出来导致图不可读。
+
+参数 `major` 与 `major_id` 二选一（`major_id` 优先）。`region` 枚举：`CN`|`EU`|`US`|`all`。
+
+> 注意：`progressions` 依赖 `occupation.level`。当前库内岗位主要来自「职业分类大典」，该源不含职级维度，故多数专业返回空数组；待企业职级/招聘级别数据接入后自动生效。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `major` | query | string |  | 专业名称关键字（与 major_id 二选一） |
+| `major_id` | query | string |  | 专业节点全局 id（优先于 major） |
+| `region` | query | string |  | 区域枚举：CN \| EU \| US \| all(不限)；默认 CN |
+| `limit_occupations` | query | integer |  | 岗位数上限（≥1，≤1000，默认 `200`） |
+| `limit_skills_per_occ` | query | integer |  | 每个岗位返回技能数上限（仅 include_skills=true 时生效）（≥1，≤500，默认 `80`） |
+| `include_skills` | query | boolean |  | 是否下发每个岗位的技能明细。默认 false（渐进式折叠）：`occupations[].skills` 为空数组，只给 `skill_count`；true 时恢复全量返回，适合导出/离线分析等一次取全的场景（默认 `False`） |
+| `include_progression` | query | boolean |  | 是否返回岗位晋升链 progressions[]（advances_to，派生）（默认 `True`） |
+| `shared_skill_min_occ` | query | integer |  | 共享技能阈值：被 >= N 个岗位共同要求的技能收进 shared_skills[]（按 occ_count 倒序）；0 = 不计算（可省一次技能明细扫描）（≥0，≤50，默认 `2`） |
+
+**响应**：`CapabilityOut`
+
+---
+
+### `GET` /v1/industries/search
+
+**行业模糊搜索（平铺，供选择行业的下拉框）**
+
+行业**平铺**返回，不区分大类/子行业——交互上用户直接搜一个行业选中即可。
+
+每项附 `major_count` / `occupation_count`，便于下拉里提示规模、避免用户选到空行业。
+排序：名称前缀命中优先 → 专业数倒序 → 名称。`q` 为空时按专业数倒序列出。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `q` | query | string |  | 行业名关键字，模糊匹配；空=按规模列出 |
+| `region` | query | string |  | 区域：CN \| EU \| US \| all；默认 CN |
+| `limit` | query | integer |  | 返回条数上限（≥1，≤200，默认 `30`） |
+
+**响应**：object[]
+
+---
+
+### `GET` /v1/industries/tree
+
+**行业树**
+
+industry 节点 + parent_of 边（父→子）。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `region` | query | string |  | 区域，默认 CN |
+| `limit` | query | integer |  | 行业节点上限（≥1，≤2000，默认 `500`） |
+
+**响应**：`IndustryTreeResponse`
+
+---
+
+### `GET` /v1/industry-graph
+
+**行业关联图（行业 → 专业 → 岗位，只到岗位层）**
+
+面向「选定一个行业 → 看三层关联图」的主视图接口。**只画到岗位层**，技能是二级信息，点岗位后另调 `GET /v1/occupation-skills-graph`。
+
+与通用 `explore/expand` 的区别：按层组织（`layers.majors` / `layers.occupations`），前端不必自己判层；且由服务端按层截断并在 `meta.truncated` 告知，避免超大行业撑爆画布（专业数中位数 12，但最大 292）。
+
+`layout=matrix` 时额外返回 `matrix`（热力图：行=专业、列=岗位）。
+强度 `metric=skill_affinity`：该岗位的技能与**同专业其他对口岗位**的重合总量，即「这个岗位在多大程度上代表该专业的主流技能」。
+（未采用「专业与岗位的共有技能数」，因为 `covers`（专业→技能）边当前为 0 条。）
+
+`progressions` 为岗位晋升链，只含两端都在当前画布内的 `advances_to` 真边。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `industry_id` | query | string |  | 行业节点全局 id（优先于 industry） |
+| `industry` | query | string |  | 行业名关键字（与 industry_id 二选一） |
+| `region` | query | string |  | 区域：CN \| EU \| US \| all；默认 CN |
+| `limit_majors` | query | integer |  | 专业层上限，按对口岗位数倒序截断（≥1，≤300，默认 `20`） |
+| `limit_occupations_per_major` | query | integer |  | 每个专业取几个岗位，按技能数倒序（≥1，≤50，默认 `8`） |
+| `layout` | query | string |  | 展示形态：layered=垂直分层图（默认）；matrix=热力图（附加 matrix 字段）（默认 `layered`） |
+
+**响应**：`IndustryGraphOut`
+
+---
+
+### `GET` /v1/node
+
+**节点详情（query id，推荐）**
+
+`GET /v1/node?id=CN:major:…`，避免 path 中冒号被编码导致 UC MAC 校验失败。默认仅 published；管理端编辑请加 `scope=manage`。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | query | string | 是 | 节点全局 id |
+| `include_counts` | query | boolean |  | 附加关联 counts（联读）（默认 `False`） |
+| `include_links` | query | boolean |  | 附加 industry_ids/major_ids/occupation_ids（默认 `False`） |
+| `scope` | query | string |  | scope=manage 时允许 draft/disabled，并默认带 link_ids |
+
+**响应**：`KgNode`
+
+---
+
+### `GET` /v1/nodes/{node_id}
+
+**节点详情**
+
+按全局 id 取单节点档案。id 含冒号时建议用下方 query 接口。默认仅 published（BR-07）；`scope=manage` 可读草稿/停用（管理端编辑）。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `node_id` | path | string | 是 |  |
+| `include_counts` | query | boolean |  | 附加关联 counts（联读）（默认 `False`） |
+| `include_links` | query | boolean |  | 附加 industry_ids/major_ids/occupation_ids（编辑用）（默认 `False`） |
+| `scope` | query | string |  | scope=manage 时允许 draft/disabled，并默认带 link_ids |
+
+**响应**：`KgNode`
+
+---
+
+### `GET` /v1/occupation-skills-graph
+
+**岗位技能图谱（按分类分区 + 前置关系）**
+
+点击岗位后的二级视图：技能按 `category` 分区，区内给出前置关系箭头。
+
+`categories[].key` 取自 `kg_node.category`，按国家职业技能标准的「职业功能」维度划分（安全与环保 / 作业准备 / 操作与加工 / 设备维护与检修 / 质量与检验 / 数据与信息 / 服务与业务 / 技术管理与创新 / 运营与管理 / 培训与指导）；未分类技能归入 `未分类` 分区并排在最后。
+
+`prereqs` 来自 `kg_skill_prereq`，**只含两端都在本岗位技能集内的边**，避免画出指向岗位外技能的孤立箭头。方向为 `from`(先修) → `to`(后继)。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `occupation_id` | query | string | 是 | 岗位节点全局 id |
+| `region` | query | string |  | 区域：CN \| EU \| US；默认 CN |
+| `limit` | query | integer |  | 技能条数上限（≥1，≤500，默认 `200`） |
+
+**响应**：`OccupationSkillsGraphOut`
+
+---
+
+### `GET` /v1/occupations/skills
+
+**岗位 → 技能列表**
+
+关系 requires。默认 `aggregate=true`：按 skill_key 聚合为逻辑技能 （含 levels / required_level / level_descriptions）；`aggregate=false` 返回 skill_level 扁平行（KgNodeWithEdge）。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `occupation_id` | query | string |  | 岗位节点全局 id |
+| `q` | query | string |  | 岗位名称关键字 |
+| `region` | query | string |  | 区域，默认 CN |
+| `limit` | query | integer |  | 最多返回条数（≥1，≤200，默认 `50`） |
+| `aggregate` | query | boolean |  | True=按 skill_key 聚合逻辑技能；False=skill_level 扁平行（默认 `True`） |
+
+**响应**：any[]
+
+---
+
+## 管理台 · 数据维护
+
+### `POST` /v1/kg/edges
+
+**新建边**
+
+请求体见 Schema `EdgeCreate`。默认 status=draft；src_id/dst_id 须已存在。
+
+**请求体**：`EdgeCreate`
+
+**响应**：`KgEdge`
+
+---
+
+### `DELETE` /v1/kg/edges/{edge_id}
+
+**归档边（软删）**
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `edge_id` | path | string | 是 |  |
+
+**响应**：`ArchiveEdgeResponse`
+
+---
+
+### `POST` /v1/kg/nodes
+
+**新建节点**
+
+请求体见 Schema `NodeCreate`。默认 status=draft。【鉴权】业务接口需 `Authorization: MAC ...`（UC 登录后由 SDK 生成）。开发可用 AUTH_BYPASS=1 + 头 `X-Test-Uid` / `X-Test-Uname`。可选 `X-User-Name`（encodeURIComponent）补充展示名。
+
+**请求体**：`NodeCreate`
+
+**响应**：`KgNode`
+
+---
+
+### `PATCH` /v1/kg/nodes/{node_id}
+
+**编辑节点**
+
+请求体见 Schema `NodePatch`；只传需要改的字段。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `node_id` | path | string | 是 |  |
+
+**请求体**：`NodePatch`
+
+**响应**：`KgNode`
+
+---
+
+### `DELETE` /v1/kg/nodes/{node_id}
+
+**归档节点（软删）**
+
+将 status 置为 archived，不物理删除。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `node_id` | path | string | 是 |  |
+
+**响应**：`KgNode`
+
+---
+
+## 数据模型
+
+共 142 个模型，按名称排序。端点处的类型链接都指向这里。
+
+### AdminDashboardOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `kg_nodes` | integer |  | 图节点总数 |
+| `kg_edges` | integer |  | 图边总数 |
+| `nodes_by_type` | map<string, integer> |  | 各类型节点数，键为节点类型 |
+| `users_with_goal` | integer |  | 已锁定学习目标的用户数（默认 `0`） |
+| `diagnosis_sessions` | integer |  | 诊断会话数（默认 `0`） |
+| `learning_paths` | integer |  | 学习路径数（默认 `0`） |
+| `pending_proposals` | integer |  | 待审提案数（默认 `0`） |
+
+### AiGatewayOut
+
+> AI 网关连通状态。内测环境网关常为空，`enabled=false` 时所有 AI 功能走规则兜底。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | boolean | 是 | 网关是否就绪（地址、token、模型三者齐备） |
+| `base_url` | string |  | 网关地址；未配置为 null |
+| `model` | string |  | 模型名；未配置为 null |
+| `has_token` | boolean | 是 | 是否已配置访问 token（不回显 token 本身） |
+
+### AnswerAcceptedOut
+
+> 答题回执。选择题当场出档位，开放题只回执不给分。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `accepted` | boolean | 是 | 是否已记录；校验失败走 400 而不是 false |
+| `graded` | boolean | 是 | 是否已判分。选择题 true（纯查表）；开放题 false，判分在后台线程 |
+| `index` | integer | 是 | 题号，与请求一致（≥0.0） |
+| `level` | integer |  | 实测档位 1–5，仅 graded=true 时有值 |
+| `progress` | `ProgressOut` | 是 | 提交后的最新进度 |
+
+### AnswerBody
+
+> 提交一题。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `index` | integer | 是 | 题号（question.index）（≥0.0） |
+| `answer` | integer | string | 是 | 选择题传选项 value（int）；开放题传作答文本（str） |
+
+### AnswerRecordOut
+
+> 已作答记录（状态恢复用）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `index` | integer | 是 | 题号（≥0.0） |
+| `raw_answer` | string |  | 学员原始作答（选项 value 或文本） |
+| `level` | integer |  | 判定档位 1–5 |
+| `score` | integer |  | 判分得分 |
+| `grade_status` | `pending` \| `graded` \| `failed` | 是 | pending=后台判分中；graded=已判；failed=判分失败（按未测处理） |
+| `source` | string |  | 判分来源：choice=查表；llm=模型；rule=规则兜底 |
+| `evidence_score` | number |  | 证据充分度 0–1，开放题判分置信度 |
+| `capped` | boolean |  | 是否因证据不足被压档：作答说得很大但举证不足时不给高档 |
+| `reason` | string |  | 判分理由（模型给出） |
+
+### AppliedResult
+
+> 变更实际落库的结果。
+>
+> 与 `ChangePayload` 同理——建普通节点、建技能 bundle、改边三条路径返回的键
+> 各不相同，这里列出全部可能键（都是可选）并允许额外字段。
+>
+> `status=draft` + `gate` 一起出现时，表示写入成功但**发布门禁没过**，
+> 节点停在草稿态——这不是失败，前台看不到而已，要看 `gate.failed` 补数据。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `node` | `KgNode` |  | 落库后的节点对象 |
+| `nodes` | `KgNode`[] |  | 技能 bundle 一次建出的多个档位节点 |
+| `linked_edges` | `KgEdge`[] |  | 自动建出的边 |
+| `skill_bundle` | boolean |  | true=走的是技能 bundle 写入路径 |
+| `skill_key` | string |  | 技能聚合主键 |
+| `levels` | object[] |  | 各档明细 |
+| `bundle` | `SkillBundleBrief` |  | 聚合后的技能 bundle |
+| `status` | string |  | 落库后的状态；draft 表示门禁未过，停在草稿 |
+| `gate` | object |  | 发布门禁结果（同 PublishValidateOut）；仅未通过时出现 |
+| `deleted` | boolean |  | 删除类变更的结果 |
+
+### ArchiveEdgeResponse
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 边 ID |
+| `status` | `archived` |  | 归档后状态（默认 `archived`） |
+
+### AssessmentReportOut
+
+> 综合能力报告。
+>
+> 匹配度**只按实测到的技能算**：一次测评覆盖 6–10 项核心技能，若把没考到的
+> 技能按 0 分计入，分数会被稀释成一个既不反映能力、也无法改善的数字。
+> 覆盖率 `coverage` 就是这个分数的置信度说明，两者必须一起看。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `channel` | string |  | 产生渠道：assessment / resume / chat / profile |
+| `target_occupation_id` | string |  | 目标岗位节点 id |
+| `target_occupation_name` | string |  | 目标岗位名 |
+| `match_score` | number | 是 | 综合能力匹配度 0–100，仅按实测技能计 |
+| `coverage` | number | 是 | 本次测评覆盖的岗位技能权重百分比 0–100，是 match_score 的置信度 |
+| `radar` | `RadarOut` | 是 | 双系列雷达图数据 |
+| `strengths` | `ReportItem`[] |  | 优势项（已达标），按超出幅度降序 |
+| `gaps` | `ReportItem`[] |  | 短板项（未达标），按 urgency 降序 |
+| `untested` | `ReportItem`[] |  | 本次未覆盖的技能，按权重降序；不下能力结论 |
+| `items` | `ReportItem`[] |  | 全部技能明细（含未测） |
+| `counts` | `ReportCounts` | 是 | 分项计数 |
+| `summary` | string |  | 一句话结论 |
+| `created_at` | string |  | 生成时间 ISO8601 |
+
+### AssessmentStateOut
+
+> 测评当前状态，用于刷新恢复。
+>
+> 全部来自业务表两条普通查询，不依赖工作流存档——进程重启也能恢复。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `session_id` | integer | 是 | 会话 id |
+| `exists` | boolean | 是 | 是否已出过题；false 表示会话刚建还没开始 |
+| `occupation_id` | string |  | 本场测评对标的岗位 id |
+| `stages` | `StageOut`[] | 是 | 三阶段状态，顺序固定 parse/assess/report |
+| `current_stage` | `parse` \| `assess` \| `report` | 是 | 当前所处阶段 |
+| `questions` | `QuestionOut`[] |  | 本场全部题目 |
+| `answers` | `AnswerRecordOut`[] |  | 已作答记录 |
+| `question` | `QuestionOut` |  | 下一道未答题；全部答完为 null |
+| `progress` | `ProgressOut` | 是 | 答题进度 |
+| `question_end` | boolean | 是 | 题目是否已出完。库里有题即为 true——出题是一次性长连接，不会再追加 |
+| `report` | `AssessmentReportOut` |  | 综合能力报告；未结算为 null |
+
+### BadgeDefOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `code` | string | 是 | 编码 |
+| `name` | string | 是 | 名称 |
+| `description` | string |  | 描述 |
+| `points` | integer | 是 | 成长值/积分 |
+| `category` | string |  | 分类 |
+
+### CapabilityMeta
+
+> 能力全景的查询口径。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `matched` | integer |  | 是否命中专业：0=没找到，其余字段为空（默认 `0`） |
+| `occupation_count` | integer |  | 对口岗位数（≥0.0，默认 `0`） |
+| `skill_total` | integer |  | 技能总数（≥0.0，默认 `0`） |
+| `skills_included` | boolean |  | 是否下钻返回了技能明细；默认 false，数据量大（默认 `False`） |
+| `progression_count` | integer |  | 晋升链条数（≥0.0，默认 `0`） |
+| `shared_skill_count` | integer |  | 共性技能数（≥0.0，默认 `0`） |
+| `region` | string |  | 地区 |
+
+### CapabilityOut
+
+> 专业能力全景：以一个专业为根，一次给出它的行业、对口岗位、晋升链与共性技能。
+>
+> 前半段（node_types / rel_types / regions / endpoints）是服务能力自描述，
+> 与查的是哪个专业无关；后半段才是这次查询的结果。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `node_types` | string[] |  | 支持的节点类型 |
+| `rel_types` | string[] |  | 支持的关系类型 |
+| `regions` | string[] |  | 已有数据的地区 |
+| `endpoints` | string[] |  | 主要查询入口 |
+| `counts` | map<string, integer> |  | 各类型节点数 |
+| `root` | `KgNode` |  | 作为根的专业节点；没匹配到为 null |
+| `industries` | `KgNode`[] |  | 该专业所属行业（major -belongs_to→ industry） |
+| `occupations` | `KgNode`[] |  | 对口岗位（major -prepares_for→ occupation） |
+| `progressions` | `ProgressionLink`[] |  | 岗位间的晋升链 |
+| `shared_skills` | `SharedSkill`[] |  | 多个对口岗位共同要求的技能，按命中岗位数降序 |
+| `meta` | `CapabilityMeta` |  | 本次查询的口径与计数 |
+
+### ChangeApprovedOut
+
+> 变更通过。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `approved` | `True` | 是 | 固定 true |
+| `id` | integer | 是 | 变更单 id |
+| `applied` | `AppliedResult` |  | 实际落库的内容；结构随变更类型而异（建节点 / 改边 / 改属性） |
+
+### ChangeOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | integer | 是 | 节点 id |
+| `entity_kind` | string | 是 | 实体种类：node / edge |
+| `action` | string | 是 | 变更动作：create / update / delete |
+| `dim_type` | string |  | 维度类型：industry / major / occupation / skill |
+| `target_id` | string |  | 目标节点 id |
+| `title` | string |  | 标题 |
+| `payload` | `ChangePayload` |  | 变更内容；结构随 action 与 dim_type 而异（建节点的字段集与改边的完全不同） |
+| `status` | string |  | 状态（默认 `pending`） |
+| `created_by` | string |  | 提交人 id |
+| `created_by_name` | string |  | 提交人姓名 |
+| `created_at` | string |  | 创建时间 ISO8601 |
+| `applied` | `AppliedResult` |  | 实际落库的内容；结构随变更类型而异，未通过时为 null |
+| `direct` | boolean |  | true=直写生效；false=进待审队列 |
+| `review_required` | boolean |  | 是否开启审核（0=直写，1=进待审队列） |
+
+### ChangePayload
+
+> 变更内容。
+>
+> 真实形状随 `entity_kind` + `action` + `dim_type` 而变，无法收敛成单一结构，
+> 所以这里把**各分支可能出现的键**都列出来（都是可选），并允许额外字段。
+> 这样 Swagger 上看到的是真实键名，而不是一个 `any`。
+>
+> 建节点时传节点字段；关联关系用 `*_ids` 列表表达，服务端自动建边，
+> 客户端不需要自己构造 edge：
+>
+> - 专业 major → `industry_ids`（major -belongs_to→ industry）
+> - 岗位 occupation → `major_ids`（major -prepares_for→ occupation）
+> - 技能 skill_level → `occupation_ids`（occupation -requires→ skill）
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `type` | string |  | 节点类型：industry / major / occupation / skill_level |
+| `id` | string |  | 节点 id（编辑/删除时必填） |
+| `name` | string |  | 名称 |
+| `region` | string |  | 地区，默认 CN |
+| `status` | string |  | 状态；新建一律先落 draft，门禁通过才升 published |
+| `code` | string |  | 编码 |
+| `description` | string |  | 描述 |
+| `attrs` | object |  | 自由属性（无数据库约束的 JSON 列） |
+| `industry_ids` | string[] |  | 关联行业 id 列表（专业用） |
+| `major_ids` | string[] |  | 关联专业 id 列表（岗位用） |
+| `occupation_ids` | string[] |  | 关联岗位 id 列表（技能用） |
+| `skill_key` | string |  | 技能聚合主键（技能 bundle 用） |
+| `levels` | object |  | L1–L5 各档内容（技能 bundle 用），键为档位号 |
+| `src_id` | string |  | 边的源节点 id（entity_kind=edge） |
+| `dst_id` | string |  | 边的目标节点 id |
+| `rel_type` | string |  | 边的关系类型 |
+| `weight` | number |  | 边权重 |
+
+### ChangeRejectedOut
+
+> 变更驳回。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `rejected` | `True` | 是 | 固定 true |
+| `id` | integer | 是 | 变更单 id |
+| `deleted` | boolean | 是 | 变更单是否已删除 |
+
+### ChangeSubmitBody
+
+> 提交待审变更。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `entity_kind` | `node` \| `edge` | 是 | node\|edge |
+| `action` | `create` \| `update` \| `delete` \| `disable` \| `enable` | 是 | create 新建 / update 编辑 / delete 物理删除 / disable 停用 / enable 发布 |
+| `dim_type` | string |  | 节点四维 type：industry\|major\|occupation\|skill_level |
+| `target_id` | string |  | 编辑/删除/停用/发布时的目标 id |
+| `title` | string |  | 列表展示标题 |
+| `payload` | `ChangePayload` |  | 节点字段 + 可选关联 id 列表（多选，服务端自动建边，客户端无需构造 edge）： - **专业 major**：`industry_ids: string[]` → 自动 major -belongs_to→ industry - **岗位 occupation**：`major_ids: string[]` → 自动 major -prepares_for→ occupation - **技能 skill_level**：`occupation_ids: string[]` → 自动 occupation -requires→ skill 边默认 weight=0.8、confidence=manual_seed、status=published。 |
+
+### ChatMessageBody
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `content` | string | 是 | 学员回复内容（长度≥1） |
+
+### ChatMessageOut
+
+> 一轮对话的回复。轮次够了会同时给出报告。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `session_id` | integer | 是 | 会话 id |
+| `reply` | string |  | AI 追问或结语 |
+| `done` | boolean |  | 对话是否结束；true 时 report 有值（默认 `False`） |
+| `turn` | integer |  | 当前轮次 |
+| `report` | `AssessmentReportOut` |  | 结束时产出的诊断报告 |
+
+### ChatSessionBody
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `target_occupation_id` | string |  | 对话诊断目标岗位 |
+
+### ChatSessionOut
+
+> 对话诊断会话。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `session_id` | integer | 是 | 会话 id |
+| `channel` | `chat` | 是 | 固定 chat |
+| `status` | string | 是 | 会话状态：active / done |
+| `target_occupation_id` | string |  | 目标岗位 id |
+| `first_question` | string |  | 开场提问 |
+
+### ChoiceOption
+
+> SJT（情景判断题）选项。每项对应一个能力档位，选谁即判谁。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `value` | integer | 是 | 选项序号，作答时回传这个值（≥1.0） |
+| `level` | integer | 是 | 该选项体现的能力档位 1–5，同题内互不相同（≥1.0，≤5.0） |
+| `text` | string | 是 | 选项文案 |
+
+### ClearGoalOut
+
+> 清除目标的回执。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `status` | `cleared` | 是 | 固定 cleared |
+
+### CompositionCounts
+
+> 构成计数。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill` | integer |  | 技能项数（≥0.0，默认 `0`） |
+
+### CompositionItem
+
+> 技能构成里的一项。
+>
+> 一个技能只出现一次——高级档天然包含低级档，同一技能挂多档是数据错误，
+> 写入侧已加判重（`mode=add` 时重复会返回 409）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `edge_id` | string | 是 | requires / covers 边的 id |
+| `skill_key` | string | 是 | 技能聚合主键 |
+| `category` | string |  | 技能大类 |
+| `skill_level_id` | string | 是 | 边指向的那个 skill_level 节点 id |
+| `available_levels` | integer[] |  | 该技能已配齐的档位 1–5 |
+| `levels` | `CompositionLevelDetail`[] |  | 各档明细（含档位文案与要求描述） |
+| `selected_level` | integer |  | 当前选中的要求档。改档 = 删旧边建新边，边指向哪档就是要求哪档 |
+| `weight` | number |  | 权重；专业 covers 无权重，此时为 null |
+| `weight_pct` | integer |  | 权重百分比，便于直接展示 |
+
+### CompositionLevelDetail
+
+> 技能某一档的明细。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `level` | integer |  | 产品档 1–5 |
+| `level_label` | string |  | 档位文案，取自 skill_level_meta |
+| `node_id` | string |  | 该档的 skill_level 节点 id |
+| `requirement` | string |  | 该档的能力要求描述 |
+| `status` | string |  | 该档节点的状态 |
+
+### CompositionNodeHeader
+
+> 构成页头部：原型「岗位模型 · 内容运营专员」上方那几项。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 节点 id |
+| `type` | string | 是 | 节点类型：occupation / major |
+| `name` | string |  | 名称 |
+| `status` | string |  | 图状态：published / draft / disabled |
+| `level` | integer |  | 职级 |
+| `level_label` | string |  | 职级文案，如 L3 |
+| `version_label` | string | 是 | 版本号文案，如 V1 |
+| `owner_name` | string |  | 负责人 |
+| `description` | string |  | 描述 |
+| `industries` | `IdName`[] |  | 所属行业（可多个） |
+| `industry_name` | string |  | 行业名拼接串，便于直接展示；无为 null |
+| `majors` | `IdName`[] |  | 关联专业（岗位才有） |
+| `major_name` | string |  | 专业名拼接串 |
+| `salary` | string |  | 薪资区间（来自 attrs） |
+| `demand` | string |  | 需求热度（来自 attrs） |
+| `code` | string |  | 编码（来自 attrs） |
+
+### CompositionSkillBody
+
+> 技能构成：添加/更新一项技能。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string | 是 | 逻辑技能名（从 /composition/options 里选） |
+| `level` | integer |  | 要求等级 1–5（对应 L1–L5）。留空取该技能最高档；该技能未配齐此档时返回 400 并列出可用档位 |
+| `weight` | number |  | 权重 0–1，**仅岗位生效**；专业技能不带权重（不参与归一化） |
+
+### DiagnosedBrief
+
+> 某岗位的历史诊断摘要。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `match_score` | number | 是 | 诊断得出的匹配度 0–100 |
+| `session_id` | integer |  | 诊断会话 id |
+| `channel` | string |  | 诊断渠道：assessment / resume / chat |
+| `diagnosed_at` | string |  | 诊断时间 ISO8601 |
+
+### DiagnosedOccupationItem
+
+> 已诊断过的岗位一行。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation_id` | string |  | 岗位节点 id |
+| `occupation_name` | string |  | 岗位名 |
+| `match_score` | number |  | 最近一次匹配度 0–100 |
+| `channel` | string |  | 诊断渠道：assessment / resume / chat |
+| `last_session_id` | integer |  | 最近一次诊断会话 id |
+| `session_count` | integer |  | 累计诊断次数（≥0.0，默认 `0`） |
+| `diagnosed_at` | string |  | 最近诊断时间 ISO8601 |
+| `goal_status` | string |  | 该岗位的目标状态：active / archived；从未设为目标则为 null |
+| `is_active_goal` | boolean |  | 是否为当前活跃目标（默认 `False`） |
+| `major_name` | string |  | 关联专业名 |
+| `goal_created_at` | string |  | 设为目标的时间 ISO8601 |
+| `plan_id` | string |  | 学习计划 id；未生成为空串（默认 ``） |
+| `plan_created_at` | string |  | 学习计划生成时间 ISO8601 |
+
+### DiagnosedOccupationListOut
+
+> 已诊断岗位分页列表。分页下沉到 SQL，不是取回内存再切。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `items` | `DiagnosedOccupationItem`[] | 是 | 当前页数据 |
+| `total` | integer | 是 | 总条数（≥0.0） |
+| `page` | integer | 是 | 页码，从 1 起（≥1.0） |
+| `page_size` | integer | 是 | 每页条数（≥1.0） |
+| `pages` | integer | 是 | 总页数（≥0.0） |
+
+### DiagnosisReportOut
+
+> 诊断报告（简历 / 对话渠道）。
+>
+> 与测评报告 `AssessmentReportOut` 的区别在证据强度：那边每项技能都有实测档位
+> 与要求档位的对照，这边只是从文本里解析出的技能名与岗位要求做匹配。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | string |  | UC 用户 id |
+| `channel` | string |  | 诊断渠道：resume / chat / profile |
+| `target_occupation_id` | string |  | 目标岗位节点 id |
+| `target_occupation_name` | string |  | 目标岗位名 |
+| `match_score` | number |  | 匹配度 0–100 |
+| `user_skills` | `ParsedUserSkill`[] |  | 从简历/对话解析出的学员技能 |
+| `required_skills` | `RequiredSkillRef`[] |  | 岗位要求的技能 |
+| `gaps` | `RequiredSkillRef`[] |  | 缺口技能（岗位要求但学员未体现） |
+| `radar` | `SimpleRadar` |  | 雷达图数据 |
+| `summary` | string |  | 一句话结论 |
+
+### EdgeCreate
+
+> 新建边请求体。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `src_id` | string | 是 | 起点节点全局 id（必填，须已存在于库中） |
+| `dst_id` | string | 是 | 终点节点全局 id（必填，须已存在于库中） |
+| `rel_type` | string | 是 | 关系类型小写（必填）。常用：prepares_for=专业培养对口岗位 \| requires=岗位要求技能 \| belongs_to=岗位归属行业 \| parent_of=行业父子 \| related_to=相关 \| taught_by=技能由课程教授 |
+| `region` | string |  | 边所属区域，默认 CN（默认 `CN`） |
+| `id` | string |  | 边 ID（可选）。不传则生成 `edge:{src}\|{rel}\|{dst}` |
+| `weight` | number |  | 关系强度 0～1（可选），越大表示越相关/越重要 |
+| `evidence` | string |  | 证据摘要或原文摘录（可选），便于审核溯源 |
+| `attrs` | object |  | 边扩展属性 JSON（可选） |
+| `confidence` | string |  | 置信度（可选），默认 manual_seed；官方边用 official（默认 `manual_seed`） |
+| `status` | `draft` \| `published` \| `archived` \| `disabled` |  | draft=草稿默认 \| published=已发布 \| archived=归档（默认 `draft`） |
+| `source_url` | string |  | 溯源 URL（可选） |
+
+### EdgeListItem
+
+> 边列表项（含端点名称，便于核对删节点后是否连带删边）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | 边 ID |
+| `src_id` | string | 是 | 起点节点 id |
+| `dst_id` | string | 是 | 终点节点 id |
+| `rel_type` | string | 是 | 关系类型 |
+| `neo4j_type` | string |  | Neo4j 侧的关系类型（历史兼容字段） |
+| `region` | string |  | 地区，如 CN |
+| `weight` | number |  | 权重 |
+| `confidence` | string |  | 置信度 |
+| `evidence` | string |  | 判定依据 |
+| `source_url` | string |  | 来源链接 |
+| `status` | string |  | published\|disabled\|… |
+| `src_name` | string |  | 起点名称 |
+| `src_type` | string |  | 起点类型 |
+| `dst_name` | string |  | 终点名称 |
+| `dst_type` | string |  | 终点类型 |
+
+### EdgeListResponse
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `items` | `EdgeListItem`[] |  | 当前页数据 |
+| `page` | integer | 是 | 页码，从 1 起 |
+| `page_size` | integer | 是 | 每页条数 |
+| `total` | integer | 是 | 总条数 |
+| `total_pages` | integer | 是 | 总页数 |
+| `rel_type` | string |  | 关系类型 |
+| `node_id` | string |  | 按节点过滤时传入的 node_id |
+| `q` | string |  | 本次查询用的关键词（回显） |
+
+### EdgeReviewFilter
+
+> 本次查询用到的筛选条件（回显）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `confidence` | string |  | 置信度筛选值 |
+| `rel_type` | string |  | 关系类型筛选值 |
+| `region` | string |  | 地区 |
+
+### EdgeReviewItem
+
+> 一条待审的边。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 边 id |
+| `rel_type` | string | 是 | 关系类型，如 requires / covers / belongs_to |
+| `src_id` | string | 是 | 源节点 id |
+| `src_name` | string |  | 源节点名 |
+| `src_type` | string |  | 源节点类型 |
+| `dst_id` | string | 是 | 目标节点 id |
+| `dst_name` | string |  | 目标节点名 |
+| `dst_type` | string |  | 目标节点类型 |
+| `confidence` | string |  | 置信度标记，如 ai_inferred=模型推断（默认筛选项） |
+| `weight` | number |  | 边权重（requires 才有） |
+| `status` | string |  | 边状态：published / draft / disabled |
+| `evidence` | string |  | 建边依据 |
+| `source_url` | string |  | 来源链接 |
+
+### EdgeReviewListOut
+
+> 待审边分页列表。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `items` | `EdgeReviewItem`[] | 是 | 当前页数据 |
+| `page` | integer | 是 | 页码，从 1 起（≥1.0） |
+| `page_size` | integer | 是 | 每页条数（≥1.0） |
+| `total` | integer | 是 | 总条数（≥0.0） |
+| `total_pages` | integer | 是 | 总页数（≥0.0） |
+| `filter` | `EdgeReviewFilter` | 是 | 筛选条件回显 |
+
+### FrontendConfigOut
+
+> 前端启动配置。
+>
+> 只暴露前端确实需要的开关，**不含任何密钥**；`auth_bypass` 在生产必须是 0。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `api_version` | string |  | 接口版本号 |
+| `uc_sdk_url` | string |  | 用户中心 SDK 地址 |
+| `uc_env` | string |  | 用户中心环境 |
+| `uc_component_host` | string |  | 用户中心组件域名 |
+| `uc_api_host` | string |  | 用户中心接口域名 |
+| `auth_bypass` | boolean | integer |  | 是否跳过审核门禁；**生产必须为 0** |
+| `review_required` | boolean | integer |  | 0=修改直写生效；1=进待审队列 |
+| `llm_enabled` | boolean |  | AI 网关是否可用；false 时 AI 功能走规则兜底 |
+| `llm_model` | string |  | 模型名；网关不可用时为 null |
+
+### GoalItem
+
+> 一个学习目标（对应 biz_user_goal 一行）。一人可有多个，其一为活跃。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | string | 是 | UC 用户 id |
+| `user_name` | string |  | 用户名（冗余字段，用户中心不在本服务） |
+| `occupation_id` | string |  | 目标岗位节点 id |
+| `occupation_name` | string |  | 目标岗位名 |
+| `major_id` | string |  | 关联专业 id |
+| `major_name` | string |  | 关联专业名 |
+| `industry_id` | string |  | 所属行业 id |
+| `industry_name` | string |  | 所属行业名 |
+| `status` | string |  | active=当前活跃目标；archived=历史目标 |
+| `created_at` | string |  | 设定时间 ISO8601 |
+| `updated_at` | string |  | 更新时间 ISO8601 |
+
+### GoalOccupationOut
+
+> 总览里的目标岗位详情。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | 岗位节点 id |
+| `name` | string |  | 岗位名 |
+| `level` | integer |  | 职级 |
+| `level_label` | string |  | 职级文案，如 L3 |
+| `description` | string |  | 岗位职责描述 |
+| `salary` | string |  | 薪资区间（来自 attrs） |
+| `skill_count` | integer |  | 该岗位技能数（≥0.0，默认 `0`） |
+
+### GoalOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | string | 是 | UC 用户 id |
+| `user_name` | string |  | 用户名（冗余字段，用户中心不在本服务） |
+| `occupation_id` | string |  | 目标岗位 id |
+| `occupation_name` | string |  | 目标岗位名 |
+| `major_id` | string |  | 关联专业 id |
+| `major_name` | string |  | 关联专业名 |
+| `industry_id` | string |  | 所属行业 id |
+| `industry_name` | string |  | 所属行业名 |
+| `updated_at` | string |  | 更新时间 ISO8601 |
+
+### GoalOverviewOut
+
+> 学习目标总览：当前目标 + 岗位详情 + 测评结果 + 晋升路径 + 学习计划 id。
+>
+> 原型上那张卡片一次就要这些数据，拆成多个接口会让首屏串行等待。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `has_goal` | boolean | 是 | 是否已锁定目标；false 时其余字段多为 null |
+| `goal` | `GoalItem` |  | 当前活跃目标 |
+| `goals` | `GoalItem`[] |  | 该用户全部目标（含历史） |
+| `occupation` | `GoalOccupationOut` |  | 目标岗位详情 |
+| `major` | `RefOut` |  | 关联专业 |
+| `industry` | `RefOut` |  | 所属行业 |
+| `match_score` | number |  | 该岗位最近一次诊断的匹配度 0–100；没测过为 null，前端显示「去测评」 |
+| `assessment` | `AssessmentReportOut` |  | 最近一次的完整测评报告；没测过为 null |
+| `next_level` | `NextLevelOut` |  | 晋升路径的下一档岗位；无 advances_to 边时为 null |
+| `learning_plan_id` | string |  | 学习计划 id（uuid 字符串）；尚未生成或外部接口未接通时为空串（默认 ``） |
+| `learning_plan_created_at` | string |  | 学习计划生成时间 ISO8601 |
+
+### GoalPutBody
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation_id` | string | 是 | 目标岗位节点 id（必填） |
+| `major_id` | string |  | 可选：关联专业 id |
+
+### GraphCounts
+
+> 图查询的计数口径。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `node_count` | integer |  | 返回的节点数（≥0.0，默认 `0`） |
+| `edge_count` | integer |  | 返回的边数（≥0.0，默认 `0`） |
+| `root_count` | integer |  | 根节点数（无父行业的顶层）（≥0.0，默认 `0`） |
+| `region` | string |  | 地区，如 CN |
+
+### GraphIndustryBrief
+
+> 图上的行业根节点。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 行业节点 id |
+| `name` | string |  | 行业名 |
+| `region` | string |  | 地区 |
+
+### GraphLayers
+
+> 行业图的分层节点。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `majors` | `GraphMajorNode`[] |  | 专业层 |
+| `occupations` | `GraphOccupationNode`[] |  | 岗位层 |
+
+### GraphLink
+
+> 行业图的层间连边（专业 → 岗位）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `from` | string | 是 | 源节点 id |
+| `to` | string | 是 | 目标节点 id |
+| `rel` | string | 是 | 关系类型，如 prepares_for |
+
+### GraphMajorNode
+
+> 行业图里的专业层节点。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 专业节点 id |
+| `name` | string |  | 专业名 |
+| `occupation_count` | integer |  | 对口岗位数；截断按它倒序，先丢弱关联的（≥0.0，默认 `0`） |
+
+### GraphOccupationNode
+
+> 行业图里的岗位层节点。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 岗位节点 id |
+| `name` | string |  | 岗位名 |
+| `level` | integer |  | 岗位层级 |
+| `major_ids` | string[] |  | 对口专业 id 列表 |
+
+### IdName
+
+> id + name 的轻引用。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 节点 id |
+| `name` | string |  | 名称 |
+
+### IndustryGraphMeta
+
+> 行业图的口径与截断说明。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `matched` | integer |  | 是否命中行业：0=没找到，此时各层为空（默认 `0`） |
+| `major_total` | integer |  | 专业总数（≥0.0，默认 `0`） |
+| `major_shown` | integer |  | 本次返回的专业数（≥0.0，默认 `0`） |
+| `occupation_total` | integer |  | 岗位总数（≥0.0，默认 `0`） |
+| `occupation_shown` | integer |  | 本次返回的岗位数（≥0.0，默认 `0`） |
+| `truncated` | boolean |  | 是否发生截断；true 表示你看到的不是全量（默认 `False`） |
+| `layout` | string |  | 布局：layered / matrix |
+| `region` | string |  | 地区 |
+
+### IndustryGraphOut
+
+> 行业图谱：行业 → 专业 → 岗位 三层 + 晋升链。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `industry` | `GraphIndustryBrief` |  | 行业根节点；没命中为 null |
+| `layers` | `GraphLayers` |  | 分层节点 |
+| `links` | `GraphLink`[] |  | 层间连边 |
+| `progressions` | `ProgressionLink`[] |  | 同岗位族内按 level 递进的晋升链 |
+| `matrix` | `MajorOccupationMatrix` |  | 专业×岗位矩阵；仅 layout=matrix 时返回 |
+| `meta` | `Industry`GraphMeta`` |  | 口径与截断说明 |
+
+### IndustryItem
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 节点 id |
+| `name` | string |  | 名称 |
+| `code` | string |  | 编码 |
+| `level` | integer | string |  | 等级 |
+| `parent_code` | string |  | 父级编码 |
+| `desc` | string |  | 简介 |
+| `counts` | `RelationCounts` |  | major / occupation 直连计数 |
+
+### IndustryLink
+
+> 岗位挂到的一个行业。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 行业节点 id |
+| `name` | string |  | 行业名 |
+
+### IndustryListOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `page` | integer | 是 | 页码，从 1 起 |
+| `page_size` | integer | 是 | 每页条数 |
+| `total` | integer | 是 | 总条数 |
+| `total_pages` | integer | 是 | 总页数 |
+| `items` | `IndustryItem`[] | 是 | 当前页数据 |
+
+### IndustryRef
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 行业节点 id |
+| `name` | string |  | 行业名 |
+
+### IndustryTreeResponse
+
+> 行业树。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `nodes` | `KgNode`[] |  | 行业节点 |
+| `edges` | `KgEdge`[] |  | parent_of 边（父→子） |
+| `roots` | `KgNode`[] |  | 无父节点的根行业 |
+| `meta` | `GraphCounts` |  | 本次查询的计数与地区口径 |
+
+### KgEdge
+
+> 知识图谱关系边。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | 边 ID |
+| `rel_type` | string | 是 | 关系类型小写：prepares_for(专→岗)\|requires(岗→技)\|belongs_to(岗→行业)\|parent_of(行业父子)\|related_to\|taught_by\|… |
+| `neo4j_type` | string |  | 关系类型大写（兼容旧前端字段名，等同 rel_type.upper()） |
+| `src_id` | string | 是 | 起点节点 id |
+| `dst_id` | string | 是 | 终点节点 id |
+| `weight` | number |  | 权重 0～1，越大越强 |
+| `confidence` | string |  | 边置信度 |
+| `source_url` | string |  | 溯源 URL |
+| `evidence` | string |  | 证据摘要/原文片段 |
+| `status` | `draft` \| `published` \| `archived` \| `disabled` | string |  | published\|draft\|archived |
+
+### KgNode
+
+> 知识图谱节点（专业/岗位/技能/课程/认证/行业等）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 全局唯一 ID，如 CN:major:MOE_CN:… |
+| `labels` | string[] |  | 类型标签列表（兼容旧 Neo 形态，通常等于 [type]） |
+| `region` | string |  | 区域：CN \| EU \| US |
+| `type` | string | 是 | 节点类型：industry\|major\|occupation\|skill_level\|course\|credential |
+| `name` | string | 是 | 官方/原始名称（查询按此字段匹配） |
+| `display_name` | string |  | 展示名；专业会消歧为「层次 · 名称 · 代码」 |
+| `name_en` | string |  | 英文名 |
+| `name_zh` | string |  | 中文名 |
+| `description` | string |  | 简介/摘要 |
+| `source_system` | string |  | 来源系统，如 MOE_CN、MOHRSS、BOSS_ZHIPIN、MANUAL |
+| `source_id` | string |  | 来源侧主键/编码 |
+| `source_url` | string |  | 溯源 URL |
+| `confidence` | string |  | 置信度：official\|derived\|ai_inferred\|manual_seed\|… |
+| `attrs` | object | any[] | string |  | 扩展属性 JSON（专业 code/level、技能等级等，随 type 变化） |
+| `status` | `draft` \| `published` \| `archived` \| `disabled` | string |  | 库内状态 published\|disabled\|…；缺省视为 published |
+| `order` | integer |  | 同层稳定排序（库列 sort_order；按 type 内 name 生成，从 1 起） |
+| `sort_order` | integer |  | 同 order；兼容字段 |
+| `child_count` | integer |  | 向下可展开子节点数：industry→major、major→occupation、occupation→skill_level；懒加载「可展开 N 项」用 |
+| `updated_by` | string |  | 最近修改人 user-id |
+| `updated_by_name` | string |  | 最近修改人姓名 |
+| `created_at` | string |  | 创建时间 ISO8601。管理台列表默认按它倒序（`order_by=created_desc`），新建的数据排最前；历史数据用采集时间 fetched_at 回填 |
+| `version` | integer |  | 发布版本号，从 1 起，每次成功发布（status→published）+1 |
+| `version_label` | string |  | 版本展示文案，如 `V3`（原型「版本」列） |
+| `owner` | string |  | 业务负责人 user-id |
+| `owner_name` | string |  | 业务负责人姓名（原型「负责人」列）；新建时默认取创建人 |
+| `code` | string |  | 业务编码（**同 region + 同 type 内唯一**，可编辑，写入前校验，冲突返回 409）。与 `id` 解耦：改 code 不影响 id 与已建的边。各维度编码体系独立——行业为语义 slug（`internet-ecom`）、专业为教育部专业码（`580506K`）、岗位为大典职业码（`6-18-01-10`）。同时保留在 `attrs.code` 以兼容既有前端 |
+| `level` | integer |  | occupation 岗位层级 1..N；skill_level 可复用为 L 序 |
+| `category` | string |  | skill_level 技能大类（国标职业功能维度：安全与环保/作业准备/…） |
+| `pending_change_id` | integer |  | 待审变更 id；有值表示有未审完的操作，但生效状态仍以 status 为准 |
+| `pending_action` | string |  | 待审动作 create\|update\|delete\|disable\|enable（通过后才改库） |
+| `pending_title` | string |  | 待审变更的标题 |
+| `counts` | map<string, integer | number> |  | 关联计数（include_counts=1 时联读填充）。键：major/occupation/skill/industry/course/level；skill 为逻辑技能 DISTINCT skill_key；skill_aggregated 为专业经岗位两跳汇总的技能数。另有 weight_sum（岗位 requires 权重和）是**小数**，故值类型为 int \| float |
+| `industries` | `IndustryLink`[] |  | 岗位所属行业列表（occupation + include_counts）：直连 belongs_to + 经专业 prepares_for→belongs_to 两跳，按 name, id 稳定排序 |
+| `industry_id` | string |  | industries[0].id |
+| `industry_name` | string |  | industries[0].name |
+| `industry_ids` | string[] |  | 专业→行业 关联 id 列表（编辑表单预选） |
+| `major_ids` | string[] |  | 岗位←专业 关联 id 列表（编辑表单预选） |
+| `occupation_ids` | string[] |  | 技能←岗位 关联 id 列表（编辑表单预选） |
+| `link_ids` | map<string, string[]> |  | 结构化关联 id：industry_ids/major_ids/occupation_ids |
+
+### LadderStep
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `tier` | integer | 是 | 阶梯层级 1..n |
+| `position_id` | string | 是 | 岗位节点 id |
+| `position_name` | string |  | 岗位名 |
+| `position` | `PositionOut` |  | 岗位详情 |
+
+### LearningPathHead
+
+> 学习路径主体（对应 biz_learning_path 一行）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | integer | 是 | 路径 id |
+| `user_id` | string | 是 | UC 用户 id |
+| `user_name` | string |  | 用户名 |
+| `occupation_id` | string |  | 目标岗位 id |
+| `occupation_name` | string |  | 目标岗位名 |
+| `status` | string | 是 | active=进行中；archived=已归档 |
+| `source` | string | 是 | 来源：diagnosis=按诊断生成；manual=手工建 |
+| `created_at` | string |  | 创建时间 ISO8601 |
+
+### LearningPathOut
+
+> 自适应学习路径：主体 + 扁平任务 + 阶段树 + 进度。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `path` | `LearningPathHead` | 是 | 路径主体 |
+| `steps` | `LearningTaskOut`[] | 是 | 全部任务（扁平，按 seq 排） |
+| `stages` | `Learning`StageOut``[] |  | 阶段任务树；未分组时为 null |
+| `progress` | `Learning`ProgressOut`` |  | 进度 |
+
+### LearningPlanBody
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation_id` | string |  | 留空取当前活跃目标 |
+| `session_id` | integer |  | 基于哪次诊断生成 |
+| `gap_skills` | string[] |  | 生成依据的短板技能 |
+
+### LearningPlanCreatedOut
+
+> 生成学习计划的回执。
+>
+> 外部服务不可用时不拖住学员：降级为 mock 并把上游原因原样带出去，
+> 前端可据 `source` 与 `upstream_error` 提示「计划为本地兜底」。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | integer | 是 | 本地记录 id |
+| `user_id` | string | 是 | UC 用户 id |
+| `occupation_id` | string | 是 | 目标岗位 id |
+| `plan_id` | string | 是 | 学习计划 id（uuid 字符串），外部计划服务的主键 |
+| `session_id` | integer |  | 据以生成的诊断会话 id |
+| `gap_skills` | string[] |  | 短板技能列表 |
+| `source` | `bts` \| `mock` \| `api` | 是 | bts=外部计划服务生成；mock=服务不可用时的本地兜底 |
+| `created_at` | string |  | 创建时间 ISO8601 |
+| `upstream_error` | string |  | 外部计划服务的失败原因；成功或未调用时为 null |
+| `upstream_status` | integer |  | 外部服务 HTTP 状态码 |
+
+### LearningPlanItem
+
+> 一条学习计划记录（对应 biz_user_learning_plan 一行）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | integer | 是 | 本地记录 id |
+| `user_id` | string | 是 | UC 用户 id |
+| `occupation_id` | string | 是 | 目标岗位 id |
+| `plan_id` | string | 是 | 学习计划 id（uuid 字符串），外部计划服务的主键 |
+| `session_id` | integer |  | 据以生成的诊断会话 id |
+| `gap_skills` | string[] |  | 短板技能列表 |
+| `source` | `bts` \| `mock` \| `api` | 是 | bts=外部计划服务生成；mock=服务不可用时的本地兜底 |
+| `created_at` | string |  | 创建时间 ISO8601 |
+
+### LearningProgressOut
+
+> 学习进度。
+>
+> 条数进度与权重进度是两回事：补一门权重 0.3 的核心技能，条数上只是 1/20，
+> 权重上却是 30%。原型顶部那个百分比用的是 `weighted_pct`。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `completed` | integer |  | 已完成任务数（≥0.0，默认 `0`） |
+| `total` | integer |  | 任务总数（≥0.0，默认 `0`） |
+| `ratio` | number |  | 按任务条数的完成率 0–1（默认 `0.0`） |
+| `weighted_pct` | integer |  | **按权重计的总进度百分比**，原型顶部展示的就是它（默认 `0`） |
+| `duration_min_total` | integer |  | 建议总耗时（分钟）（默认 `0`） |
+
+### LearningStageOut
+
+> 一个学习阶段（原型「第一/二/三阶段」）。
+>
+> 按技能大类分组，阶段顺序沿用国标职业功能的推进顺序（先作业准备、后维护检修）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `stage` | integer | 是 | 阶段序号 1..n |
+| `title` | string | 是 | 阶段标题 |
+| `steps` | `LearningTaskOut`[] |  | 该阶段的任务 |
+| `stage_weight_pct` | integer |  | 该阶段占总权重的百分比（默认 `0`） |
+| `completed` | integer |  | 已完成任务数（≥0.0，默认 `0`） |
+| `total` | integer |  | 任务总数（≥0.0，默认 `0`） |
+| `duration_min` | integer |  | 该阶段建议总耗时（分钟）（默认 `0`） |
+
+### LearningTaskOut
+
+> 一条学习任务：在 LearningStepOut 之上补齐分组与配速字段。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | integer | 是 | 节点 id |
+| `path_id` | integer | 是 | 学习路径 id |
+| `seq` | integer | 是 | 序号 |
+| `kind` | string | 是 | 任务类型 |
+| `skill_id` | string |  | 技能 id |
+| `skill_name` | string |  | 技能名 |
+| `resource_id` | string |  | 资源 id |
+| `resource_title` | string |  | 资源标题 |
+| `title` | string | 是 | 标题 |
+| `status` | string | 是 | 状态 |
+| `completed_at` | string |  | 完成时间 ISO8601 |
+| `stage` | integer |  | 所属阶段序号 1..n |
+| `stage_title` | string |  | 阶段标题 |
+| `category` | string |  | 技能大类，阶段按它分组 |
+| `weight` | number |  | 该任务对应技能的权重 |
+| `duration_min` | integer |  | 建议耗时（分钟） |
+| `required_level` | integer |  | 目标档位 1–5 |
+
+### MajorOccupationMatrix
+
+> 专业 × 岗位热力图矩阵（layout=matrix 时才有）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `rows` | string[] |  | 行：专业节点 id，按顺序 |
+| `cols` | string[] |  | 列：岗位节点 id，按顺序 |
+| `cells` | `MatrixCell`[] |  | 非零格；未出现的格视为 0 |
+| `max` | integer |  | 全矩阵最大格值，配色归一化用（默认 `0`） |
+| `metric` | string |  | 格值口径，如 skill_affinity=专业与岗位的共同技能数 |
+
+### MatchItem
+
+> 匹配度明细的一项技能：岗位要求 vs 学员已有。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string | 是 | 技能聚合主键 |
+| `skill_name` | string |  | 技能展示名 |
+| `category` | string |  | 技能大类 |
+| `required_level` | integer |  | 岗位要求档 1–5 |
+| `user_level` | integer |  | 学员已有档 1–5；**0 表示该技能无任何证据**（不是「水平为零」），null 同义 |
+| `weight` | number | 是 | 该技能在岗位中的权重，Σ≈1 |
+| `is_core` | boolean |  | 是否核心技能 |
+| `ratio` | number | 是 | 达成比 = 已有/要求，封顶 1.0 |
+| `ok` | boolean | 是 | 是否达标 |
+| `matched_by` | string |  | 命中方式：exact=技能名精确匹配；fuzzy=模糊匹配；none=无证据 |
+
+### MatchRadarOut
+
+> 匹配度的雷达图。
+>
+> 与测评报告的 `RadarOut` 不同：那边是「学员实测 vs 岗位要求」双系列，
+> 这里只有一条达成率曲线——匹配度算的是差距比例，没有独立的「要求」系列。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `categories` | string[] |  | 各轴名称（技能大类） |
+| `scores` | integer[] |  | 各轴达成率 0–100，顺序与 categories 一致 |
+
+### MatrixCell
+
+> 矩阵里的一个非零格。用行列下标而非二维数组——矩阵很稀疏，摊平会浪费大量 0。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `r` | integer | 是 | 行下标，对应 rows[r]（≥0.0） |
+| `c` | integer | 是 | 列下标，对应 cols[c]（≥0.0） |
+| `v` | integer | 是 | 格值，含义见 metric |
+
+### MeOut
+
+> 学员个人首页数据。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | string | 是 | UC 用户 id |
+| `user_name` | string |  | 用户名 |
+| `goal` | `UserGoalBrief` |  | 当前学习目标；未锁定为 null |
+| `points` | integer |  | 成长值/积分（默认 `0`） |
+| `badges` | `UserBadgeOut`[] |  | 已解锁成就 |
+| `skills` | `User`SkillOut``[] |  | 技能画像 |
+| `active_path_id` | integer |  | 进行中的学习路径 id |
+
+### NextLevelOut
+
+> 晋升路径上的下一档岗位。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 岗位节点 id |
+| `name` | string |  | 岗位名 |
+| `level` | integer |  | 职级 |
+| `level_label` | string |  | 职级文案，如 L3 |
+
+### NodeCreate
+
+> 新建节点请求体。字段含义与返回的 `KgNode` 对齐。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `type` | string | 是 | 节点类型（必填）。取值：industry=行业 \| major=专业 \| occupation=岗位 \| skill_level=技能等级 \| course=课程 \| credential=认证 |
+| `name` | string | 是 | 节点官方名称（必填）。搜索/匹配主字段，前端列表优先展示 display_name（长度≥1） |
+| `region` | string |  | 区域代码。本期默认/推荐 CN；可选 EU、US（默认 `CN`） |
+| `id` | string |  | 全局唯一 ID（可选）。不传则服务端生成，形如 `CN:manual:{type}:{12位hex}`。若传入须保证全局唯一 |
+| `name_en` | string |  | 英文名称（可选） |
+| `name_zh` | string |  | 中文名称（可选；可与 name 相同） |
+| `description` | string |  | 简介/备注（可选） |
+| `aliases` | string[] | map<string, string> |  | 别名列表或别名结构（可选），用于扩展检索 |
+| `attrs` | object |  | 扩展属性 JSON（可选）。随 type 变化，例如专业：`code` 专业代码、`level`/`level_zh` 办学层次；技能：`skill_name`、`level`（产品档 1–5，1 了解 → 5 专家） |
+| `source_system` | string |  | 来源系统标识。手工录入默认 MANUAL；官方数据如 MOE_CN、MOHRSS（默认 `MANUAL`） |
+| `source_url` | string |  | 溯源链接（可选）。无则服务端可填 manual://admin |
+| `confidence` | string |  | 置信度。取值建议：official=官方 \| derived=规则派生 \| ai_inferred=模型推断 \| manual_seed=人工录入（默认）（默认 `manual_seed`） |
+| `status` | `draft` \| `published` \| `archived` \| `disabled` |  | 发布状态。draft=草稿（默认，可进审核）\| published=已发布可见 \| archived=归档不可用（默认 `draft`） |
+
+### NodeDetailOut
+
+> 节点详情。
+>
+> 返回键随节点类型而变（技能有 levels / prereqs，岗位有 skills / majors），
+> 这里列出全部可能键；`extra=allow` 兜住未列出的。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | 节点 id |
+| `type` | string |  | 节点类型 |
+| `name` | string |  | 名称 |
+| `skill_key` | string |  | 技能聚合主键（技能详情） |
+| `category` | string |  | 技能大类 |
+| `levels` | object[] |  | L1–L5 档位栅格，缺档的位置为空 |
+| `level_completeness` | string |  | 档位完整度，形如「3/5」 |
+| `level_descriptions` | map<string, string> |  | 各档能力描述，键为档位号 |
+| `occupations` | `NodeRef`[] |  | 引用该技能的岗位 |
+| `prereqs` | `NodeRef`[] |  | 前置技能 |
+| `unlocks` | `NodeRef`[] |  | 学完可解锁的技能 |
+| `counts` | map<string, integer> |  | 关联计数 |
+
+### NodeListResponse
+
+> 四维管理 Table 分页列表响应。
+>
+> 对齐参考后台 backend.html：行业 / 专业 / 岗位 / 技能 各自可像表格一样列出并翻页。
+> 请求：`GET /v1/kg/nodes?type=major&page=1&page_size=20`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `items` | `KgNode`[] |  | 当前页节点列表（KgNode） |
+| `page` | integer | 是 | 当前页码，从 1 开始（≥1.0） |
+| `page_size` | integer | 是 | 每页条数（≥1.0，≤200.0） |
+| `total` | integer | 是 | 符合条件的总条数（用于分页控件） |
+| `total_pages` | integer | 是 | 总页数 = ceil(total / page_size) |
+| `type` | string |  | 本次过滤的节点类型；四维：industry\|major\|occupation\|skill_level |
+| `region` | string |  | 实际生效区域，如 CN |
+| `q` | string |  | 名称关键字（模糊）；空表示不限 |
+| `status` | string |  | 状态过滤；空表示排除 archived 的全部 |
+
+### NodePatch
+
+> 编辑节点请求体。全部可选，只传需要修改的字段。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `name` | string |  | 新名称（可选） |
+| `name_en` | string |  | 新英文名（可选） |
+| `name_zh` | string |  | 新中文名（可选） |
+| `description` | string |  | 新简介（可选） |
+| `aliases` | string[] | map<string, string> |  | 覆盖别名（可选） |
+| `attrs` | object |  | 覆盖扩展属性（可选；整对象替换，非深合并） |
+| `source_url` | string |  | 新溯源 URL（可选） |
+| `confidence` | string |  | 新置信度（可选）：official\|derived\|ai_inferred\|manual_seed |
+| `status` | `draft` \| `published` \| `archived` \| `disabled` |  | 新状态（可选）：draft\|published\|archived |
+| `region` | string |  | 新区域（可选），如 CN |
+
+### NodeRef
+
+> 节点详情里的关联引用。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | 节点 id |
+| `name` | string |  | 名称 |
+| `skill_key` | string |  | 技能聚合主键（技能类引用） |
+| `level` | integer |  | 等级 / 要求档 |
+| `weight` | number |  | 权重 |
+
+### OccupationBrief
+
+> 岗位摘要（匹配度、总览等处的公共引用）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | 岗位节点 id |
+| `name` | string |  | 岗位名 |
+| `level` | integer |  | 岗位职级/层级 |
+
+### OccupationLink
+
+> 技能被哪个岗位引用。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation_id` | string | 是 | 岗位节点 id |
+| `occupation_name` | string |  | 岗位名 |
+| `level` | integer |  | 该岗位要求的档位 1–5 |
+| `weight` | number |  | 权重 |
+
+### OccupationLinkIn
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation_id` | string | 是 | 岗位节点 id |
+| `weight` | number |  | 该技能在本岗位技能构成中的权重 0–1（>1 视为百分制会 /100）；写在 requires 边上 |
+| `required_level` | integer |  | 岗位要求档 1–5；权重写在该档对应边上 |
+
+### OccupationSkillsGraphOut
+
+> 岗位技能图谱：技能按大类分区 + 区内前置关系。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation` | `GraphOccupationNode` |  | 岗位摘要 |
+| `categories` | ``SkillCategory`Group`[] |  | 技能大类分区，按学习顺序排；每区 skills[].depth 为前置层深（0=可直接学） |
+| `prereqs` | `SkillPrereqLink`[] |  | 前置关系边 |
+| `meta` | `Skills`GraphMeta`` |  | 口径说明 |
+
+### ParsedSkill
+
+> 简历解析推断出的一项技能档位。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string | 是 | 技能聚合主键 |
+| `level` | integer | 是 | 推断档位 1–5（≥1.0，≤5.0） |
+
+### ParsedUserSkill
+
+> 从简历/对话文本里解析出的一项学员技能。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_name` | string | 是 | 技能名 |
+| `level` | integer |  | 推断档位 1–5；关键词命中时默认 2（≥1.0，≤5.0，默认 `2`） |
+| `score` | integer |  | 推断得分（默认 `0`） |
+| `source` | string |  | 来源：resume / chat / llm / rule |
+
+### PathGenerateBody
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation_id` | string |  | 岗位 id；不传则用当前 goal |
+
+### PositionDetailOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `position` | `PositionOut` | 是 | 岗位详情 |
+| `skills` | `SkillOut`[] |  | 岗位技能要求 |
+
+### PositionListOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `page` | integer | 是 | 页码，从 1 起 |
+| `page_size` | integer | 是 | 每页条数 |
+| `total` | integer | 是 | 总条数 |
+| `total_pages` | integer | 是 | 总页数 |
+| `items` | `PositionOut`[] | 是 | 当前页数据 |
+
+### PositionMatchOut
+
+> 岗位匹配度。
+>
+> `source` 是四级级联的结果，**决定这个分数可不可信**，前端必须据此区分展示：
+>
+> - `diagnosis` —— 该岗位做过完整测评，直接读报告分，最准
+> - `assessment` —— 用其他场测评实测到的档位推算（技能有重叠时）
+> - `memory` —— 用五维记忆画像推断，最弱，`estimated=true`
+> - `no_overlap` —— 岗位技能与已有证据零交集，`match_score` 为 null
+> - `none` —— 该岗位尚未配置技能构成，无从算起
+>
+> `match_score` 为 null 时不要显示 0%：那是「没有证据」，不是「完全不匹配」。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation` | `OccupationBrief` | 是 | 岗位摘要 |
+| `match_score` | number |  | 匹配度 0–100；无证据时为 null，前端应显示「未评估」而非 0% |
+| `source` | `diagnosis` \| `assessment` \| `memory` \| `no_overlap` \| `none` | 是 | 分数来源，决定可信度；见模型说明 |
+| `estimated` | boolean |  | 是否为推断值（memory 来源为 true），UI 上应与实测分区分（默认 `False`） |
+| `reason` | string |  | 无法计算时的原因说明 |
+| `skill_total` | integer |  | 岗位技能总数 |
+| `matched_count` | integer |  | 已达标技能数 |
+| `covered_count` | integer |  | 有证据覆盖的技能数；为 0 时 match_score 无意义 |
+| `coverage` | number |  | 证据覆盖的权重百分比 0–100 |
+| `items` | `MatchItem`[] |  | 全部技能明细 |
+| `strengths` | `MatchItem`[] |  | 已达标项 |
+| `gaps` | `MatchItem`[] |  | 未达标项，按权重降序 |
+| `radar` | `Match`RadarOut`` |  | 单系列雷达图（按技能大类聚合的达成率）；无数据时为空对象 |
+| `diagnosis` | `DiagnosedBrief` |  | 该岗位的历史诊断摘要；没测过为 null |
+
+### PositionOut
+
+> 岗位（产品 position，图侧 occupation）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 节点 id |
+| `name` | string |  | 名称 |
+| `raw_name` | string |  | 原始名称（未做展示名替换） |
+| `type` | string |  | 类型（默认 `position`） |
+| `kg_type` | string |  | 图侧节点类型 |
+| `region` | string |  | 地区，如 CN |
+| `status` | integer |  | 状态 |
+| `desc` | string |  | 简介 |
+| `tier` | string | integer |  | 职级/推荐档 |
+| `demand` | string |  | 需求热度 |
+| `salary` | string |  | 薪资区间 |
+| `source_url` | string |  | 来源链接 |
+| `attrs` | object |  | 自由属性（无数据库约束的 JSON 列，键随数据来源而异） |
+| `edge` | `backend__api__schemas_biz__EdgeBrief` |  | 与专业/行业的连边摘要 |
+| `counts` | `RelationCounts` |  | skill=逻辑技能数；major=对口专业数；industry=归属行业数 |
+| `industries` | `IndustryRef`[] |  | 归属行业（多选）；原型可取首项 |
+| `industry_id` | string |  | industries[0].id，便于单行业展示 |
+| `industry_name` | string |  | industries[0].name |
+
+### PrereqBody
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `prereq_skill_key` | string | 是 | 先修逻辑技能 key |
+| `evidence` | string |  | 判定依据 |
+| `region` | string |  | 地区，如 CN（默认 `CN`） |
+
+### PrereqDeletedOut
+
+> 删除先修关系的回执。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `deleted` | `True` | 是 | 固定 true |
+| `skill_key` | string | 是 | 技能聚合主键 |
+| `prereq_skill_key` | string | 是 | 被移除的先修技能 |
+
+### PrereqOut
+
+> 一条先修关系：学 `skill_key` 之前应先具备 `prereq_skill_key`。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string | 是 | 技能聚合主键 |
+| `prereq_skill_key` | string | 是 | 先修技能的聚合主键 |
+| `region` | string | 是 | 地区，如 CN |
+| `evidence` | string |  | 判定依据 |
+| `confidence` | number |  | 置信度 0–1 |
+| `created_at` | string |  | 创建时间 ISO8601 |
+
+### PrereqSetBody
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `prereq_skill_keys` | string[] |  | 先修技能的聚合主键列表 |
+| `region` | string |  | 地区，如 CN（默认 `CN`） |
+
+### ProfessionDetailOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `profession` | `ProfessionOut` | 是 |  |
+| `positions` | `PositionOut`[] |  | 对口岗位 |
+| `ladder` | `LadderStep`[] |  | 成长阶梯 |
+
+### ProfessionListOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `page` | integer | 是 | 页码，从 1 起 |
+| `page_size` | integer | 是 | 每页条数 |
+| `total` | integer | 是 | 总条数 |
+| `total_pages` | integer | 是 | 总页数 |
+| `items` | `ProfessionOut`[] | 是 | 当前页数据 |
+
+### ProfessionOut
+
+> 专业（产品口径 profession，图侧 type=major）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 节点 id |
+| `name` | string |  | 展示名 |
+| `raw_name` | string |  | 原始 name |
+| `type` | string |  | 固定 profession（默认 `profession`） |
+| `kg_type` | string |  | 图节点类型 major |
+| `region` | string |  | 地区，如 CN |
+| `status` | integer |  | 1=已发布 0=草稿 2=停用（映射） |
+| `desc` | string |  | 简介 |
+| `industry` | string |  | 行业/门类提示 |
+| `code` | string |  | 专业代码 |
+| `level` | string |  | 等级 |
+| `level_zh` | string |  | 学历层次中文名 |
+| `source_url` | string |  | 来源链接 |
+| `attrs` | object |  | 自由属性（无数据库约束的 JSON 列，键随数据来源而异） |
+| `counts` | `RelationCounts` |  | occupation=对口岗数；skill=关联逻辑技能数 |
+
+### ProgressOut
+
+> 答题进度。三个计数都来自业务表实时查询，不是内存态。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `asked` | integer | 是 | 已出题数（≥0.0） |
+| `answered` | integer | 是 | 已作答题数（≥0.0） |
+| `grading` | integer | 是 | 仍在后台判分的开放题数；结算接口会等它归零（≥0.0） |
+| `target_total` | integer |  | 本场目标题数；进程重启后可能为 null，不要用它判断是否出完 |
+
+### ProgressionLink
+
+> 晋升链的一段。只保留两端都在当前画布内的边，否则会画出断头箭头。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `from` | string | 是 | 低阶岗位 id |
+| `to` | string | 是 | 高阶岗位 id |
+| `from_name` | string |  | 低阶岗位名 |
+| `to_name` | string |  | 高阶岗位名 |
+| `rel_type` | string |  | 固定 advances_to（默认 `advances_to`） |
+| `confidence` | string |  | 置信度 |
+| `evidence` | string |  | 建边依据 |
+
+### QuestionOut
+
+> 一道题。choice 与 open 共用此模型，按 `type` 区分有效字段。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `index` | integer | 是 | 题号，作答时回传；也是本场测评内的稳定序号（≥0.0） |
+| `type` | `choice` \| `open` | 是 | choice=情景判断选择题（当场判分）；open=开放问答题（后台判分） |
+| `variant` | string |  | 题目来源变体：sjt=模型生成的情景判断题；self_report=网关不可用时的自评降级题（考核力弱，报告里据此标注）；generic=通用开放题 |
+| `skill_key` | string |  | 考查的技能（聚合主键，非某一档节点 id） |
+| `category` | string |  | 技能大类，雷达图按它聚合 |
+| `required_level` | integer |  | 岗位对该技能要求的档位 1–5，用于判定是否达标 |
+| `weight` | number |  | 该技能在岗位 requires 中的权重，Σ≈1 |
+| `prompt` | string | 是 | 题干 |
+| `options` | `ChoiceOption`[] |  | 选择题的选项；开放题为空数组 |
+| `rubric` | string[] |  | 开放题评分要点，前端可作答题提示展示；选择题为空 |
+| `min_chars` | integer |  | 开放题建议最少字数；选择题为 null |
+| `planned_total` | integer |  | 本场预计总题数；分批出题时是预估值，以 question_end 为准 |
+
+### RadarOut
+
+> 双系列雷达图（学员实测 vs 岗位标准）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `axis_type` | `skill` \| `category` | 是 | 轴的口径：skill=按技能名（默认，与原型一致）；实测技能不足 3 项时回落为 category=按技能大类聚合 |
+| `categories` | string[] | 是 | 各轴名称 |
+| `series` | `RadarSeries`[] | 是 | 两条系列：实测与要求 |
+| `scores` | integer[] | 是 | 兼容字段，等同 series[key=user].scores；新接入请用 series |
+
+### RadarSeries
+
+> 雷达图的一条系列。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `key` | `user` \| `required` | 是 | user=学员实测；required=岗位要求 |
+| `name` | string | 是 | 系列展示名 |
+| `scores` | integer[] | 是 | 各轴得分 0–100，顺序与 categories 一致 |
+
+### RefOut
+
+> id + name 的轻引用。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | 节点 id |
+| `name` | string |  | 展示名 |
+
+### RelationCounts
+
+> 关联节点数量（联读聚合；按 type 有意义键非 0）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `major` | integer |  | 关联专业数（默认 `0`） |
+| `occupation` | integer |  | 关联岗位数（默认 `0`） |
+| `skill` | integer |  | 逻辑技能数（DISTINCT skill_key），非 L 扁平行数（默认 `0`） |
+| `industry` | integer |  | 关联行业数（默认 `0`） |
+| `course` | integer |  | 关联课程数（默认 `0`） |
+| `level` | integer |  | 技能 bundle 下已有 L 档数（默认 `0`） |
+| `skill_aggregated` | integer |  | 专业经岗位两跳汇总的技能数（skill 为直连数）（默认 `0`） |
+| `weight_sum` | number |  | 岗位 requires 权重和，**小数**；归一化后应为 1.0（默认 `0.0`） |
+
+### ReportCounts
+
+> 报告的分项计数。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_total` | integer | 是 | 岗位技能总数（≥0.0） |
+| `tested` | integer | 是 | 本次实测到的技能数（≥0.0） |
+| `untested` | integer | 是 | 未覆盖的技能数（≥0.0） |
+| `strength` | integer | 是 | 达标项数（≥0.0） |
+| `gap` | integer | 是 | 未达标项数（≥0.0） |
+
+### ReportItem
+
+> 报告里的一项技能：岗位要求 vs 学员实测。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string | 是 | 技能聚合主键 |
+| `category` | string | 是 | 技能大类，缺失时为「未分类」 |
+| `required_level` | integer |  | 岗位要求档 1–5 |
+| `required_label` | string |  | 要求档文案，如「熟练」 |
+| `measured_level` | integer |  | 实测档 1–5；未测为 null |
+| `measured_label` | string |  | 实测档文案 |
+| `weight` | number | 是 | 该技能在岗位中的权重，Σ≈1 |
+| `weight_pct` | integer |  | 权重百分比（四舍五入），便于直接展示 |
+| `ratio` | number | 是 | 达成比 = 实测/要求，封顶 1.0 |
+| `ok` | boolean | 是 | 是否达标（实测 ≥ 要求） |
+| `tested` | boolean | 是 | 本次是否实际考到。false 时 measured_* 为 null，不参与匹配度计算 |
+| `source` | string |  | 档位来源：choice / llm / rule |
+| `evidence_score` | number |  | 证据充分度 0–1 |
+| `capped` | boolean |  | 是否因证据不足被压档 |
+| `urgency` | number |  | 补强紧迫度 = 权重 × 差距档数；短板排序用，越大越该先补（默认 `0.0`） |
+
+### RequiredSkillRef
+
+> 岗位要求的一项技能。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | 技能节点或 bundle id |
+| `skill_name` | string |  | 技能名 |
+| `skill_key` | string |  | 技能聚合主键 |
+| `required_level` | integer |  | 要求档 1–5 |
+| `weight` | number |  | 权重 |
+| `category` | string |  | 技能大类 |
+
+### ResourceItem
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 节点 id |
+| `title` | string |  | 标题 |
+| `type` | string |  | video\|practice\|article\|course… |
+| `status` | integer |  | 状态 |
+| `provider` | string |  | 提供方 |
+| `url` | string |  | 链接 |
+| `skill_hint` | string |  | 技能提示 |
+| `desc` | string |  | 简介 |
+
+### ResourceListOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `page` | integer | 是 | 页码，从 1 起 |
+| `page_size` | integer | 是 | 每页条数 |
+| `total` | integer | 是 | 总条数 |
+| `total_pages` | integer | 是 | 总页数 |
+| `items` | `ResourceItem`[] | 是 | 当前页数据 |
+
+### ResumeDiagBody
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `content_text` | string | 是 | 简历正文（粘贴文本）。文件上传后续可扩展 multipart（长度≥1） |
+| `target_occupation_id` | string |  | 目标岗位 id；不传则用已设 goal 或不对标岗位 |
+
+### ResumeExtractOut
+
+> 简历文件 → 文本。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `content_text` | string | 是 | 抽取出的简历正文 |
+| `filename` | string |  | 原始文件名 |
+| `chars` | integer |  | 正文字数（≥0.0，默认 `0`） |
+| `engine` | string |  | 抽取引擎：docx / pdf / plain |
+
+### ResumeSampleOut
+
+> 示例简历，供前端一键填充。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `content_text` | string | 是 | 示例简历正文 |
+| `note` | string | 是 | 用法说明 |
+
+### SharedSkill
+
+> 多个对口岗位共同要求的技能。命中岗位越多，越是这个专业的「专业基本功」。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string |  | 技能聚合主键 |
+| `name` | string |  | 技能名 |
+| `category` | string |  | 技能大类 |
+| `occupation_count` | integer |  | 有多少个对口岗位要求它 |
+| `max_required_level` | integer |  | 这些岗位里要求最高的档 1–5 |
+
+### SimpleRadar
+
+> 单系列雷达图：按技能大类聚合的达成率。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `categories` | string[] |  | 各轴名称（技能大类） |
+| `scores` | integer[] |  | 各轴达成率 0–100，顺序与 categories 一致 |
+
+### SkillBundleBody
+
+> 一次录入逻辑技能 + L1–L5 对象 + 岗位构成权重。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string |  | 聚合主键；缺省用 name |
+| `name` | string |  | 展示名；缺省用 skill_key |
+| `region` | string |  | 地区，如 CN（默认 `CN`） |
+| `scale` | string |  | 等级尺度（默认 `l1_l5`） |
+| `levels` | map<string, `SkillLevelObjIn` | string | object> |  | 键 L1–L5；值为对象（推荐）或字符串。创建时至少一档；更新可省略以保留原档 |
+| `occupation_links` | ``OccupationLink`In`[] |  | 岗位技能构成：权重在 requires 边上 |
+| `occupation_ids` | string[] |  | 兼容：无权重时的岗位 id 列表 |
+| `description` | string |  | 描述 |
+| `source_url` | string |  | 来源链接 |
+| `confidence` | string |  | 置信度（默认 `manual_seed`） |
+| `attrs` | object |  | 自由属性（无数据库约束的 JSON 列，键随数据来源而异） |
+
+### SkillBundleBrief
+
+> 聚合后的技能 bundle 摘要（一个 skill_key 下的 L1–L5 汇总）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | bundle:{region}:{skill_key} |
+| `skill_key` | string |  | 技能聚合主键 |
+| `skill_name` | string |  | 技能名（去等级后缀） |
+| `region` | string |  | 地区，如 CN |
+| `category` | string |  | 技能大类 |
+| `available_levels` | integer[] |  | 已配齐的档位 1–5 |
+| `missing_levels` | integer[] |  | 尚缺的档位 1–5 |
+
+### SkillBundleListOut
+
+> 技能库分页列表（逻辑技能 bundle，多档已聚合）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `items` | `SkillOut`[] | 是 | 当前页技能 |
+| `page` | integer | 是 | 页码，从 1 起（≥1.0） |
+| `page_size` | integer | 是 | 每页条数（≥1.0） |
+| `total` | integer | 是 | 总条数（≥0.0） |
+| `total_pages` | integer | 是 | 总页数（≥0.0） |
+
+### SkillBundlePreviewOut
+
+> 技能 bundle 写入前的影响面预览：会建几个节点、几条边。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string | 是 | 技能聚合主键 |
+| `level_codes` | string[] | 是 | 将要写入的档位编码 |
+| `level_count` | integer | 是 | 档位数（≥0.0） |
+| `occupation_count` | integer | 是 | 关联岗位数（≥0.0） |
+| `occupation_links` | `OccupationLink`[] | 是 | 关联岗位明细 |
+| `will_create_nodes` | integer | 是 | 预计新建节点数（≥0.0） |
+| `will_create_edges` | integer | 是 | 预计新建边数（≥0.0） |
+
+### SkillCategory
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 节点 id |
+| `name` | string | 是 | 名称 |
+
+### SkillCategoryGroup
+
+> 技能大类分区。按职业功能推进顺序排，不按技能数量——否则展示顺序会和箭头方向矛盾。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `key` | string | 是 | 技能大类名 |
+| `rank` | integer | 是 | 推进顺序序号，越小越靠前 |
+| `skills` | `SkillNodeBrief`[] |  | 该区技能 |
+
+### SkillCompositionAdminOut
+
+> 岗位/专业的技能构成（管理台视图）。
+>
+> 岗位 `requires` 技能带权重且需归一化（Σ≈1）；专业 `covers` 技能无权重、不归一。
+> `weighted` 就是这两种情况的区分标志。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `node` | `CompositionNodeHeader` | 是 | 节点头部信息 |
+| `relation` | `requires` \| `covers` | 是 | requires=岗位要求技能（带权重）；covers=专业覆盖技能（无权重） |
+| `weighted` | boolean | 是 | 是否带权重；covers 为 false |
+| `items` | `CompositionItem`[] | 是 | 技能构成明细 |
+| `weight_sum` | number |  | 权重之和，**小数**；weighted=false 时为 null |
+| `normalized` | boolean | 是 | 权重是否已归一（0.995–1.005） |
+| `can_normalize` | boolean | 是 | 是否支持一键归一化（等同 weighted） |
+| `counts` | `CompositionCounts` | 是 | 计数 |
+| `normalized_from` | number |  | 归一化前的权重和；仅归一化接口返回 |
+
+### SkillCompositionOut
+
+> 岗位技能构成（逻辑技能 + 边权重）。
+>
+> 权重只认 `requires` 边上的 weight，节点 `attrs.weight_pct` 仅历史兼容。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation` | `OccupationBrief` | 是 | 岗位摘要 |
+| `skills` | `SkillOut`[] | 是 | 逻辑技能列表（多档已聚合成 bundle） |
+| `skill_count` | integer | 是 | 技能数（≥0.0） |
+| `weight_sum` | number | 是 | 权重之和，**小数**；归一化后应≈1.0，不要声明成 int |
+| `weighted_skill_count` | integer | 是 | 带权重的技能数（≥0.0） |
+| `weight_sum_ok` | boolean | 是 | 权重和是否在容差内（0.85–1.15）；false 表示该岗位权重待归一化 |
+| `note` | string |  | 口径说明 |
+
+### SkillLevelItem
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `level` | integer |  | 产品等级 1–5（1 了解 → 5 专家），唯一判定依据 |
+| `level_label` | string |  | 档位文案，取自 skill_level_meta |
+| `node_id` | string |  | 对应的图节点 id |
+| `description` | string |  | 描述 |
+| `status` | string |  | 状态 |
+| `weight` | number |  | 权重 |
+
+### SkillLevelMeta
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `level` | integer | 是 | 1–5 |
+| `name` | string | 是 | 了解/掌握/熟练/精通/专家 |
+| `base_score` | integer | 是 | 基准分 |
+
+### SkillLevelObjIn
+
+> 单档对象；可扩展 criteria / evidence 等。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `label` | string |  | 了解/掌握/… |
+| `description` | string |  | 能力等级描述 |
+| `criteria` | string[] |  | 该档的考核要点，一条一句；不要塞对象 |
+| `evidence` | string |  | 判定依据 |
+
+### SkillListOut
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `page` | integer | 是 | 页码，从 1 起 |
+| `page_size` | integer | 是 | 每页条数 |
+| `total` | integer | 是 | 总条数 |
+| `total_pages` | integer | 是 | 总页数 |
+| `items` | `SkillOut`[] | 是 | 当前页数据 |
+| `view` | string |  | bundle \| level |
+
+### SkillNodeBrief
+
+> 技能图里的一个技能节点。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string |  | 技能聚合主键 |
+| `name` | string |  | 技能名 |
+| `depth` | integer |  | 前置层深；0 表示无前置，可直接学 |
+| `required_level` | integer |  | 岗位要求档 1–5 |
+| `weight` | number |  | 权重 |
+
+### SkillOptionLevel
+
+> 备选技能的一个档位。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `level` | integer |  | 产品档 1–5 |
+| `level_label` | string |  | 档位文案 |
+| `requirement` | string |  | 该档能力要求描述 |
+
+### SkillOptionOut
+
+> 备选技能（下拉用），按 skill_key 聚合。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string | 是 | 技能聚合主键 |
+| `category` | string |  | 技能大类 |
+| `available_levels` | integer[] |  | 已配齐的档位 1–5 |
+| `levels` | `SkillOptionLevel`[] |  | 各档明细 |
+| `level_completeness` | string | 是 | 档位完整度，形如「3/5」——五档没配齐的技能选了会缺档 |
+
+### SkillOut
+
+> 技能：默认逻辑技能 bundle（多 L 已聚合）；view=level 时为单档扁平行。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | bundle:{region}:{skill_key} 或 skill_level 节点 id |
+| `name` | string |  | 名称 |
+| `skill_name` | string |  | 技能名（去等级后缀） |
+| `skill_key` | string |  | 聚合主键 |
+| `level_label` | string |  | 等级文案或要求档 |
+| `type` | string |  | 类型（默认 `skill`） |
+| `kg_type` | string |  | 图侧节点类型 |
+| `region` | string |  | 地区，如 CN |
+| `desc` | string |  | 简介 |
+| `required_level` | integer |  | 岗位要求档 L1–L5（int） |
+| `weight` | number |  | 岗位要求权重 |
+| `source_url` | string |  | 来源链接 |
+| `attrs` | object |  | 自由属性（无数据库约束的 JSON 列，键随数据来源而异） |
+| `edge` | `backend__api__schemas_biz__EdgeBrief` |  | 与岗位/专业的连边摘要——岗位要求的权重就在这里 |
+| `levels` | `SkillLevelItem`[] |  | 已有等级节点（聚合视图） |
+| `level_descriptions` | map<string, string> |  | L1–L5 能力描述文案 |
+| `available_levels` | integer[] |  | 已配齐的档位 1–5 |
+| `missing_levels` | integer[] |  | 尚缺的档位 1–5 |
+| `counts` | `RelationCounts` |  | 关联计数 |
+
+### SkillPrereqLink
+
+> 技能前置关系：学 `to` 之前应先具备 `from`。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `from` | string | 是 | 先修技能的 skill_key |
+| `to` | string | 是 | 后继技能的 skill_key |
+| `confidence` | number | string |  | 置信度 |
+| `evidence` | string |  | 判定依据 |
+
+### SkillsGraphMeta
+
+> 岗位技能图的口径。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `matched` | integer |  | 是否命中岗位（默认 `0`） |
+| `skill_total` | integer |  | 技能总数（≥0.0，默认 `0`） |
+| `category_count` | integer |  | 技能大类数（≥0.0，默认 `0`） |
+| `uncategorized` | integer |  | 未分类的技能数（≥0.0，默认 `0`） |
+| `prereq_total` | integer |  | 前置关系数（≥0.0，默认 `0`） |
+| `max_depth` | integer |  | 前置层最大深度（≥0.0，默认 `0`） |
+| `order` | string |  | 排序口径说明 |
+| `region` | string |  | 地区 |
+
+### StageAssessOutput
+
+> 阶段二「对话问答测评」的产出。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `asked` | integer |  | 已出题数（≥0.0，默认 `0`） |
+| `answered` | integer |  | 已作答题数（≥0.0，默认 `0`） |
+| `grading` | integer |  | 后台判分中的题数（≥0.0，默认 `0`） |
+
+### StageOut
+
+> 前端步骤条的一个节点。三节点固定，不随后端图结构变化。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `key` | `parse` \| `assess` \| `report` | 是 | 阶段标识 |
+| `name` | string | 是 | 阶段中文名：简历解析推断 / 对话问答测评 / 综合能力报告 |
+| `status` | `pending` \| `active` \| `done` | 是 | pending=灰；active=高亮；done=打勾 |
+| `output` | `StageParseOutput` | `StageAssessOutput` | `AssessmentReportOut` | object |  | 该阶段产出，按 key 取对应结构；report 阶段未完成时为空对象 {} |
+
+### StageParseOutput
+
+> 阶段一「简历解析推断」的产出。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `engine` | string |  | 解析引擎：llm=模型抽取；rule=规则兜底；skip=未提供简历 |
+| `skill_count` | integer |  | 解析出的技能数（≥0.0，默认 `0`） |
+| `skills` | `ParsedSkill`[] |  | 逐项技能与推断档位 |
+| `note` | string |  | 降级或失败说明；正常为 null |
+
+### StartBody
+
+> 开始一场测评。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation_id` | string |  | 目标岗位节点 id；不传则取当前锁定的学习目标 |
+| `resume_text` | string |  | 简历原文；留空则跳过解析阶段，直接按岗位标准出题 |
+
+### UserBadgeOut
+
+> 已解锁的成就（成就定义 + 解锁时间）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `code` | string | 是 | 成就编码 |
+| `name` | string | 是 | 成就名 |
+| `description` | string |  | 成就说明 |
+| `points` | integer |  | 该成就的成长值（默认 `0`） |
+| `category` | string |  | 成就分类 |
+| `unlocked_at` | string |  | 解锁时间 ISO8601 |
+
+### UserGoalBrief
+
+> 当前学习目标摘要。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | string |  | UC 用户 id |
+| `user_name` | string |  | 用户名 |
+| `occupation_id` | string |  | 目标岗位 id |
+| `occupation_name` | string |  | 目标岗位名 |
+| `major_id` | string |  | 关联专业 id |
+| `major_name` | string |  | 关联专业名 |
+| `industry_id` | string |  | 所属行业 id |
+| `industry_name` | string |  | 所属行业名 |
+| `status` | string |  | active=活跃；archived=历史 |
+| `created_at` | string |  | 设定时间 ISO8601 |
+| `updated_at` | string |  | 更新时间 ISO8601 |
+
+### UserSkillItem
+
+> 学员技能画像的一项（对应 biz_user_skill 一行）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | string |  | UC 用户 id |
+| `skill_id` | string | 是 | 技能 id 或 skill_key |
+| `skill_name` | string |  | 技能名 |
+| `level` | integer |  | 档位 1–5（≥1.0，≤5.0，默认 `1`） |
+| `score` | integer |  | 得分（默认 `0`） |
+| `source` | string |  | 来源：self=自评；assessment=测评；resume=简历解析（默认 `self`） |
+| `updated_at` | string |  | 更新时间 ISO8601 |
+
+### UserSkillOut
+
+> 学员技能画像的一项（对应 biz_user_skill 一行）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | string |  | UC 用户 id |
+| `skill_id` | string |  | 技能 id 或 skill_key |
+| `skill_name` | string |  | 技能名 |
+| `level` | integer |  | 档位 1–5（≥1.0，≤5.0，默认 `1`） |
+| `score` | integer |  | 得分（默认 `0`） |
+| `source` | string |  | 来源：self=自评；assessment=测评；resume=简历解析（默认 `self`） |
+| `updated_at` | string |  | 更新时间 ISO8601 |
+
+### backend__api__schemas_biz__EdgeBrief
+
+> 连边摘要：这条记录是**经哪条边**关联进来的。
+>
+> 同一个节点可能因不同的边被带进列表（岗位既 belongs_to 行业、又被专业
+> prepares_for），`rel_type` 与 `weight` 说明的是这一次的关联口径。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | 边 id |
+| `rel_type` | string |  | 关系类型：requires / covers / belongs_to / prepares_for |
+| `weight` | number |  | 边权重；无权重的关系为 null |
+| `confidence` | string |  | 置信度标记，如 ai_inferred |

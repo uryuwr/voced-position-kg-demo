@@ -68,3 +68,7 @@ package-lock.json
 # 本地生成的样例文件
 reports/mock/*.docx
 reports/mock/*.pdf
+
+# 飞书 API 文档的目标 token（本地态，不同人不同文档）
+docs/.lark_api_doc
+.tmp_lark/
