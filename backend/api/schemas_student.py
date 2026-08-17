@@ -33,7 +33,15 @@ class MatchItem(BaseModel):
     skill_key: str = Field(..., description="技能聚合主键")
     skill_name: str | None = Field(None, description="技能展示名")
     category: str | None = Field(None, description="技能大类")
-    required_level: int | None = Field(None, ge=1, le=5, description="岗位要求档 1–5")
+    required_level: int | None = Field(
+        None,
+        ge=0,
+        le=5,
+        description=(
+            "岗位要求档 1–5；**0 表示该技能没有指定要求档**（边没指向具体等级节点），"
+            "此时该项按「无要求」处理、`ratio` 记 1.0"
+        ),
+    )
     user_level: int | None = Field(
         None,
         ge=0,
