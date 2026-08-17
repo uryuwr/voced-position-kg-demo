@@ -1,4 +1,4 @@
-"""写单测过程中发现、**尚未定案**的 backend 缺陷 —— 立此存照。
+"""写单测过程中发现、**尚未修好**的 backend 缺陷 —— 立此存照。
 
 带 `xfail(strict=True)` 的用例断言的是**修好之后**应有的行为：现在 XFAIL（套件仍绿），
 修好后变 XPASS 让套件变红，提醒把标记删掉、把用例挪进对应模块的正式测试文件。
@@ -6,17 +6,26 @@
 不带标记的是「当前行为的存档」（characterization test）：它们现在是绿的，只是把
 一个可疑但尚未定论的现状钉住，重构时若无意改动会立刻发现。
 
-已定案的三个缺陷，测试已迁出本文件（都改成了**正向断言**，不再是 xfail）：
+已定案的缺陷，测试已迁出本文件（都改成了**正向断言**，不再是 xfail）：
 
 | 缺陷 | 定案 | 现在锁在哪 |
 | --- | --- | --- |
 | BUG-1 越界档位让 `base_score` 抛 KeyError、打死整份报告 | 越界值按「无效档位」处理（记 0 分） | `test_assessment_report.py::TestDirtyRadarLevel` / `TestDirtyLevelGuard` |
-| BUG-2 两个匹配度口径不同源 | 统一为「岗位整体准备度」= 全权重分母 | `test_match_score_parity.py`（同源锁）+ `test_assessment_report.py::TestBuildReportMatchScore` |
+| BUG-2 两个匹配度口径不同源 | 统一为「岗位整体准备度」= 可评分权重分母 | `test_match_score_parity.py`（同源锁）+ `test_assessment_report.py::TestBuildReportMatchScore` |
 | BUG-3 `MAX_QUESTIONS=10` 在出题路径上失效 | 实际排出的题数必须 ≤ 10 | `test_assessment_pipeline.py::TestHardCap` / `TestCapKeepsSemantics` |
+| BUG-5 脏 weight 一边抛错一边判 0，`"0.5"` 两边解析不一致 | 抽 `config.as_weight` 两边共用；数字字符串照解析、真脏值取 0 | `test_pg_guards.py::TestAsWeight` + `test_assessment_report.py::TestDirtyWeightInReport` + `test_match_score_parity.py::TestParityOnDirtyInput` |
+| BUG-6 越界/缺失要求档被当成「无要求」反而白送满分 | 无基准的项整项排除出分子分母；全无基准时 `match_score=None` | `test_assessment_report.py::TestNoBaselineScoring` + `test_match_profile.py::TestNoBaseline` |
+| BUG-7 画像侧 `user_levels` 没过 `as_level`：越界实测档在列表页拿满分、负数算出负分、字符串抛 TypeError | 画像侧也走 `config.as_level`（`ulv = as_level(raw) or 0`），与报告侧同一个函数 | `test_match_profile.py::TestDirtyMeasuredLevel`（画像侧正向断言）+ `test_match_score_parity.py::TestParityOnDirtyInput` 的脏实测档那几条（两侧同源）；两侧对「有证据」定义不同这个**残留**差异存档在 `TestEvidenceAsymmetry` |
+
+留在本文件的只有 BUG-4：产品口径未定，不是「已知该怎么修但还没修」。
+
+**BUG-8 例外，不在本文件**：`config.as_level` 把 `3.0` / `Decimal("3.0")` 判成
+「没有档位」（`int("3.0")` 抛 ValueError），整个岗位会静默变成 `no_baseline`、
+分数变 null。它的 strict xfail 与 `as_level` 的其余口径断言放在一起，
+见 `test_pg_guards.py::TestAsLevel::test_整数值的浮点档位该收成整数` ——
+一个函数的口径拆两个文件写，改的人只会看到一半。
 """
 from __future__ import annotations
-
-import pytest
 
 from backend.agent.assessment.report import build_report
 
@@ -48,81 +57,3 @@ class TestRadarTooFewAxes:
         assert radar["axis_type"] == "category"
         assert len(radar["categories"]) == 1
         assert "drawable" not in radar and "insufficient" not in radar
-
-
-# ══════════════════════════════════════════════════════════════
-# BUG-5（写 BUG-2 的同源测试时发现）：脏 weight 一边抛错、一边按 0 处理
-# ══════════════════════════════════════════════════════════════
-#
-# `weight` 来自 `kg_edge.weight`，采集脚本与直连改库都绕得过应用层校验：
-#   - `match_with_profile`：`float(w) if isinstance(w, (int, float)) else 0.0` —— 脏值取 0，站得住
-#   - `build_report`      ：`float(it.get("weight") or 0)` —— `"abc"` 直接 ValueError，整份报告 500
-# 形状就是项目栽过四次的「一条脏数据打死一整页」，只是这次落在报告接口上。
-#
-# 顺带一个口径分家：`"0.5"` 这种**数字字符串**在报告侧被当成 0.5、在画像侧被当成 0.0，
-# 于是 BUG-2 刚统一好的匹配度又能在脏数据上分家（见下面第二条存档）。
-#
-# 未定案：是把 report 改成跟画像侧一样的 `isinstance` 判定（脏值一律取 0），
-# 还是抽一个共用的 `_as_weight()` 两边都用。建议随 BUG-2 一并定。
-
-
-class TestDirtyWeight:
-    @pytest.mark.known_bug
-    @pytest.mark.xfail(
-        strict=True, raises=ValueError,
-        reason="BUG-5（未定案）：非数值 weight 让 build_report 抛 ValueError，整份报告 500。",
-    )
-    def test_非数值权重不该打死报告(self):
-        rep = build_report(
-            occupation=None,
-            required_items=[{"skill_key": "A", "category": "c", "required_level": 3, "weight": "abc"}],
-            measured={"A": {"level": 3}},
-        )
-        assert isinstance(rep["match_score"], float)
-
-    def test_当前行为存档_数字字符串权重两边解析不一致(self):
-        """report 认 `"0.5"`、match_with_profile 认成 0.0 —— 统一 weight 解析后改这条。"""
-        from backend.kg.pg_store.biz_store import match_with_profile
-
-        required = [{"skill_key": "A", "category": "c", "required_level": 3, "weight": "0.5"}]
-        rep = build_report(occupation=None, required_items=required, measured={"A": {"level": 3}})
-        prof = match_with_profile({"id": "o"}, required, {"A": 3})
-        assert rep["items"][0]["weight"] == 0.5
-        assert prof["items"][0]["weight"] == 0.0
-
-
-# ══════════════════════════════════════════════════════════════
-# BUG-6（BUG-1 修复的副作用）：越界要求档被当成「岗位没有要求」，反而白送满分
-# ══════════════════════════════════════════════════════════════
-#
-# BUG-1 的定案是「越界档位按无效处理」，`report._level()` 把 9 取成 None，
-# `build_report` 里再 `or 0` 落成 req=0。而 `_ratio` 对 req=0 的口径是
-# 「有实测即满分」（本意是「岗位没给要求档就别为此扣分」）。两条规则叠起来：
-# 一条 `attrs.level='9'` 的脏边 → 该技能按**满分**计入匹配度。
-#
-# 不再 500 了（BUG-1 的目标达到了），但脏数据现在是往上抬分而不是往下压分，
-# 方向上比原来更糟：学员看到虚高的「整体准备度」。
-#
-# 未定案的三条路：
-#   a) 越界要求档 ⇒ ratio 0（保守：没有可信标准就不给分）
-#   b) 越界要求档 ⇒ 整项**排除**出分母（既不给分也不扣分，用 coverage 表达）
-#   c) 维持现状，把「无效要求档」的项数在报告里显式暴露给运营去修数据
-# 注意 a/b 要和 `match_with_profile` 一起改，否则 BUG-2 刚统一的口径又分家。
-
-
-class TestDirtyRequiredLevelInflatesScore:
-    def test_当前行为存档_越界要求档让该项按满分计入(self):
-        required = [
-            {"skill_key": "脏边", "category": "c", "required_level": 9, "weight": 0.5},
-            {"skill_key": "正常", "category": "c", "required_level": 5, "weight": 0.5},
-        ]
-        rep = build_report(
-            occupation=None, required_items=required,
-            measured={"脏边": {"level": 1}, "正常": {"level": 1}},
-        )
-        脏, 正常 = rep["items"]
-        assert (脏["ratio"], 脏["ok"]) == (1.0, False), "算满分，却又不算达标"
-        assert 正常["ratio"] == 0.2
-        # 只因为一条脏边，L1 的学员在这个岗位上拿到 60%
-        assert rep["match_score"] == 60.0
-        assert [g["skill_key"] for g in rep["gaps"]] == ["正常", "脏边"]

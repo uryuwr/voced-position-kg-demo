@@ -45,6 +45,10 @@ import re
 from typing import Any
 
 from backend.agent.llm import invoke_fast, llm_ready
+# 档位/权重脏值解析的唯一实现（与报告侧、画像侧同一套规则）：`float(w or 0)`、
+# `int(lv or 0)` 遇到 `"abc"` 会抛 ValueError —— 出题是长连接的第一步，
+# 一条脏边就能让整场测评起不来。
+from backend.kg.pg_store.config import as_level, as_weight
 from backend.kg.pg_store.skill_level_meta import behavior_map, label_map
 
 FIRST_BATCH = 3           # 首批题量（首屏速度）
@@ -83,23 +87,37 @@ def _requirement_hint(item: dict[str, Any]) -> str | None:
 def _fit_budget(
     cover: int, verify: int, *, budget: int, cover_floor: int
 ) -> tuple[int, int]:
-    """把「想考的题数」压进 budget，两类题**按原比例缩**。
+    """把「想考的题数」压进 budget：**两类题各有下限，先保下限再按比例分剩余名额**。
 
     不能简单把清单截断到 budget：验证题一律排在覆盖题之后，一刀切等于把它们
     全砍掉，要求 L4/L5 的技能就再也拿不到证据——而区分两类题正是
-    estimate_total 存在的理由。覆盖题另有下限（雷达至少 RADAR_MIN_SKILLS 根轴、
-    不少于 MIN_COVER_QUESTIONS 道），压缩时优先保它，验证题让位。
+    estimate_total 存在的理由。
+
+    此前只有覆盖题有下限、验证题纯按比例缩，方向反了：技能越多 → demand 越大 →
+    验证题占比越小。实测 4/8/12 项技能排 2 道验证题，20/28/40 项**只剩 1 道**。
+    验证题是要模型判分的开放追问、是唯一的深度考核手段，**高标准岗位恰恰最需要它**。
+    所以给它同样的下限 OPEN_PER_RUN（有需求时保满 2 道），名额从覆盖题里让。
+
+    两个下限：
+    - 覆盖题 `cover_floor`（雷达至少 RADAR_MIN_SKILLS 根轴、不少于 MIN_COVER_QUESTIONS 道）
+    - 验证题 `min(verify, OPEN_PER_RUN)`
+
+    预算装不下两个下限时（只会在 budget < cover_floor + OPEN_PER_RUN 时发生，
+    真实路径上 budget 恒为 MAX_QUESTIONS=10 ≥ 4+2，够装）**优先保覆盖题**：
+    雷达画不出来整份报告就没有形状，而验证题少一道只是深度弱一点。
     """
     demand = cover + verify
     if demand <= budget or budget <= 0:
         return cover, verify
-    # 原本有验证题就至少留 1 道（比例算出 0 也留），否则高要求档岗位退化成纯选择题
-    v = min(verify, max(1, round(budget * verify / demand))) if verify else 0
-    c = budget - v
-    floor = min(cover_floor, budget)
-    if c < floor:
-        c, v = floor, max(0, budget - floor)
-    return c, min(v, verify)
+    v_floor = min(verify, OPEN_PER_RUN)
+    c_floor = min(cover_floor, cover, budget)
+    # 按原比例分，但不低于各自下限、不高于各自需求量
+    v = min(verify, max(v_floor, round(budget * verify / demand)))
+    c = min(cover, budget - v)
+    if c < c_floor:                      # 覆盖题被挤破下限 → 从验证题回收
+        c = c_floor
+        v = min(verify, max(0, budget - c))
+    return c, v
 
 
 def plan_all_skills(
@@ -116,7 +134,7 @@ def plan_all_skills(
     照排——后者是**没夹过上限的需求量**，直接用它，20 项技能的岗位会排出 18 题。
     """
     est = plan or estimate_total(items)
-    ranked = sorted(items, key=lambda x: -(float(x.get("weight") or 0)))
+    ranked = sorted(items, key=lambda x: -(as_weight(x.get("weight"))))
     budget = min(int(est.get("total") or 0) or MAX_QUESTIONS, MAX_QUESTIONS)
     cover_n = min(int(est.get("cover") or 0) or MIN_COVER_QUESTIONS, len(ranked))
     verify_n = max(0, int(est.get("verify") or 0))
@@ -148,7 +166,7 @@ def plan_all_skills(
 
     out = [{**it, "_item_type": "choice", "_reason": "coverage"} for it in picked]
     # 验证题：要求档高的技能追加开放题，按权重优先
-    hard = [it for it in picked if int(it.get("required_level") or 0) >= VERIFY_LEVEL]
+    hard = [it for it in picked if (as_level(it.get("required_level")) or 0) >= VERIFY_LEVEL]
     for it in hard[:verify_n]:
         out.append({**it, "_item_type": "open", "_reason": "verify_high_bar"})
     return out
@@ -181,7 +199,7 @@ def plan_batch_skills(
         lv, req = g.get("level") or 0, g.get("required_level") or 0
         if req and lv >= req:                       # 声称达标 → 需要证据
             verify.append({**it, "_item_type": "open", "_reason": "verify_claim"})
-    verify.sort(key=lambda x: -(float(x.get("weight") or 0)))
+    verify.sort(key=lambda x: -(as_weight(x.get("weight"))))
 
     # 未考过的技能 → 出选择题，权重优先、同大类限额
     cat_used: dict[str, int] = {}
@@ -191,7 +209,7 @@ def plan_batch_skills(
             c = str(it.get("category") or "未分类")
             cat_used[c] = cat_used.get(c, 0) + 1
     fresh: list[dict[str, Any]] = []
-    for it in sorted(items, key=lambda x: -(float(x.get("weight") or 0))):
+    for it in sorted(items, key=lambda x: -(as_weight(x.get("weight")))):
         key = str(it.get("skill_key"))
         if asked.get(key):
             continue
@@ -206,7 +224,7 @@ def plan_batch_skills(
     # 「计算机程序设计员」这类岗位 4 项技能几乎同属一类，卡住就只能出 3 题
     if len(verify) + len(fresh) < size:
         picked_keys = {str(x.get("skill_key")) for x in fresh}
-        for it in sorted(items, key=lambda x: -(float(x.get("weight") or 0))):
+        for it in sorted(items, key=lambda x: -(as_weight(x.get("weight")))):
             key = str(it.get("skill_key"))
             if asked.get(key) or key in picked_keys:
                 continue
@@ -245,14 +263,14 @@ def estimate_total(items: list[dict[str, Any]]) -> dict[str, Any]:
     if not n:
         return {"total": 0, "cover": 0, "verify": 0, "reason": "该岗位没有技能构成"}
 
-    ranked = sorted(items, key=lambda x: -(float(x.get("weight") or 0)))
-    total_w = sum(float(i.get("weight") or 0) for i in ranked)
+    ranked = sorted(items, key=lambda x: -(as_weight(x.get("weight"))))
+    total_w = sum(as_weight(i.get("weight")) for i in ranked)
     cover = 0
     if total_w > 0:
         acc = 0.0
         for it in ranked:
             cover += 1
-            acc += float(it.get("weight") or 0)
+            acc += as_weight(it.get("weight"))
             if acc / total_w >= COVERAGE_TARGET:
                 break
     else:
@@ -262,7 +280,7 @@ def estimate_total(items: list[dict[str, Any]]) -> dict[str, Any]:
     # 高要求档的技能要验证：要求 L4/L5 却只凭选择题定档，虚高无从发现
     hard = [
         it for it in ranked[:cover]
-        if int(it.get("required_level") or 0) >= VERIFY_LEVEL
+        if (as_level(it.get("required_level")) or 0) >= VERIFY_LEVEL
     ]
     verify = min(len(hard), OPEN_PER_RUN)
 
@@ -306,7 +324,7 @@ def should_stop(
 def fallback_choice(item: dict[str, Any]) -> dict[str, Any]:
     """自评题。考核力弱于 SJT，仅保证流程可跑通，报告里以 variant 区分。"""
     labels, behaviors = label_map(), behavior_map()
-    req = int(item.get("required_level") or 0)
+    req = (as_level(item.get("required_level")) or 0)
     levels = sorted({int(x) for x in (item.get("available_levels") or []) if x})
     if req and req not in levels:
         levels = sorted(set(levels) | {req})
@@ -335,7 +353,7 @@ def fallback_open(item: dict[str, Any]) -> dict[str, Any]:
         "variant": "generic",
         "skill_key": item.get("skill_key"),
         "category": item.get("category"),
-        "required_level": int(item.get("required_level") or 0) or None,
+        "required_level": (as_level(item.get("required_level")) or 0) or None,
         "weight": item.get("weight"),
         "prompt": (
             f"请具体描述一次你在「{item.get('skill_key')}」上的实际经历："
@@ -439,7 +457,7 @@ def _norm_choice(gen: dict[str, Any], item: dict[str, Any]) -> dict[str, Any] | 
         "variant": "sjt",
         "skill_key": item.get("skill_key"),
         "category": item.get("category"),
-        "required_level": int(item.get("required_level") or 0) or None,
+        "required_level": (as_level(item.get("required_level")) or 0) or None,
         "weight": item.get("weight"),
         "prompt": prompt[:400],
         "options": options,
@@ -456,7 +474,7 @@ def _norm_open(gen: dict[str, Any], item: dict[str, Any]) -> dict[str, Any] | No
         "variant": "sjt",
         "skill_key": item.get("skill_key"),
         "category": item.get("category"),
-        "required_level": int(item.get("required_level") or 0) or None,
+        "required_level": (as_level(item.get("required_level")) or 0) or None,
         "weight": item.get("weight"),
         "prompt": prompt[:400],
         "rubric": rubric[:3] or ["有具体任务背景", "方法可复述", "结果可验证"],

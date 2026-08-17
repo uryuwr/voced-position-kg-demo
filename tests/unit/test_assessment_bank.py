@@ -19,6 +19,7 @@ from backend.agent.assessment.bank import (
     RADAR_MIN_SKILLS,
     VERIFY_LEVEL,
     _extract,
+    _fit_budget,
     _is_real_requirement,
     _norm_choice,
     _norm_open,
@@ -118,6 +119,63 @@ class TestEstimateTotal:
         est = estimate_total([it("A", weight=1.0, level=5)])
         assert "按权重覆盖 80%" in est["reason"]
         assert "要求档≥L4" in est["reason"]
+
+
+# ── _fit_budget：两类题各有下限（定案 2026-08）─────────────────
+#
+# 「把想考的题数压进 budget」不能一刀切，也不能只保覆盖题。
+# 旧实现验证题纯按比例缩（`round(budget * verify / demand)`，兜底留 1 道），
+# 方向反了：技能越多 → demand 越大 → 验证题占比越小。实测 4/8/12 项技能排 2 道，
+# 20/28/40 项**只剩 1 道** —— 而验证题是唯一要模型判分的深度考核手段，
+# 要求档越高的岗位越需要它。
+#
+# 定案：验证题下限 = min(需求量, OPEN_PER_RUN)，名额从覆盖题让；
+# 两个下限装不下时（budget < cover_floor + OPEN_PER_RUN）优先保覆盖题——
+# 雷达画不出来整份报告就没有形状，验证题少一道只是深度弱一点。
+# 「实排题数」的权威断言在 test_assessment_pipeline.py::TestCapKeepsSemantics。
+
+FLOOR = 4       # 真实路径上的 cover_floor（= max(RADAR_MIN_SKILLS, MIN_COVER_QUESTIONS)）
+
+
+class TestFitBudget:
+    def test_装得下就原样返回(self):
+        assert _fit_budget(4, 2, budget=10, cover_floor=FLOOR) == (4, 2)
+        assert _fit_budget(8, 2, budget=10, cover_floor=FLOOR) == (8, 2)
+
+    @pytest.mark.parametrize("cover", [9, 10, 13, 16, 23, 32])
+    def test_压缩时验证题保住下限(self, cover):
+        """真实路径：budget 恒为 MAX_QUESTIONS，验证题需求量恒为 OPEN_PER_RUN。"""
+        c, v = _fit_budget(cover, OPEN_PER_RUN, budget=MAX_QUESTIONS, cover_floor=FLOOR)
+        assert v == OPEN_PER_RUN, "验证题被按比例缩掉了 —— 技能越多反而越少考深度"
+        assert c == MAX_QUESTIONS - OPEN_PER_RUN
+        assert c + v == MAX_QUESTIONS
+
+    def test_验证题需求少于下限时不凭空造(self):
+        assert _fit_budget(16, 1, budget=10, cover_floor=FLOOR) == (9, 1)
+        assert _fit_budget(16, 0, budget=10, cover_floor=FLOOR) == (10, 0)
+
+    def test_覆盖题需求少于下限时不凭空造(self):
+        """1 项技能的岗位排不出 4 道覆盖题，下限得按需求量收。"""
+        assert _fit_budget(2, 2, budget=3, cover_floor=FLOOR) == (2, 1)
+
+    def test_预算装不下两个下限时优先保覆盖题(self):
+        """cover_floor(4) + OPEN_PER_RUN(2) = 6 > budget，此时验证题让位。"""
+        c, v = _fit_budget(3, 2, budget=4, cover_floor=FLOOR)
+        assert (c, v) == (3, 1)
+        c, v = _fit_budget(10, 2, budget=4, cover_floor=FLOOR)
+        assert (c, v) == (FLOOR, 0), "覆盖题下限优先，验证题可以为 0"
+
+    def test_总数永不超预算(self):
+        for cover in range(0, 40):
+            for verify in range(0, 5):
+                c, v = _fit_budget(cover, verify, budget=MAX_QUESTIONS, cover_floor=FLOOR)
+                assert c + v <= MAX_QUESTIONS, (cover, verify, c, v)
+                assert c <= cover and v <= verify, "不能排出比需求还多的题"
+                assert c >= 0 and v >= 0
+
+    @pytest.mark.parametrize("budget", [0, -1])
+    def test_预算为零或负时原样返回不做压缩(self, budget):
+        assert _fit_budget(5, 2, budget=budget, cover_floor=FLOOR) == (5, 2)
 
 
 # ── plan_all_skills ───────────────────────────────────────────

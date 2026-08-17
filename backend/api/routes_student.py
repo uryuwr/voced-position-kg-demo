@@ -204,6 +204,15 @@ def student_position_skill_composition_q(
         "| 2 | `assessment` | 测评沉淀的实测技能画像（biz_user_skill）现算 | 否 |\n"
         "| 3 | `memory` | 五维记忆经图谱召回 + 模型定级推断 | **是**（约 5–10s） |\n"
         "| 4 | `none` | 无任何证据 | 否 |\n\n"
+        "级联之前还有一道判定：该岗位**一项技能都没配要求档**时直接返回 "
+        "`source=no_baseline`、`match_score=null` —— 没有基准就算不出达标率，"
+        "此时显示的是数据缺口而不是学员水平。\n\n"
+        "级联之后还有一道**服务端降级**：岗位缺要求档的技能权重占比**超过 30%**"
+        "（阈值是服务端常量 `PARTIAL_BASELINE_PCT`，不要在前端各定一份）时，"
+        "`source` 与 `score_status` 都改成 `partial_baseline`，"
+        "`match_score` 仍照给 —— 已配置的那部分是真实依据，但只依据 18% 的权重算出的 "
+        "50% 会被学员读成「我匹配一半」，必须由服务端明确标成「仅供参考」。"
+        "证据强度这时看 `estimated` / `diagnosis` / `profile` 三个字段。\n\n"
         "做过诊断就直接用报告里的数——它由学员实际作答算出，比任何实时推断都准，"
         "也省掉一次模型调用。因此**列表页不再展示匹配度**（避免整页触发模型），"
         "只在进入岗位详情时按需计算。\n\n"
@@ -223,6 +232,11 @@ def student_position_match(
     ),
     user: TempUser = Depends(require_temp_user),
 ) -> PositionMatchOut:
+    from backend.kg.pg_store.config import (
+        PARTIAL_BASELINE_PCT,
+        degrade_for_baseline_gap,
+        is_partial_baseline,
+    )
     from backend.kg.pg_store.query import get_node
     from backend.kg.pg_store.skill_aggregate import occupation_skill_bundles
     from backend.userprofile import assessment_levels, diagnosed_match, get_profile
@@ -231,6 +245,27 @@ def student_position_match(
     if not occ or occ.get("type") != "occupation":
         raise HTTPException(404, "position not found")
     occ_brief = {"id": occ.get("id"), "name": occ.get("name"), "level": occ.get("level")}
+
+    def _mark_partial(detail: dict[str, Any]) -> dict[str, Any]:
+        """岗位配置不全时把 `source` 降级成 partial_baseline（分数不动）。
+
+        为什么让 `source` 让位：它回答的是「展示这个数时最该先提醒学员什么」——
+        既有的 `no_baseline` 已经是这个用法（缺口 100% 时压过证据强度），
+        `partial_baseline` 只是同一逻辑的连续形态，缺口 82% 与 100% 不该一个报数据
+        缺口一个报「实测」。证据强度并没有丢：`estimated`（实测/推断）、
+        `diagnosis`（测过没测过）、`profile` 三个字段都还在。
+
+        阈值与 `score_status` 同一个函数、同一个常量（PARTIAL_BASELINE_PCT），
+        两个字段不会一个说 partial 一个说 ok。
+        """
+        if is_partial_baseline(detail.get("no_baseline_weight")):
+            detail["source"] = "partial_baseline"
+            detail["reason"] = detail.get("reason") or (
+                f"该岗位 {detail.get('no_baseline_weight')}% 的技能权重尚未配置能力要求档"
+                f"（超过 {PARTIAL_BASELINE_PCT:g}% 即降级）；分数只依据已配置的那部分算出，"
+                "仅供参考，需运营补齐岗位标准"
+            )
+        return detail
 
     # ① 诊断过就直接用报告里的匹配度
     diag = diagnosed_match(user.user_id, position_id)
@@ -245,6 +280,18 @@ def student_position_match(
             "diagnosis": diag,
         }
 
+    # ①.5 该岗位一项技能都没配要求档 → 没有基准就算不出达标率。
+    # 必须在级联之前判掉：往下走会被 covered_count==0 误判成 no_overlap，
+    # 文案变成「你的画像未覆盖该岗位要求的技能」，把数据缺口说成学员的问题。
+    if not biz.has_baseline(required):
+        detail = biz.match_with_profile(occ_brief, required, assessment_levels(user.user_id))
+        detail.update({
+            "match_score": None, "source": "no_baseline", "estimated": False,
+            "reason": "该岗位的技能尚未配置能力要求档，无法计算匹配度（需运营补齐岗位标准）",
+            "diagnosis": diag,
+        })
+        return detail
+
     if diag:
         # 明细仍按实测画像现算（供优势/短板/雷达展示），但总分以报告为准
         detail = biz.match_with_profile(occ_brief, required, assessment_levels(user.user_id))
@@ -253,8 +300,12 @@ def student_position_match(
             "source": "diagnosis",
             "estimated": False,
             "diagnosis": diag,
+            # score_status 要描述**这里返回的那个分数**。返回的是报告分（必有值），
+            # 而 detail 里的状态是按实测画像现算的：画像与该岗位零交集时它会是
+            # no_evidence，与「明明给了一个数」自相矛盾。按基准缺口重判一次。
+            "score_status": degrade_for_baseline_gap("ok", detail.get("no_baseline_weight")),
         })
-        return detail
+        return _mark_partial(detail)
 
     # ② 有实测画像 → 现算（无模型调用）
     no_overlap: dict[str, Any] | None = None   # 有画像但与该岗位零交集时的兜底明细
@@ -264,7 +315,7 @@ def student_position_match(
         if detail.get("covered_count"):
             detail.update({"source": "assessment", "estimated": True,
                            "profile": {"assessment_count": len(a)}})
-            return detail
+            return _mark_partial(detail)
         # 零交集时 0% 会被读成「完全不匹配」，实际是「这些技能一项都没测过」
         no_overlap = detail
 
@@ -288,7 +339,7 @@ def student_position_match(
                     "note": (prof.get("meta") or {}).get("error"),
                 },
             })
-            return detail
+            return _mark_partial(detail)
 
     # ④ 无任何证据：不要用 0% 冒充「完全不匹配」
     if no_overlap is not None:

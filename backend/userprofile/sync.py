@@ -58,10 +58,14 @@ def build_text(report: dict[str, Any], *, occupation_name: str, when: str | None
         return ""
     items.sort(key=lambda x: -(x.get("measured_level") or 0))
 
+    # 匹配度可能算不出来（岗位一项要求档都没配，见 report.build_report）：
+    # 那时写「匹配度 None%」会把脏文本灌进五维记忆，宁可不写这一句
+    score = report.get("match_score")
     parts = [
         f"用户完成了「{occupation_name}」岗位的 AI 能力测评"
         + (f"（测评时间 {when[:10]}）" if when else "")
-        + f"，综合能力匹配度 {report.get('match_score')}%。"
+        + (f"，综合能力匹配度 {score}%。" if score is not None
+           else "（该岗位未配置能力要求档，未计算匹配度）。")
     ]
     lv_desc = "、".join(f"{n} 级表示{w}" for n, w in _LEVEL_WORD.items())
     parts.append(f"能力档位按 1 到 5 级划分，{lv_desc}。")

@@ -109,6 +109,41 @@ class TestContent:
         assert text.index("高 达到") < text.index("中 达到") < text.index("低 达到")
 
 
+class TestNoMatchScore:
+    """匹配度算不出来时（岗位一项要求档都没配 ⇒ `match_score` 为 None）。
+
+    这段文字会被灌进五维记忆，之后当作**别的岗位**的推断依据用；写进
+    「综合能力匹配度 None%」等于让平台记住一条脏事实，错一次会一直错下去。
+    """
+
+    NO_SCORE = {"match_score": None, "items": REPORT["items"]}
+
+    def test_不把None拼进文案(self):
+        text = build_text(self.NO_SCORE, occupation_name="混凝土工")
+        assert "None" not in text and "%" not in text
+
+    def test_改成说明未计算原因(self):
+        text = build_text(self.NO_SCORE, occupation_name="混凝土工")
+        assert "未配置能力要求档" in text and "未计算匹配度" in text
+
+    def test_逐项实测结论照样写(self):
+        """匹配度算不出来不影响「实测到什么档位」——那部分证据是真的。"""
+        text = build_text(self.NO_SCORE, occupation_name="混凝土工")
+        assert "配料准备 达到 3 级（熟练）" in text
+        assert "安全防护" not in text, "未实测的仍然不写"
+
+    def test_一项都没实测到时仍返回空串(self):
+        rep = {"match_score": None, "items": [item("A", tested=False, measured=None)]}
+        assert build_text(rep, occupation_name="X") == ""
+
+    def test_零分与算不出分是两种文案(self):
+        """0.0 是真结论（有基准、只是没证据），None 是「无从算起」，不能混。"""
+        zero = build_text({"match_score": 0.0, "items": REPORT["items"]}, occupation_name="X")
+        none_ = build_text(self.NO_SCORE, occupation_name="X")
+        assert "综合能力匹配度 0.0%" in zero
+        assert "综合能力匹配度" not in none_
+
+
 class TestFormat:
     def test_是纯自然语言不嵌JSON(self):
         """按《text 内容规范》：五维归类、拆分事实、生成标签都由平台负责。"""

@@ -185,14 +185,37 @@
     /** 匹配度只在岗位详情按需取：服务端级联（诊断报告 > 实测画像 > 记忆推断），
         只有最后一档才会调模型，所以放在详情里等几秒可以接受，放列表里逐行算不行。 */
     // 措辞要能区分「测过这个岗位」和「用你已有的技能画像去比对这个岗位」——
-    // biz_user_skill 是跨岗位累积的，写成「已测技能」会被读成「测过本岗位」
+    // biz_user_skill 是跨岗位累积的，写成「已测技能」会被读成「测过本岗位」。
+    // 取值表与服务端 `PositionMatchOut.source` 一一对应，少一个就会掉成空文案：
+    // 分数旁边空着，学员不知道这个数可不可信。
     const MATCH_SOURCE_LABEL = {
       diagnosis: "实测 · 你诊断过这个岗位",
       assessment: "推算 · 用你在其他岗位测出的技能比对",
       memory: "预估 · 由你的能力画像推断",
+      // 有分数但只能当参考：岗位大部分要求没配能力要求档，分母只剩一小块
+      partial_baseline: "参考 · 该岗位的能力要求仅部分配置",
       no_overlap: "该岗位要求的技能你还没测过",
+      // 没有分数，且原因不在学员身上：岗位一项要求档都没配（库内 80% 的岗位目前如此）
+      no_baseline: "该岗位的能力标准待完善，暂时无法评分",
       none: "尚无评估依据",
     };
+    /** 报告/总览里的匹配度文案。`AssessmentReportOut.match_score` 已改成**可空**，
+        直接拼字符串会渲染出「匹配度 null%」，兜底成 0% 又会被读成「完全不匹配」。
+        所以 null 一律换成按 `score_status` 分支的说明文案（与服务端同一套口径）。 */
+    const SCORE_STATUS_NOTE = {
+      no_skills: "该岗位技能构成待完善，暂时无法评分",
+      no_baseline: MATCH_SOURCE_LABEL.no_baseline,   // 同一件事只写一处文案
+      no_weight: "该岗位技能权重待完善，暂时无法评分",
+      no_evidence: "本次未测到任何技能，暂未评估",
+    };
+    function matchScoreText(score, status) {
+      if (score == null) return SCORE_STATUS_NOTE[status] || "未测评";
+      return `匹配度 ${score}%` + (status === "partial_baseline" ? "（仅供参考）" : "");
+    }
+    /** 哪些来源**不该**给「做一次 AI 诊断」的引导。
+        no_baseline 缺的是运营配置而不是学员证据：诊断做完照样算不出匹配度，
+        引导学员去做一件注定无效的操作比不给引导更糟。 */
+    const NO_DIAG_CTA = new Set(["no_baseline"]);
     async function loadMatchInto(pid, box) {
       box.innerHTML = '<span class="muted">匹配度计算中…</span>';
       try {
@@ -200,10 +223,13 @@
         const label = MATCH_SOURCE_LABEL[d.source] || "";
         if (d.match_score == null) {
           // 占位也要长得像分数：同一位置、同一字号，虚线框 + 问号
+          // （**不能退化成 0%**：0% 会被读成「完全不匹配」，这里是「没有评分依据」）
           box.innerHTML = `<span class="score unknown"><span class="q">?</span> %</span>
             <span class="muted">${esc(label)}</span>
             <span class="muted">${esc(d.reason || "")}</span>
-            <button class="match-cta" data-go-diag>做一次 AI 诊断 →</button>`;
+            ${NO_DIAG_CTA.has(d.source)
+              ? '<span class="tag" style="color:#f59e0b;border-color:#b45309">等岗位标准补齐后自动可算</span>'
+              : '<button class="match-cta" data-go-diag>做一次 AI 诊断 →</button>'}`;
           const b = box.querySelector("[data-go-diag]");
           if (b) b.onclick = () => {
             const p = S.current;
@@ -211,8 +237,14 @@
           };
           return d;
         }
+        // 分数照显示，但 partial_baseline 必须把「仅供参考 + 缺了多少」摆在旁边：
+        // 只有 18% 的权重配了要求档时，那个 50% 不是「匹配一半」
+        const partial = d.source === "partial_baseline";
         box.innerHTML = `<span class="score">${d.match_score}%</span>
           <span class="muted">${esc(label)}${d.estimated ? "（预估）" : ""}</span>
+          ${partial ? `<span class="tag" style="color:#f59e0b;border-color:#b45309">仅供参考${
+            d.no_baseline_weight != null ? ` · ${d.no_baseline_weight}% 的能力要求待完善` : ""
+          }</span>` : ""}
           ${(d.gaps || []).length ? `<span class="muted">· 主要缺口：${
             (d.gaps || []).slice(0, 3).map((g) => esc(g.skill_key)).join("、")}</span>` : ""}`;
         return d;
@@ -248,8 +280,20 @@
             // 尚未测评：退回按已有画像的预估值，并明确标注，避免与实测值混淆
             const m = await api("/v1/student/positions/match?position_id="
               + encodeURIComponent(S.goal.occupation_id));
-            $("goalMatch").innerHTML = `${m.match_score ?? 0}% <span class="muted">预估（未测评）</span>`;
-            $("goalMatch").title = "尚无该岗位的测评记录，按已有技能画像预估";
+            const label = MATCH_SOURCE_LABEL[m.source] || "尚无评估依据";
+            if (m.match_score == null) {
+              // 原来这里写 `m.match_score ?? 0`，把「算不出来」渲染成 0% ——
+              // 学员读成「完全不匹配」。没有依据就摆占位，别编一个数字
+              $("goalMatch").innerHTML = `<span class="score unknown"><span class="q">?</span> %</span>
+                <span class="muted">${esc(label)}</span>`;
+              $("goalMatch").title = m.reason || label;
+            } else {
+              $("goalMatch").innerHTML = `${m.match_score}% <span class="muted">${
+                m.source === "partial_baseline" ? "仅供参考（岗位标准待完善）" : "预估（未测评）"}</span>`;
+              $("goalMatch").title = m.source === "partial_baseline"
+                ? (m.reason || "该岗位大部分能力要求尚未配置，分数仅供参考")
+                : "尚无该岗位的测评记录，按已有技能画像预估";
+            }
           }
         }
       } catch (e) { S.goal = null; $("goalName").textContent = "未锁定"; }
@@ -411,7 +455,8 @@
             ${(d.diagnoses || []).length
               ? `<table><tr><th>岗位</th><th>匹配度</th><th>渠道</th><th>时间</th></tr>${
                   d.diagnoses.map((x) => `<tr><td>${esc(x.occupation_name || x.occupation_id)}</td>
-                    <td>${x.match_score ?? "-"}%</td><td class="muted">${esc(x.channel || "")}</td>
+                    <td>${x.match_score != null ? x.match_score + "%" : "—"}</td>
+                    <td class="muted">${esc(x.channel || "")}</td>
                     <td class="muted">${esc((x.created_at || "").slice(0, 16).replace("T", " "))}</td></tr>`).join("")}</table>`
               : '<div class="muted">尚无诊断记录</div>'}
           </div>`;
@@ -477,7 +522,9 @@
                 <div class="row" style="justify-content:space-between;margin-top:8px">
                   <span>${x.match_score != null
                     ? `<span class="score">${x.match_score}%</span> <span class="muted">匹配度</span>`
-                    : '<span class="muted">尚未测评</span>'}</span>
+                    /* 不能写「尚未测评」：测过但岗位没配能力要求档时这里同样是 null，
+                       那是数据缺口不是学员没测 */
+                    : '<span class="muted">暂无匹配度</span>'}</span>
                   <span class="muted">${x.diagnosed_at
                     ? "诊断于 " + fmtTime(x.diagnosed_at) + (x.session_count > 1 ? ` · ${x.session_count} 次` : "")
                     : (x.goal_created_at ? "锁定于 " + fmtTime(x.goal_created_at) : "")}</span>
@@ -545,7 +592,7 @@
             <div class="row">
               <span class="tag">当前活跃目标</span>
               <span class="muted">归属：${esc((d.major || {}).name || "—")}</span>
-              <span class="tag">${d.match_score != null ? "匹配度 " + d.match_score + "%" : "未测评"}</span>
+              <span class="tag">${esc(matchScoreText(d.match_score, (d.assessment || {}).score_status))}</span>
             </div>
             <h3 style="margin:8px 0 4px">◎ ${esc(o.name || "")}
               <span class="tag">${esc(o.level_label || "—")}</span></h3>
@@ -639,7 +686,10 @@
                   : "未发现明显缺口。"}</div>
               </div>
               <div class="muted" style="font-size:12px;margin-top:8px">
-                💡 匹配度 ${rep.match_score}%（本次覆盖岗位技能权重 ${rep.coverage != null ? rep.coverage + "%" : "—"}）</div>
+                💡 ${esc(matchScoreText(rep.match_score, rep.score_status))}${rep.match_score != null
+                  ? `（本次覆盖岗位技能权重 ${rep.coverage != null ? rep.coverage + "%" : "—"}${
+                      rep.no_baseline_weight ? ` · ${rep.no_baseline_weight}% 的能力要求待完善` : ""}）`
+                  : ""}</div>
             </div>
           </div>
         </div>`;

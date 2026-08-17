@@ -6,6 +6,12 @@ from typing import Any
 
 from backend.kg.pg_store.biz_ddl import ACHIEVEMENT_SEEDS, BIZ_SCHEMA_SQL
 from backend.kg.pg_store.client import connect, ensure_schema, use_conn
+from backend.kg.pg_store.config import (
+    as_level,
+    as_weight,
+    degrade_for_baseline_gap,
+    weighted_score,
+)
 from backend.kg.pg_store.counts import (
     counts_for_industries,
     counts_for_majors,
@@ -126,6 +132,15 @@ def match_with_profile(
 
     抽出来是为了让「岗位探索列表」能用**五维记忆推断的画像**跑同一套算法——
     匹配度口径必须只有一个，否则列表、目标卡、诊断报告又会给出对不上的数字。
+
+    脏值解析（`config.as_level` / `as_weight`）与总分口径（`config.weighted_score`）
+    都与 `report.build_report` 共用同一份实现：口径统一过一次还不够，**解析规则不统一
+    的话，一条脏数据进来两个数字照样分家**。要求档缺失或越界的技能没有基准、
+    算不出达标率，分子分母都不计，改由 `score_status` / `no_baseline` 显式表达。
+
+    缺基准的权重占比超过 `config.PARTIAL_BASELINE_PCT`（30%）时，分数照给但
+    `score_status` 降级成 `partial_baseline`（「配了一部分，仅供参考」）——
+    判断同样收在 `config.degrade_for_baseline_gap`，两条读路径不许各定阈值。
     """
 
     def _user_level_for(skill_key: str) -> tuple[int, str | None]:
@@ -155,46 +170,81 @@ def match_with_profile(
         return (best[1], best[2]) if best else (0, None)
 
     items: list[dict[str, Any]] = []
-    total_w = 0.0
+    total_w = 0.0        # 分母：**有可信要求档**的技能权重
     got_w = 0.0
+    all_w = 0.0          # 岗位全部技能权重，只用来算「多少权重因缺基准无法评分」
+    nb_w = 0.0
     for b in required:
-        w = b.get("weight")
-        w = float(w) if isinstance(w, (int, float)) else 0.0
-        req = b.get("required_level") or 0
-        ulv, via = _user_level_for(b.get("skill_key") or "")
+        w = as_weight(b.get("weight"))
+        req = as_level(b.get("required_level"))
+        raw_ulv, via = _user_level_for(b.get("skill_key") or "")
+        # 实测档也要过 as_level。上一轮只统一了「要求档」，漏了这一半：
+        # `biz_user_skill.level` 是无 CHECK 约束的 int 列，`memory_levels` 那一路
+        # 更是 LLM 解析产物。漏夹的后果不是崩而是**错得看不出来**——
+        #   9   → ratio 1.0，匹配度 100%（报告侧同一数据算 0）
+        #   -3  → ratio -1.0，配上另一项有证据的技能总分能算成 -100%
+        #   "3" → ulv / req 直接 TypeError，整页 500
+        ulv = as_level(raw_ulv) or 0
         if req:
             ratio = min(ulv / req, 1.0) if ulv else 0.0
         else:
+            # 「无要求档 + 有证据 = 达成比 1.0」是既有展示语义，保持不动；
+            # 但它不进分子分母了——没有基准就没有达标可言（见 docstring）
             ratio = 1.0 if ulv else 0.0
-        total_w += w
-        got_w += ratio * w
+        all_w += w
+        if req:
+            total_w += w
+            got_w += ratio * w
+        else:
+            nb_w += w
         items.append(
             {
                 "skill_key": b.get("skill_key"),
                 "category": b.get("category"),
-                "required_level": req,
+                "required_level": req or 0,
                 "user_level": ulv,
                 "weight": w,
                 "weight_pct": b.get("weight_pct"),
                 "is_core": b.get("is_core"),
                 "ratio": round(ratio, 3),
-                "ok": ratio >= 1.0,
+                "ok": bool(req and ulv and ulv >= req),
+                "scorable": bool(req),
                 "matched_by": via,
             }
         )
 
-    score = round(100 * got_w / total_w, 1) if total_w else 0.0
+    scorable = [i for i in items if i["scorable"]]
+    no_baseline = sorted(
+        (i for i in items if not i["scorable"]), key=lambda x: -(x["weight"] or 0)
+    )
     # 画像命中了几项：一项没命中时 score 必然是 0，但那是「没有证据」而非
     # 「完全不匹配」，调用方应据此显示「未评估」而不是刺眼的 0%
-    covered = [i for i in items if (i.get("user_level") or 0) > 0]
+    covered = [i for i in scorable if (i.get("user_level") or 0) > 0]
     covered_w = sum(i["weight"] for i in covered)
-    strengths = [i for i in items if i["ok"]]
-    gaps = sorted(
-        (i for i in items if not i["ok"]), key=lambda x: -(x["weight"] or 0)
+    score, score_status = weighted_score(
+        skill_total=len(items),
+        scorable_total=len(scorable),
+        total_w=total_w,
+        got_w=got_w,
+        has_evidence=bool(covered),
     )
-    # 按技能大类聚合达标率 → 诊断雷达图的真实轴
+    # 基准缺口：缺要求档、无法评分的权重占岗位全部技能权重的百分之多少。
+    # 权重全为 0（脏数据）时退回按项数算，否则这个字段在最需要它的岗位上恒为 0
+    no_baseline_weight = (
+        round(100 * nb_w / all_w, 1) if all_w
+        else (round(100 * len(no_baseline) / len(items), 1) if items else 0.0)
+    )
+    # 缺口超过阈值就把 ok 降级成 partial_baseline（分数仍照给）：与报告侧同一个
+    # 判断函数，否则同一岗位在列表页和报告页一个带「仅供参考」一个不带
+    score_status = degrade_for_baseline_gap(score_status, no_baseline_weight)
+    # 优势/短板只在有基准的项里分：缺基准既谈不上达标、也谈不上差距
+    strengths = [i for i in scorable if i["ok"]]
+    gaps = sorted(
+        (i for i in scorable if not i["ok"]), key=lambda x: -(x["weight"] or 0)
+    )
+    # 按技能大类聚合达标率 → 诊断雷达图的真实轴（缺基准的项没有达标率，不上轴）
     by_cat: dict[str, list[float]] = {}
-    for i in items:
+    for i in scorable:
         by_cat.setdefault(i["category"] or "未分类", []).append(i["ratio"])
     radar = {
         "categories": list(by_cat),
@@ -207,16 +257,31 @@ def match_with_profile(
             "level": occ.get("level"),
         },
         "match_score": score,
+        "score_status": score_status,
         "skill_total": len(items),
         "matched_count": len(strengths),
-        # 证据覆盖：画像命中的技能数与权重占比
+        # 证据覆盖：画像命中的技能数与权重占比（分母是**可评分**权重）
         "covered_count": len(covered),
         "coverage": round(100 * covered_w / total_w, 1) if total_w else 0.0,
+        "no_baseline_weight": no_baseline_weight,
         "items": items,
         "strengths": strengths,
         "gaps": gaps,
+        "no_baseline": no_baseline,
         "radar": radar,
     }
+
+
+def has_baseline(required: list[dict[str, Any]]) -> bool:
+    """岗位技能构成里是否**至少有一项**配了可信要求档（1–5）。
+
+    库内 608 个有技能构成的岗位中 490 个（80%）一项都没有：老国标 skill_level 节点
+    只写了 `attrs.level_code`（"L1"），没有产品档 `attrs.level`，而读侧
+    （`config.attrs_level_int`）只认 `attrs.level`。这类岗位算不出匹配度，
+    路由要在级联**之前**判掉，否则会被下游误判成「你的画像没覆盖该岗位」，
+    把数据缺口说成学员的问题。
+    """
+    return any(as_level(b.get("required_level")) for b in required)
 
 
 def _node_to_profession(n: dict[str, Any]) -> dict[str, Any]:
@@ -1375,10 +1440,14 @@ def _build_report(
     # 雷达图：按技能大类聚合真实达标率。
     # 旧实现是「写死 6 类 + 每轴同一个占位分」，与库内 10 类分类对不上，图形没有信息量。
     radar = {"categories": [], "scores": []}
+    score_status = "ok"
     if occupation_id:
         try:
             pm = position_match(user_id, occupation_id)
-            match_score = pm["match_score"]      # 加权匹配度，替代「命中数/需求数」
+            # 加权匹配度，替代「命中数/需求数」；岗位没配要求档时它是 None（算不出来），
+            # 此时不许退回「命中数/需求数」——那个数不看档位差距，会给出虚高的假结论
+            match_score = pm["match_score"]
+            score_status = pm.get("score_status") or "ok"
             radar = pm["radar"]
             gaps = [
                 {
@@ -1405,11 +1474,20 @@ def _build_report(
         "target_occupation_id": occupation_id,
         "target_occupation_name": occ_name,
         "match_score": match_score,
+        "score_status": score_status,
         "user_skills": user_skills,
         "required_skills": required,
         "gaps": gaps,
         "radar": radar,
-        "summary": f"综合匹配度约 {match_score}%（规则引擎，非大模型终态）",
+        # 部分缺基准时也要把「仅供参考」写进这句话：DiagnosisReportOut 没有
+        # score_status 字段，学员在简历/对话诊断页只看得到 summary 和那个百分数
+        "summary": (
+            f"综合匹配度约 {match_score}%（规则引擎，非大模型终态）"
+            + ("；该岗位部分能力要求档待完善，分数仅供参考"
+               if score_status == "partial_baseline" else "")
+            if match_score is not None
+            else "该岗位尚未配置能力要求档，无法计算匹配度（规则引擎，非大模型终态）"
+        ),
     }
 
 

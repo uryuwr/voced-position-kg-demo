@@ -31,12 +31,24 @@ if str(ROOT) not in sys.path:
 METHODS = ("get", "post", "put", "patch", "delete")
 
 
+# 这两个键是**无序集合**语义，必须按成员比而不是按位置比。
+# 否则往 enum 里插一个新值，会让它后面所有值的下标位移，
+# 工具报成一串「取值变化」——每次加枚举都虚假告警一次，久了就没人看了。
+SET_LIKE = ("enum", "required")
+
+
 def flatten(obj: Any, prefix: str = "") -> dict[str, Any]:
     """把嵌套结构摊平成 {点分路径: 标量}，便于逐字段比对。"""
     out: dict[str, Any] = {}
     if isinstance(obj, dict):
         for k, v in obj.items():
-            out |= flatten(v, f"{prefix}.{k}" if prefix else str(k))
+            path = f"{prefix}.{k}" if prefix else str(k)
+            if k in SET_LIKE and isinstance(v, list):
+                # 每个成员单独成一条 {路径}<成员>，成员增删才会体现为新增/消失
+                for m in v:
+                    out[f"{path}<{json.dumps(m, ensure_ascii=False, sort_keys=True)}>"] = True
+                continue
+            out |= flatten(v, path)
     elif isinstance(obj, list):
         # 列表按内容排序后再编号：字段顺序变化不该算契约变更
         try:

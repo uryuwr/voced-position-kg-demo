@@ -382,6 +382,12 @@
               <div class="m" style="font-size:12px">综合能力匹配度</div>
               <div class="score2">${r.match_score != null ? r.match_score + "%" : "—"}</div>
               <div class="m" style="font-size:12px">覆盖权重 ${r.coverage != null ? r.coverage + "%" : "—"}</div>
+              ${/* 有分数但岗位大部分要求没配要求档：数字照显示，必须同时说清只能参考 */
+                r.score_status === "partial_baseline"
+                  ? `<div class="m" style="font-size:11px;color:#f59e0b">仅供参考${
+                      r.no_baseline_weight != null
+                        ? ` · ${r.no_baseline_weight}% 的能力要求待完善` : ""}</div>`
+                  : ""}
             </div>
           </div>
           <div class="g2" style="margin-top:14px">

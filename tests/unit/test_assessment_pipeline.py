@@ -98,6 +98,10 @@ class TestCapKeepsSemantics:
 
     plan 的顺序是「覆盖题在前、验证题在后」，直接切片会把验证题**整批**砍掉：
     要求 L4/L5 的技能只凭一道选择题定档，虚高无从发现，而这正是验证题存在的理由。
+
+    定案（2026-08）：验证题也有下限 `min(需求量, OPEN_PER_RUN)`，名额从覆盖题让。
+    此前只有覆盖题有下限、验证题纯按比例缩，方向反了——技能越多 demand 越大、
+    验证题占比越小，20/28/40 项技能的岗位只剩 1 道验证题，而高标准岗位恰恰最需要它。
     """
 
     @pytest.mark.parametrize("n", [12, 16, 20, 28, 40])
@@ -111,10 +115,20 @@ class TestCapKeepsSemantics:
             f"覆盖题只剩 {len(cover)} 道，低于下限 {MIN_COVER_QUESTIONS}"
         )
         assert len(cover) >= RADAR_MIN_SKILLS, "覆盖题不足 3 项，报告雷达画不出来"
-        assert len(verify) >= 1, (
-            "要求档全是 L5 的岗位一道验证题都没排 —— 像是把 plan 尾部直接切掉了"
+        assert len(verify) == OPEN_PER_RUN, (
+            f"{n} 项技能的岗位只排了 {len(verify)} 道验证题；要求档全是 L5，"
+            f"需求量是 {OPEN_PER_RUN} 道，下限该保满"
         )
-        assert len(verify) <= OPEN_PER_RUN
+
+    @pytest.mark.parametrize("n", [12, 16, 20, 28, 40])
+    def test_验证题名额从覆盖题让而不是反过来(self, n):
+        """总题数仍不超上限：验证题保住 2 道是**挤掉覆盖题**换来的，不是超发。"""
+        plan, est = plan_questions(items_for(n, level=5))
+        cover = sum(1 for p in plan if p["_item_type"] == "choice")
+        verify = sum(1 for p in plan if p["_item_type"] == "open")
+        assert verify == OPEN_PER_RUN
+        assert cover == MAX_QUESTIONS - OPEN_PER_RUN
+        assert len(plan) == int(est["total"]) == MAX_QUESTIONS
 
     @pytest.mark.parametrize("level", [2, 5])
     @pytest.mark.parametrize("n", SKILL_COUNTS)
@@ -140,8 +154,8 @@ class TestCapKeepsSemantics:
         assert int(demand["cover"]) + int(demand["verify"]) > MAX_QUESTIONS, (
             "这组数据本该触发压缩，不然这条用例什么也没测到"
         )
-        assert 1 <= verify <= int(demand["verify"]), "验证题被砍光 = 清单被一刀切了"
-        assert MIN_COVER_QUESTIONS <= cover <= int(demand["cover"])
+        assert verify == int(demand["verify"]), "验证题有下限，需求量 ≤ 下限时不该被缩"
+        assert MIN_COVER_QUESTIONS <= cover < int(demand["cover"]), "被压缩的是覆盖题"
         assert cover + verify == len(plan) <= MAX_QUESTIONS
 
     @pytest.mark.parametrize("n", [12, 20, 28])

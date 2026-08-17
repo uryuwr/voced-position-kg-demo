@@ -1,0 +1,398 @@
+{
+  "frozen_at": "2026-08-17T09:58:59.816990+00:00",
+  "note": "由 scripts/freeze_test_fixture.py 生成。刻意保留真实脏形态，不要清洗。一个岗位只占一个 tag；已排除 __e2e_* / 临时测试* 等测试残留。带 synthetic=true 的样本是派生的，不是库里真有的形态。",
+  "subjects": {
+    "many_skills": {
+      "occupation": {
+        "id": "CN:occupation:MOHRSS_CN:4-03-02-02",
+        "name": "中式面点师",
+        "level": 2,
+        "description": "大典细类 4-03-02-02 · 住宿和餐饮服务人员 · 餐饮服务人员"
+      },
+      "required_items": [
+        {
+          "skill_key": "厨房管理",
+          "category": "运营与管理",
+          "required_level": null,
+          "weight": 0.4,
+          "available_levels": []
+        },
+        {
+          "skill_key": "菜点生产",
+          "category": "操作与加工",
+          "required_level": null,
+          "weight": 0.4,
+          "available_levels": []
+        },
+        {
+          "skill_key": "层酥面品种制作",
+          "category": "操作与加工",
+          "required_level": null,
+          "weight": 0.25,
+          "available_levels": []
+        },
+        {
+          "skill_key": "其他面坯品种制作",
+          "category": "操作与加工",
+          "required_level": null,
+          "weight": 0.2,
+          "available_levels": []
+        },
+        {
+          "skill_key": "培训与指导",
+          "category": "培训与指导",
+          "required_level": null,
+          "weight": 0.2,
+          "available_levels": []
+        },
+        {
+          "skill_key": "展台设计",
+          "category": "技术管理与创新",
+          "required_level": null,
+          "weight": 0.2,
+          "available_levels": []
+        },
+        {
+          "skill_key": "菜单设计与创新",
+          "category": "技术管理与创新",
+          "required_level": null,
+          "weight": 0.2,
+          "available_levels": []
+        },
+        {
+          "skill_key": "面点装饰",
+          "category": null,
+          "required_level": null,
+          "weight": 0.2,
+          "available_levels": []
+        },
+        {
+          "skill_key": "风味面点制作",
+          "category": "操作与加工",
+          "required_level": null,
+          "weight": 0.2,
+          "available_levels": []
+        },
+        {
+          "skill_key": "馅心制作",
+          "category": "操作与加工",
+          "required_level": null,
+          "weight": 0.15,
+          "available_levels": []
+        },
+        {
+          "skill_key": "杂粮品种制作",
+          "category": "操作与加工",
+          "required_level": null,
+          "weight": 0.1,
+          "available_levels": []
+        },
+        {
+          "skill_key": "水调面品种制作",
+          "category": "操作与加工",
+          "required_level": null,
+          "weight": 0.1,
+          "available_levels": []
+        },
+        {
+          "skill_key": "米制品制作",
+          "category": "操作与加工",
+          "required_level": null,
+          "weight": 0.1,
+          "available_levels": []
+        },
+        {
+          "skill_key": "膨松面品种制作",
+          "category": "操作与加工",
+          "required_level": null,
+          "weight": 0.1,
+          "available_levels": []
+        }
+      ],
+      "weight_sum": 2.8,
+      "weighted": true,
+      "why": "技能数 >10：题量上限与雷达轴回落都在这档触发"
+    },
+    "full_baseline": {
+      "occupation": {
+        "id": "CN:occupation:BOSS:100115",
+        "name": "搜索算法",
+        "level": null,
+        "description": "技术 > 人工智能 > 搜索算法（BOSS 直聘职位分类）"
+      },
+      "required_items": [
+        {
+          "skill_key": "信息检索基础",
+          "category": null,
+          "required_level": 4,
+          "weight": 0.2,
+          "available_levels": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "skill_key": "排序算法优化",
+          "category": null,
+          "required_level": 4,
+          "weight": 0.2,
+          "available_levels": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "skill_key": "NLP文本处理",
+          "category": null,
+          "required_level": 3,
+          "weight": 0.15,
+          "available_levels": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "skill_key": "Python算法实现",
+          "category": null,
+          "required_level": 4,
+          "weight": 0.15,
+          "available_levels": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "skill_key": "召回策略设计",
+          "category": null,
+          "required_level": 3,
+          "weight": 0.15,
+          "available_levels": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "skill_key": "搜索效果评估",
+          "category": null,
+          "required_level": 3,
+          "weight": 0.15,
+          "available_levels": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        }
+      ],
+      "weight_sum": 1.0,
+      "weighted": true,
+      "why": "要求档齐全：正常算分路径"
+    },
+    "weight_unnormalized": {
+      "occupation": {
+        "id": "CN:occupation:MOHRSS_CN:2-02-02-01",
+        "name": "大地测量工程技术人员",
+        "level": 2,
+        "description": "大典细类 2-02-02-01 · 工程技术人员 · 测绘和地理信息工程技术人员 · 绿色职业 · 数字职业"
+      },
+      "required_items": [
+        {
+          "skill_key": "数据处理",
+          "category": "数据与信息",
+          "required_level": null,
+          "weight": 0.21,
+          "available_levels": []
+        },
+        {
+          "skill_key": "技术与质量管理",
+          "category": "质量与检验",
+          "required_level": null,
+          "weight": 0.175,
+          "available_levels": []
+        },
+        {
+          "skill_key": "方案设计",
+          "category": "技术管理与创新",
+          "required_level": null,
+          "weight": 0.175,
+          "available_levels": []
+        },
+        {
+          "skill_key": "准备",
+          "category": "作业准备",
+          "required_level": null,
+          "weight": 0.13999999999999999,
+          "available_levels": []
+        },
+        {
+          "skill_key": "测量",
+          "category": "质量与检验",
+          "required_level": null,
+          "weight": 0.13999999999999999,
+          "available_levels": []
+        }
+      ],
+      "weight_sum": 0.84,
+      "weighted": true,
+      "why": "权重和不为 1：weight_sum 是小数，曾害整页 500"
+    },
+    "no_baseline": {
+      "occupation": {
+        "id": "CN:occupation:MOHRSS_CN:2-02-02-02",
+        "name": "工程测量工程技术人员",
+        "level": 2,
+        "description": "大典细类 2-02-02-02 · 工程技术人员 · 测绘和地理信息工程技术人员 · 数字职业"
+      },
+      "required_items": [
+        {
+          "skill_key": "数据处理",
+          "category": "数据与信息",
+          "required_level": null,
+          "weight": 0.21,
+          "available_levels": []
+        },
+        {
+          "skill_key": "质量管理与技术指导",
+          "category": "培训与指导",
+          "required_level": null,
+          "weight": 0.21,
+          "available_levels": []
+        },
+        {
+          "skill_key": "准备",
+          "category": "作业准备",
+          "required_level": null,
+          "weight": 0.13999999999999999,
+          "available_levels": []
+        },
+        {
+          "skill_key": "测量",
+          "category": "质量与检验",
+          "required_level": null,
+          "weight": 0.13999999999999999,
+          "available_levels": []
+        },
+        {
+          "skill_key": "仪器设备维护",
+          "category": "设备维护与检修",
+          "required_level": null,
+          "weight": 0.034999999999999996,
+          "available_levels": []
+        }
+      ],
+      "weight_sum": 0.735,
+      "weighted": true,
+      "why": "要求档全缺：80% 的现实，应「无法评分」而非 0%"
+    },
+    "partial_baseline": {
+      "occupation": {
+        "id": "CN:occupation:BOSS:100115",
+        "name": "搜索算法",
+        "level": null,
+        "description": "技术 > 人工智能 > 搜索算法（BOSS 直聘职位分类）"
+      },
+      "required_items": [
+        {
+          "skill_key": "信息检索基础",
+          "category": null,
+          "required_level": 4,
+          "weight": 0.2,
+          "available_levels": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "skill_key": "排序算法优化",
+          "category": null,
+          "required_level": null,
+          "weight": 0.2,
+          "available_levels": []
+        },
+        {
+          "skill_key": "NLP文本处理",
+          "category": null,
+          "required_level": 3,
+          "weight": 0.15,
+          "available_levels": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "skill_key": "Python算法实现",
+          "category": null,
+          "required_level": null,
+          "weight": 0.15,
+          "available_levels": []
+        },
+        {
+          "skill_key": "召回策略设计",
+          "category": null,
+          "required_level": 3,
+          "weight": 0.15,
+          "available_levels": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "skill_key": "搜索效果评估",
+          "category": null,
+          "required_level": null,
+          "weight": 0.15,
+          "available_levels": []
+        }
+      ],
+      "weight_sum": 1.0,
+      "weighted": true,
+      "synthetic": true,
+      "derived_from": {
+        "tag": "full_baseline",
+        "occupation_id": "CN:occupation:BOSS:100115"
+      },
+      "derivation": "把 3/6 项的 required_level 抹成 None；其余字段为真实图数据",
+      "why": "要求档部分缺：只算有基准的那部分 + 缺口超阈值要降级（库里无实例，由 full_baseline 派生）"
+    }
+  },
+  "missing": [],
+  "survey": {
+    "occupations_with_composition": 608,
+    "scorable": 117,
+    "by_shape": {
+      "full_baseline": 117,
+      "no_baseline": 491,
+      "partial_baseline": 0,
+      "weight_unnormalized": 294,
+      "many_skills": 38
+    },
+    "scorable_and_weight_unnormalized": 0,
+    "scorable_and_many_skills": 0,
+    "note": "能算分的岗位全部来自新采集数据，形态统一（权重≈1、技能数≤10）；权重不归一 / 技能数多 / 部分缺基准这三种形态目前只出现在**算不出分**的老数据上。所以 weight_unnormalized 与 many_skills 这两档现在测不到「脏权重/多技能如何影响分数」，等这类岗位补上要求档后重新冻结即可自动改善（见 rank_key 的 scorable 偏好）。"
+  }
+}

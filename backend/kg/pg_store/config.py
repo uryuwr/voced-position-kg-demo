@@ -1,8 +1,10 @@
-"""PostgreSQL connection config from env."""
+"""PostgreSQL connection config from env + 读侧脏值口径（状态可见性、档位/权重强转）。"""
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
+from typing import Any
 
 from backend.kg.paths import ROOT
 
@@ -76,3 +78,155 @@ def attrs_level_int(alias: str = "n") -> str:
         f"CASE WHEN ({alias}.attrs::json->>'level') ~ '^[0-9]+$' "
         f"THEN ({alias}.attrs::json->>'level')::int END"
     )
+
+
+# ── Python 侧脏值口径：与上面 attrs_level_int 的 SQL 侧同一套规则 ──────────────
+#
+# 为什么放在这里：`attrs.level` / `kg_edge.weight` 一路从 SQL 流到报告、匹配度、出题
+# 三条读路径，此前**每条路径各自解析**——报告侧 `float(w or 0)` 遇 `"abc"` 抛
+# ValueError 打死整份报告，画像侧 `isinstance(w,(int,float))` 把 `"0.5"` 读成 0，
+# 同一份脏数据在两个页面上给出两个数字（BUG-5）。解析规则必须只有一处。
+
+LEVEL_MIN, LEVEL_MAX = 1, 5   # 产品档 L1–L5（档位真源见 skill_level_meta.py）
+
+
+def as_level(v: Any) -> int | None:
+    """产品档 → 1–5 的 int；**越界或不可解析取 None（视作缺失），不夹取、不抛错**。
+
+    三条来路都不干净：`required_level` 来自 `kg_edge` 指向的 `skill_level` 节点
+    `attrs.level`（无约束 TEXT，`attrs_level_int` 的正则只挡非数字，`9` 会原样穿过来）；
+    `measured_level` 来自选项 level 与简历画像（模型给几就是几）；写侧
+    `write._assert_attrs_sane` 校验过，但采集脚本与直连改库绕得过应用层。
+
+    取 None 而不是夹到 5：把 9 当成 L5 会凭空给出「已达标」的结论。
+    调用方**必须**把 None 当「没有基准 / 没有证据」处理，而不是当 0 分参与加权——
+    见 `report.build_report` 与 `biz_store.match_with_profile` 的 scorable 分支。
+    """
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        lv = int(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+    return lv if LEVEL_MIN <= lv <= LEVEL_MAX else None
+
+
+def as_weight(v: Any) -> float:
+    """`kg_edge.weight` → 非负有限 float；脏值取 0.0，**任何输入都不抛错**。
+
+    口径（两条读路径必须一致，否则同一份数据算出两个匹配度）：
+
+    - `0.5` / `"0.5"` / `Decimal("0.5")` → 0.5 —— JSON/TEXT 里数字写成字符串很常见，
+      该解析就解析；此前报告侧认 `"0.5"`、画像侧认 0.0，脏数据上口径就分家了
+    - `"abc"` / `""` / `[]` / `{}` / `None` / `True` → 0.0（`float("abc")` 曾让整份报告 500）
+    - `nan` / `inf` → 0.0：参与加权会把匹配度污染成 nan，前端显示成空白
+    - 负数 → 0.0：权重是占比，负权重能把加权分算成负数（「匹配度 -33%」）
+    """
+    if v is None or isinstance(v, bool):
+        return 0.0
+    try:
+        w = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    return w if math.isfinite(w) and w > 0 else 0.0
+
+
+# 算分结论的词表：一种「能用」、一种「能用但只能当参考」、四种「算不出来」。
+# 前端据此决定显示数字、显示数字+提示、还是只显示说明文案，
+# 口径与 `PositionMatchOut.source` 的 no_overlap / none 一致：**不要用 0% 冒充结论**。
+#
+# **顺序即契约**：`AssessmentReportOut.score_status` 的 Literal 必须与这里逐项同序，
+# 由 tests/unit/test_pg_guards.py::test_契约里的取值与这里的词表同源 锁住 ——
+# 加值时两处一起加，否则契约与实现分家、前端会漏处理某个值。
+SCORE_STATUSES = (
+    "ok",
+    "partial_baseline",
+    "no_skills",
+    "no_baseline",
+    "no_weight",
+    "no_evidence",
+)
+
+# 「岗位配置不全」的降级阈值：缺要求档的技能权重占岗位全部技能权重**超过**这个百分比时，
+# 分数照给（已配置的那部分是真实依据，不该丢），但 `score_status` 降级成 partial_baseline。
+#
+# 为什么是 30 而不是别的数：
+#
+# 1. 匹配度的可信度就是「有基准的权重占比」。缺 30% 权重时，真实分数的不确定区间宽达
+#    30 分（缺的那部分从全不达标到全达标都可能），已经跨过展示上惯用的两个 20 分区间
+#    （<60 待提升 / 60–80 基本匹配 / >80 高度匹配）——数字连排序意义都不剩了，
+#    必须明确告诉学员「这个数只能参考」。
+# 2. 岗位 `requires` 边的权重 Σ≈1、单项典型 0.1–0.3（见 CLAUDE.md 边模型），
+#    缺口过 30% 意味着**不止一项主要技能**没有基准，不再是可以忽略的零星缺配。
+# 3. 阈值再低（如 10%）会让几乎每个岗位都挂上提示——权重归一容差本身就是 ±15%
+#    （`weight_sum_ok` 的 0.85–1.15），零星缺配长期存在，满屏提示等于没有提示。
+#    再高（如 60%）则「82% 没配、只按 18% 算出 50%」这类最容易误读的岗位会漏过，
+#    而这正是引入本档要解决的场景。
+#
+# 阈值必须留在服务端：放前端就成了每个页面各定一次的魔数，迟早不一致。
+PARTIAL_BASELINE_PCT = 30.0
+
+
+def is_partial_baseline(no_baseline_weight: float | None) -> bool:
+    """基准缺口是否已大到「分数只能当参考」。
+
+    **边界：正好 30.0% 不算超过**（严格大于），与 `PARTIAL_BASELINE_PCT` 的注释、
+    契约描述里的「超过 30%」字面一致。
+
+    比较用的是响应里那个**已四舍五入到 1 位小数**的 `no_baseline_weight`，
+    而不是未舍入的原始占比：否则会出现响应里写着 `no_baseline_weight=30.0`、
+    状态却是 partial_baseline 的自相矛盾，前端对着两个字段无法解释给学员。
+
+    `None`（历史数据缺该字段）当作「不知道缺多少」，不降级：宁可少提示，
+    不要凭空给一个没有依据的警告。
+    """
+    return no_baseline_weight is not None and no_baseline_weight > PARTIAL_BASELINE_PCT
+
+
+def degrade_for_baseline_gap(status: str, no_baseline_weight: float | None) -> str:
+    """`ok` + 基准缺口超阈值 → `partial_baseline`；其余状态原样返回。
+
+    只降级 `ok`：另外四种本来就已经在说「这个数不能当结论」，再套一层反而模糊焦点
+    （`no_evidence` 缺的是证据、`no_weight` 是脏权重，都比基准缺口更该先说）。
+    `no_baseline` 是本档的极端情形（缺口 100%），保留它自己的值——那时连分数都没有。
+
+    报告侧（`report.build_report`）与画像侧（`biz_store.match_with_profile`）都必须
+    调它，两处口径分家的话，同一个岗位在报告页和列表页会一个带提示一个不带。
+    """
+    if status == "ok" and is_partial_baseline(no_baseline_weight):
+        return "partial_baseline"
+    return status
+
+
+def weighted_score(
+    *,
+    skill_total: int,
+    scorable_total: int,
+    total_w: float,
+    got_w: float,
+    has_evidence: bool,
+) -> tuple[float | None, str]:
+    """加权达标率 + 「为什么算不出来」。**报告侧与画像侧共用，不许各写一份。**
+
+    `scorable_total` 只数「要求档在 1–5 内」的技能：库内 608 个有技能构成的岗位里
+    490 个（80%）要求档全缺（老国标 skill_level 节点只有 `attrs.level_code`、
+    没有产品档 `attrs.level`），这些岗位算不出任何达标率。
+
+    返回 None 而不是 0.0 的只有 `no_baseline` 一种：0% 会被学员读成「完全不匹配」，
+    而真相是「这个岗位没配能力要求」。其余三种沿用既有的 0.0 —— 它们的调用方
+    （`routes_student.student_position_match` 的级联、报告页的 coverage）已经在
+    用别的字段把「未评估」表达出去了。
+
+    这里只判「算不算得出来」，**不判「算出来的数够不够可信」**：部分缺基准
+    （`partial_baseline`）要看缺口占多少权重，那个占比在调用方才算得出来，
+    所以由调用方紧接着过一遍 `degrade_for_baseline_gap()`。
+    """
+    if not skill_total:
+        return 0.0, "no_skills"          # 岗位没有技能构成，无从算起
+    if not scorable_total:
+        return None, "no_baseline"       # 有技能但一项都没配可信要求档 → 无法评分
+    if not total_w:
+        return 0.0, "no_weight"          # 可评分技能的权重全为 0（脏数据），算不出加权分
+    if not has_evidence:
+        return 0.0, "no_evidence"        # 有基准有权重，但一项证据都没有
+    return round(100 * got_w / total_w, 1), "ok"

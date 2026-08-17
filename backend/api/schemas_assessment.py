@@ -174,8 +174,23 @@ class ReportItem(BaseModel):
     measured_label: str | None = Field(None, description="实测档文案")
     weight: float = Field(..., description="该技能在岗位中的权重，Σ≈1")
     weight_pct: int | None = Field(None, description="权重百分比（四舍五入），便于直接展示")
-    ratio: float = Field(..., description="达成比 = 实测/要求，封顶 1.0")
-    ok: bool = Field(..., description="是否达标（实测 ≥ 要求）")
+    ratio: float = Field(
+        ...,
+        description=(
+            "达成比 = 实测/要求，封顶 1.0。`scorable=false`（岗位没给要求档）时这里是"
+            "「有实测即 1.0」的展示值，**不参与匹配度计算**，不要拿它当达标结论"
+        ),
+    )
+    ok: bool = Field(..., description="是否达标（实测 ≥ 要求）；无要求档时恒为 false")
+    scorable: bool = Field(
+        True,
+        description=(
+            "该项能否评分。false = 岗位对这个技能的要求档缺失或越界（无基准），"
+            "**分子分母都不计入 match_score**，也不进 strengths / gaps —— "
+            "没有基准既谈不上达标、也谈不上差距。这类项汇总在 `no_baseline` 里。"
+            "历史报告（新增此字段之前生成）缺该键，按 true 处理"
+        ),
+    )
     tested: bool = Field(
         ...,
         description=(
@@ -217,13 +232,18 @@ class RadarOut(BaseModel):
 
 
 class ReportCounts(BaseModel):
-    """报告的分项计数。"""
+    """报告的分项计数。
+
+    `tested + untested == skill_total` 恒成立；但 `strength + gap` 只数**测到且有基准**
+    的项，缺要求档的项两边都不进（数量见 `no_baseline` 列表长度），所以
+    `strength + gap + untested` 可能小于 `skill_total`。
+    """
 
     skill_total: int = Field(..., ge=0, description="岗位技能总数")
     tested: int = Field(..., ge=0, description="本次实测到的技能数")
     untested: int = Field(..., ge=0, description="未覆盖的技能数")
-    strength: int = Field(..., ge=0, description="达标项数")
-    gap: int = Field(..., ge=0, description="未达标项数")
+    strength: int = Field(..., ge=0, description="达标项数（仅可评分项）")
+    gap: int = Field(..., ge=0, description="未达标项数（仅可评分项）")
 
 
 class AssessmentReportOut(BaseModel):
@@ -231,43 +251,121 @@ class AssessmentReportOut(BaseModel):
 
     两个匹配度，分母不同，**不要混用也不要相互换算**：
 
-    - `match_score`：分母是岗位**全部**技能权重，未测到的按 0 分计入。答「这个岗位
-      你整体准备好了多少」，与岗位探索列表（`match_with_profile`）同源，可跨岗位横向
+    - `match_score`：分母是岗位**可评分**技能的全部权重，未测到的按 0 分计入。答「这个
+      岗位你整体准备好了多少」，与岗位探索列表（`match_with_profile`）同源，可跨岗位横向
       比较、可用于列表排序。覆盖率 `coverage` 是它的置信度说明。
     - `tested_match_score`：分母只有**实测**技能权重。答「你考过的部分掌握得怎样」，
       只适合在报告详情页单点看；不同覆盖率之间不可比。
+
+    「可评分」= 岗位给了 1–5 的要求档。要求档缺失或越界的技能没有基准、算不出达标率，
+    **分子分母都不计**（`items[].scorable=false`，汇总在 `no_baseline`）。一项都没有
+    可评分技能时 `match_score` 为 **null**、`score_status="no_baseline"` ——
+    前端必须显示「该岗位尚未配置能力要求，无法评分」，**不要显示 0%**：
+    0% 会被读成「完全不匹配」，而真相是数据缺口。库内 80% 的岗位目前是这个状态。
+
+    前端接入须知（2026-08 破坏性变更）
+    ---------------------------------
+    **`match_score` 已由必填 number 改为可空**（`float | None`）。以前可以假定一定有值，
+    现在不行了，`?? 0` / `|| 0` 这类兜底会把「没有评分依据」渲染成「完全不匹配」。
+
+    - `null` ≠ `0`。`0` 是**算出来的结论**：有基准、有权重、也测过，只是一项都没达标。
+      `null` 是**算不出来**：岗位没配能力要求（`score_status="no_baseline"`）。
+      学员看到 0% 会理解成「我完全不行」，看到 null 该理解成「这里还没有依据」——
+      两种情绪完全不同，混淆一次就是产品事故。
+    - 建议展示：`null` 时保留分数的位置与字号，改成虚线框 + 「? %」占位
+      （见 `frontend/student.html` 的 `.score.unknown`），旁边给
+      `score_status` 对应的说明文案；不要塌成一行普通文字，否则看不出这里本来有分数。
+    - `score_status="partial_baseline"` 时**有分数但只能当参考**：数字照显示，
+      必须同时展示「仅供参考」与 `no_baseline_weight`，也不要拿它跨岗位排序。
+    - 一句话结论直接用 `summary`：它已经按 `score_status` 分支写好了措辞，
+      不会出现「匹配度 None%」。
     """
 
     channel: str | None = Field(None, description="产生渠道：assessment / resume / chat / profile")
     target_occupation_id: str | None = Field(None, description="目标岗位节点 id")
     target_occupation_name: str | None = Field(None, description="目标岗位名")
-    match_score: float = Field(
-        ...,
+    match_score: float | None = Field(
+        None,
         description=(
-            "综合能力匹配度 0–100。分母是岗位**全部**技能权重（未测项按 0 分计入），"
-            "与岗位探索列表口径一致，可横向比较与排序"
+            "综合能力匹配度 0–100。分母是岗位**可评分**技能的全部权重（未测项按 0 分"
+            "计入、缺要求档的项完全不计入），与岗位探索列表口径一致，可横向比较与排序。\n\n"
+            "**可空字段（2026-08 起）**：为 null 表示算不出来（岗位一项要求档都没配），"
+            "原因见 score_status。**为 null 时不要显示 0%，也不要 `?? 0` 兜底** —— "
+            "0% 是「测过但一项都没达标」的结论，null 是「没有评分依据」，"
+            "学员会把前者读成「我完全不行」。建议改用虚线框 +「? %」占位并给出说明文案。"
+        ),
+    )
+    score_status: Literal[
+        "ok", "partial_baseline", "no_skills", "no_baseline", "no_weight", "no_evidence"
+    ] = Field(
+        "ok",
+        description=(
+            "match_score 为什么是这个值，决定前端显示数字、显示数字+提示、还是只显示文案。"
+            "取值顺序与服务端词表 `config.SCORE_STATUSES` 同源：\n\n"
+            "| 取值 | 含义 | match_score | 建议展示 |\n"
+            "| --- | --- | --- | --- |\n"
+            "| `ok` | 有基准、有权重、也测到了，分数可用 | 数字 | 正常显示分数，可横向比较与排序 |\n"
+            "| `partial_baseline` | 配了一部分：缺要求档的权重**超过 30%**，"
+            "分数只依据已配置的那部分算出 | 数字 | 分数照显示，**同时**标「仅供参考 · "
+            "该岗位 {no_baseline_weight}% 的能力要求待完善」；不要用于跨岗位排序 |\n"
+            "| `no_skills` | 该岗位尚未配置技能构成，无从算起 | 0（无意义） | 「该岗位技能构成待完善」，不显示 0% |\n"
+            "| `no_baseline` | 有技能构成但**一项要求档都没配** | **null** | 「? %」占位 + "
+            "「该岗位能力标准待完善，暂时无法评分」；**别引导学员去做诊断**，做了也算不出来 |\n"
+            "| `no_weight` | 可评分技能的权重全为 0（脏数据），算不出加权分 | 0（无意义） | "
+            "同 no_skills，按「暂无法评分」处理 |\n"
+            "| `no_evidence` | 有基准也有权重，但本次一项都没测到 | 0（无意义） | "
+            "「未评估」+ 引导做测评；不要显示 0% |\n\n"
+            "口径与 `PositionMatchOut.source` 的 no_overlap / none 一致：不用 0% 冒充结论。"
+            "阈值 30% 是服务端常量（`config.PARTIAL_BASELINE_PCT`），前端不要自己再定一份。"
+            "历史报告（新增此字段之前生成）缺该键，按 ok 处理"
         ),
     )
     tested_match_score: float | None = Field(
         None,
         description=(
             "仅按**实测**技能权重为分母的匹配度 0–100，即「考过的部分掌握得怎样」。"
-            "与 match_score 不同刻度，不可跨岗位比较；本次未测到任何技能时为 0。"
+            "与 match_score 不同刻度，不可跨岗位比较；本次未测到任何技能时为 0，"
+            "一项可评分技能都没有时为 null（理由同 match_score）。"
             "历史报告（新增此字段之前生成）为 null"
         ),
     )
     coverage: float = Field(
-        ..., description="本次测评覆盖的岗位技能权重百分比 0–100，是 match_score 的置信度"
+        ...,
+        description=(
+            "本次测评覆盖的**可评分**技能权重百分比 0–100（分母不含缺要求档的项），"
+            "是 match_score 的置信度。它只表达「缺证据」，「缺基准」看 no_baseline_weight"
+        ),
+    )
+    no_baseline_weight: float = Field(
+        0.0,
+        description=(
+            "因缺要求档而**无法评分**的技能权重，占岗位**全部**技能权重的百分比 0–100。"
+            "100 表示整个岗位没配能力要求（此时 match_score 为 null）。"
+            "**超过 30% 时服务端会把 score_status 降级成 partial_baseline**，"
+            "前端不必自己比阈值，但展示「仅供参考」时可以把这个数字带出来"
+            "（如「该岗位 82.4% 的能力要求待完善」）。"
+            "权重全为 0 的脏数据岗位退回按项数占比计算。"
+            "与 coverage 是两种不同的缺失：coverage 缺的是证据，这里缺的是基准"
+        ),
     )
     radar: RadarOut = Field(..., description="双系列雷达图数据")
     strengths: list[ReportItem] = Field(
-        default_factory=list, description="优势项（已达标），按超出幅度降序"
+        default_factory=list, description="优势项（已测到且已达标），按超出幅度降序"
     )
     gaps: list[ReportItem] = Field(
-        default_factory=list, description="短板项（未达标），按 urgency 降序"
+        default_factory=list, description="短板项（已测到但未达标），按 urgency 降序"
     )
     untested: list[ReportItem] = Field(
         default_factory=list, description="本次未覆盖的技能，按权重降序；不下能力结论"
+    )
+    no_baseline: list[ReportItem] = Field(
+        default_factory=list,
+        description=(
+            "**无法评分**的技能（岗位要求档缺失或越界），按权重降序。既不在 strengths "
+            "也不在 gaps —— 没有基准谈不上达标或差距。与 `untested` 是**两个正交视角**、"
+            "会重叠：一项技能可以既没测到（untested）又没有基准（no_baseline）。"
+            "该数据缺口需要运营在管理台补要求档，不是学员的问题"
+        ),
     )
     items: list[ReportItem] = Field(default_factory=list, description="全部技能明细（含未测）")
     counts: ReportCounts = Field(..., description="分项计数")

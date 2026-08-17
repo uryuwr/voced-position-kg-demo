@@ -55,6 +55,119 @@ class TestOpenApi:
         assert len(biz) > 20, "路由掉了一大片"
 
 
+# ── 「算不出分」的契约（定案 2026-08）─────────────────────────
+#
+# 库内 80% 的岗位一项要求档都没配，匹配度是 **null** 而不是 0%。前端按契约
+# 决定「显示数字还是显示说明」，所以这几个字段/枚举值少一个就会退回显示 0%
+# ——「完全不匹配」和「岗位没配能力要求」在学员眼里是两件完全不同的事。
+
+
+class TestScoreContract:
+    @staticmethod
+    def _schema(name: str) -> dict:
+        return app.openapi()["components"]["schemas"][name]
+
+    def test_匹配度在契约里是可空的(self):
+        for model in ("AssessmentReportOut", "PositionMatchOut"):
+            f = self._schema(model)["properties"]["match_score"]
+            types = {s.get("type") for s in f.get("anyOf", [f])}
+            assert "null" in types, f"{model}.match_score 不可空，前端拿不到「算不出分」"
+
+    def test_匹配度不是必填(self):
+        req = self._schema("AssessmentReportOut").get("required") or []
+        assert "match_score" not in req, "算不出分时这个键要能是 null"
+
+    @pytest.mark.parametrize("model", ["AssessmentReportOut", "PositionMatchOut"])
+    def test_两个入口都带基准缺口字段(self, model):
+        props = self._schema(model)["properties"]
+        assert "no_baseline_weight" in props, "缺「多少权重因没配要求档而无法评分」"
+        assert "no_baseline" in props, "缺「哪些技能无法评分」的清单"
+        assert "score_status" in props
+
+    @pytest.mark.parametrize("model", ["ReportItem", "MatchItem"])
+    def test_逐项带可评分标记且默认为真(self, model):
+        """历史数据没有这个键，默认必须是 true，否则老报告会整份变成「不可评分」。"""
+        f = self._schema(model)["properties"]["scorable"]
+        assert f.get("default") is True
+
+    def test_算分状态的取值与后端词表同源(self):
+        from backend.kg.pg_store.config import SCORE_STATUSES
+
+        f = self._schema("AssessmentReportOut")["properties"]["score_status"]
+        assert tuple(f["enum"]) == SCORE_STATUSES
+
+    def test_匹配度来源多了无基准这一档(self):
+        f = self._schema("PositionMatchOut")["properties"]["source"]
+        assert "no_baseline" in f["enum"], (
+            "少了这一档，无基准岗位只能落到 no_overlap，"
+            "文案变成「你的画像未覆盖该岗位要求的技能」——把数据缺口说成学员的问题"
+        )
+
+    def test_匹配度来源也有配置不全这一档(self):
+        """缺口 82% 与 100% 不该一个报「实测」一个报数据缺口 —— 同一逻辑的连续形态。"""
+        f = self._schema("PositionMatchOut")["properties"]["source"]
+        assert "partial_baseline" in f["enum"]
+
+    def test_降级阈值只在服务端定义一次(self):
+        """放前端就成了每个页面各定一次的魔数，迟早不一致。"""
+        from backend.kg.pg_store.config import PARTIAL_BASELINE_PCT
+
+        assert PARTIAL_BASELINE_PCT == 30.0
+        desc = self._schema("PositionMatchOut")["properties"]["source"].get("description") or ""
+        desc += self._schema("PositionMatchOut").get("description") or ""
+        assert "30" in desc, "阈值没写进契约说明，前端只能猜"
+
+
+class TestMatchRouteOrder:
+    """`has_baseline` 必须在证据级联**之前**判。
+
+    往下走会被 `covered_count == 0` 误判成 `no_overlap`。这条顺序没法靠单测发请求验
+    （要连库、要 Token），所以在源码上钉一道 —— 与 test_uc_tls.py 里那几条同一手法。
+    """
+
+    @staticmethod
+    def _src() -> str:
+        from pathlib import Path
+
+        import backend.api.routes_student as m
+
+        return Path(m.__file__).read_text(encoding="utf-8")
+
+    def test_无基准判定排在诊断与画像级联之前(self):
+        src = self._src()
+        gate = src.index("has_baseline(required)")
+        assert gate < src.index('"source": "diagnosis",'), "无基准判定被排到诊断分支之后了"
+        assert gate < src.index('"source": "assessment"')
+        assert gate < src.index('"source": "no_overlap"')
+
+    def test_无技能构成的判定仍排在最前(self):
+        """「岗位没有技能构成」比「没有要求档」更靠前：连技能都没有就谈不上基准。"""
+        src = self._src()
+        assert src.index("该岗位尚未配置技能构成") < src.index("has_baseline(required)")
+
+    def test_无基准时明确不是学员的问题(self):
+        src = self._src()
+        head = src[src.index("has_baseline(required)"):][:600]
+        assert '"no_baseline"' in head and "match_score\": None" in head
+        assert "未配置能力要求档" in head or "尚未配置能力要求档" in head
+
+    def test_配置不全的降级挂在每条给分的返回路径上(self):
+        """漏挂一条，同一个岗位就会因为「测过没测过」一个带提示一个不带。"""
+        src = self._src()
+        body = src[src.index("def student_position_match"):]
+        body = body[: body.index("\n@router.")] if "\n@router." in body else body
+        assert body.count("_mark_partial(detail)") == 3, (
+            "给分的返回路径有三条（diagnosis / assessment / memory），"
+            f"只有 {body.count('_mark_partial(detail)')} 条过了降级"
+        )
+        assert "degrade_for_baseline_gap" in body, "score_status 也要跟着降级，两个字段口径要一致"
+
+    def test_降级用服务端常量而不是写死的三十(self):
+        src = self._src()
+        assert "PARTIAL_BASELINE_PCT" in src
+        assert "> 30" not in src and "no_baseline_weight > 30" not in src
+
+
 # ── BR-05：技能前置关系不能成环（纯算法）─────────────────────
 
 
