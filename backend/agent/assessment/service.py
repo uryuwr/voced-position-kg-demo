@@ -58,7 +58,7 @@ def load_context(session_id: int, occupation_id: str) -> dict[str, Any]:
     from backend.kg.pg_store.query import get_node
     from backend.kg.pg_store.skill_composition import get_composition
 
-    occ = get_node(occupation_id) or {}
+    occ = get_node(occupation_id, scope="public") or {}
     comp = get_composition(occupation_id)
     items = [
         {

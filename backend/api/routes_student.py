@@ -137,11 +137,17 @@ def student_profession_detail(
     user: TempUser = Depends(require_temp_user),
 ) -> ProfessionDetailOut:
     _ = user
-    p = biz.get_profession(profession_id)
-    if not p:
-        raise HTTPException(404, "profession not found")
-    positions = biz.profession_positions(profession_id)
-    ladder_raw = biz.profession_ladder(profession_id)
+    # 一个请求一条连接：原先这里是 get_profession + profession_positions +
+    # profession_ladder 三次独立 connect()，而 ladder 内部又把 positions 查了第二遍。
+    from backend.kg.pg_store.client import session
+
+    with session() as conn:
+        p = biz.get_profession(profession_id, conn=conn)
+        if not p:
+            raise HTTPException(404, "profession not found")
+        positions = biz.profession_positions(profession_id, conn=conn)
+        # ladder 只取前 4 条，顺序与 positions 一致，直接吃现成列表
+        ladder_raw = biz.profession_ladder(profession_id, positions=positions)
     return ProfessionDetailOut.model_validate(
         {"profession": p, "positions": positions, "ladder": ladder_raw}
     )
@@ -221,7 +227,7 @@ def student_position_match(
     from backend.kg.pg_store.skill_aggregate import occupation_skill_bundles
     from backend.userprofile import assessment_levels, diagnosed_match, get_profile
 
-    occ = get_node(position_id)
+    occ = get_node(position_id, scope="public")
     if not occ or occ.get("type") != "occupation":
         raise HTTPException(404, "position not found")
     occ_brief = {"id": occ.get("id"), "name": occ.get("name"), "level": occ.get("level")}

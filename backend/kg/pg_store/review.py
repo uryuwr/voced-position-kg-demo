@@ -83,7 +83,6 @@ def submit_change(
     REVIEW_REQUIRED=0（默认）：校验后立即 _apply 写主库，不进待审。
     REVIEW_REQUIRED=1：写入 kg_change_request，待 approve。
     """
-    ensure_review_schema()
     entity_kind = (entity_kind or "").lower().strip()
     action = (action or "").lower().strip()
     payload = dict(payload or {})
@@ -214,7 +213,6 @@ def submit_change(
 
 
 def list_pending(limit: int = 50, dim_type: str | None = None) -> list[dict[str, Any]]:
-    ensure_review_schema()
     with connect() as conn:
         if dim_type:
             rows = conn.execute(
@@ -239,7 +237,6 @@ def list_pending(limit: int = 50, dim_type: str | None = None) -> list[dict[str,
 
 
 def get_change(cid: int) -> dict[str, Any] | None:
-    ensure_review_schema()
     with connect() as conn:
         row = conn.execute(
             "SELECT * FROM kg_change_request WHERE id=%s", (cid,)
@@ -249,7 +246,6 @@ def get_change(cid: int) -> dict[str, Any] | None:
 
 def approve_change(cid: int, *, user_id: str, user_name: str) -> dict[str, Any]:
     """通过并立即生效，然后删除待审记录。"""
-    ensure_review_schema()
     cr = get_change(cid)
     if not cr:
         raise ValueError("待审记录不存在")
@@ -262,7 +258,6 @@ def approve_change(cid: int, *, user_id: str, user_name: str) -> dict[str, Any]:
 
 def reject_change(cid: int) -> dict[str, Any]:
     """驳回：删除待审记录。"""
-    ensure_review_schema()
     with connect() as conn:
         cur = conn.execute("DELETE FROM kg_change_request WHERE id=%s", (cid,))
         conn.commit()

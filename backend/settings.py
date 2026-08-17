@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from dotenv import dotenv_values, load_dotenv
 
@@ -87,6 +88,22 @@ def _bool(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _num(name: str, default: float, *, cast=int) -> Any:
+    """数值型配置：**填错不拦启动**，退回默认值。
+
+    配置从 SDP 配置中心下发，一个 `DB_POOL_MAX_SIZE=ten` 的手滑会让本模块
+    在 import 期抛 ValueError —— 整个服务连 `/health` 都起不来，而报错栈里
+    只看得到 `int()`，看不出是哪个键。宁可用默认值跑起来。
+    """
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return cast(default)
+    try:
+        return cast(raw)
+    except (TypeError, ValueError):
+        return cast(default)
+
+
 # —— 服务 ——
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8088"))
@@ -98,9 +115,34 @@ CORS_ORIGINS = [
 # —— 鉴权 ——
 # 生产必须为 0；本地无 UC 时才开 1
 AUTH_BYPASS = _bool("AUTH_BYPASS", "0")
-AUTH_DEBUG = _bool("AUTH_DEBUG", "0") or _bool("DEBUG", "0")
+# ⚠ 只认 AUTH_DEBUG 自己，**不再或上 DEBUG**。
+# 曾经写的是 `_bool("AUTH_DEBUG") or _bool("DEBUG")`，于是任何一次
+# 「把日志开详细点」的 DEBUG=1（k8s verbose、排查现场）都顺手打开了 MAC 校验旁路，
+# 一个 X-Test-Uid 头就能冒充任意用户。日志级别与身份校验必须是两个开关。
+AUTH_DEBUG = _bool("AUTH_DEBUG", "0")
 DEV_USER_ID = os.getenv("DEV_USER_ID", "0")
 DEV_USER_NAME = os.getenv("DEV_USER_NAME", "dev")
+
+# —— 出站 TLS 校验（UC 鉴权 / BTS 取 token / BTS 业务调用共用）——
+# 默认 **True**：代码默认是安全的。内网证书不被 CA 信任时有两种处理，按优先级：
+#   1) 把内网根证书打进镜像，设 TLS_CA_BUNDLE=/etc/ssl/certs/internal-ca.pem —— 推荐
+#   2) 实在没有 CA 时才 VERIFY_TLS=0（当前内测环境就是这样，见 backend/.env）
+# 关掉校验的代价不是"少一层保险"：BTS 取 token 的响应体里 mac_key 是明文，
+# 中间人拿到就能在有效期内伪造任意已签名的服务间请求；画像 PII 也走同一条通道。
+VERIFY_TLS = _bool("VERIFY_TLS", "1")
+TLS_CA_BUNDLE = (os.getenv("TLS_CA_BUNDLE") or "").strip()
+
+
+def tls_verify() -> str | bool:
+    """httpx 的 `verify=` 取值：CA 路径 > 布尔开关。
+
+    三处出站客户端（uc/client.py、bts/client.py、bts/auth.py）统一读这里，
+    别再各自写死 `verify=False` —— 留一处没改等于没改。
+    """
+    if TLS_CA_BUNDLE:
+        return TLS_CA_BUNDLE
+    return VERIFY_TLS
+
 
 # —— 审核 ——
 # 0=无审核直写（默认，本期内用）：POST /v1/admin/changes 立即生效
@@ -124,6 +166,25 @@ DATABASE_URL = os.getenv(
     "postgresql://voced:<your-password>@localhost:5432/voced_kg",
 )
 KG_REGION = os.getenv("KG_REGION", "CN")
+
+# —— PG 连接池（psycopg_pool.ConnectionPool，见 kg/pg_store/client.py）——
+# 池是**进程级**的：多 worker 部署时 `DB_POOL_MAX_SIZE × worker 数` 必须小于
+# PG 的 max_connections，否则高峰期先耗尽的是数据库连接数而不是 CPU。
+DB_POOL_MIN_SIZE = _num("DB_POOL_MIN_SIZE", 2)
+DB_POOL_MAX_SIZE = _num("DB_POOL_MAX_SIZE", 10)
+# 池满时等一条空闲连接的秒数，超时抛 PoolTimeout（不会无限挂住请求）
+DB_POOL_TIMEOUT = _num("DB_POOL_TIMEOUT", 30, cast=float)
+# 空闲超过这么久的连接被回收，降到 min_size（防中间设备静默掐掉长连接）
+DB_POOL_MAX_IDLE = _num("DB_POOL_MAX_IDLE", 300, cast=float)
+# 每次 checkout 前探一下连接是否还活着。多一次极轻的往返，换「PG 重启后
+# 第一批请求不报错」；确认链路稳定且要压榨延迟时可设 0。
+DB_POOL_CHECK = _bool("DB_POOL_CHECK", "1")
+if DB_POOL_MIN_SIZE < 0:
+    DB_POOL_MIN_SIZE = 0
+if DB_POOL_MAX_SIZE < 1:
+    DB_POOL_MAX_SIZE = 1
+if DB_POOL_MIN_SIZE > DB_POOL_MAX_SIZE:
+    DB_POOL_MIN_SIZE = DB_POOL_MAX_SIZE
 
 # —— BTS 服务间鉴权（对齐 bcs-ai-agent）：本服务调用外部/BCS 内部接口 ——
 # 与 UC MAC Token 不同：那是「浏览器→本服务」的用户鉴权，这是「本服务→外部」的应用鉴权。

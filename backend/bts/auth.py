@@ -34,6 +34,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from backend import settings
+
 _RANDOM_CHARS = string.ascii_lowercase + string.digits
 
 
@@ -95,6 +97,33 @@ class BtsTokenManager:
         self._timeout = timeout
         self._token: BtsToken | None = None
         self._lock = threading.Lock()
+        # 长生命周期 httpx.Client：httpx 的连接池活在实例上，`with httpx.Client()`
+        # 每次都把池连同 TCP+TLS 一起扔掉。同步 Client 是多线程安全的，直接持有。
+        self._http: httpx.Client | None = None
+        # 单独一把锁：_fetch() 是在持有 self._lock 的情况下被调用的，
+        # 复用同一把非重入锁会直接死锁
+        self._http_lock = threading.Lock()
+
+    def _client(self) -> httpx.Client:
+        c = self._http
+        if c is not None and not c.is_closed:
+            return c
+        with self._http_lock:
+            c = self._http
+            if c is None or c.is_closed:
+                # verify 统一由 settings.tls_verify() 决定（默认校验；
+                # 内网证书不被信任时配 TLS_CA_BUNDLE，实在不行才 VERIFY_TLS=0）
+                c = httpx.Client(timeout=self._timeout, verify=settings.tls_verify())
+                self._http = c
+            return c
+
+    def close(self) -> None:
+        c, self._http = self._http, None
+        if c is not None and not c.is_closed:
+            try:
+                c.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     def get_token(self) -> BtsToken:
         if self._token and not self._token.is_expired:
@@ -115,9 +144,7 @@ class BtsTokenManager:
         last: Exception | None = None
         for attempt in range(1, max_retries + 1):
             try:
-                # verify=False 对齐 bcs：内网证书常不被信任
-                with httpx.Client(timeout=self._timeout, verify=False) as c:
-                    resp = c.post(url, json=body)
+                resp = self._client().post(url, json=body)
                 if resp.status_code != 200:
                     raise RuntimeError(
                         f"BTS 取 token 失败 [{resp.status_code}]：{resp.text[:300]}"

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.kg.pg_store.client import connect
+from backend.kg.pg_store.client import use_conn
 from backend.kg.pg_store.config import edge_published
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
@@ -35,12 +35,14 @@ def _empty_counts() -> dict[str, Any]:
     }
 
 
-def counts_for_industries(ids: list[str]) -> dict[str, dict[str, int]]:
+def counts_for_industries(
+    ids: list[str], *, conn: object | None = None
+) -> dict[str, dict[str, int]]:
     """industry: major（直连 belongs_to）、occupation（直连 belongs_to）。"""
     out = {i: _empty_counts() for i in ids}
     if not ids:
         return out
-    with connect() as conn:
+    with use_conn(conn) as conn:
         # occupation -belongs_to→ industry
         rows = conn.execute(
             f"""
@@ -77,12 +79,14 @@ def counts_for_industries(ids: list[str]) -> dict[str, dict[str, int]]:
     return out
 
 
-def counts_for_majors(ids: list[str]) -> dict[str, dict[str, int]]:
+def counts_for_majors(
+    ids: list[str], *, conn: object | None = None
+) -> dict[str, dict[str, int]]:
     """major: occupation(prepares_for), skill(两跳 distinct skill_key)。"""
     out = {i: _empty_counts() for i in ids}
     if not ids:
         return out
-    with connect() as conn:
+    with use_conn(conn) as conn:
         rows = conn.execute(
             f"""
             SELECT e.src_id AS id, count(DISTINCT e.dst_id) AS c
@@ -139,12 +143,14 @@ def counts_for_majors(ids: list[str]) -> dict[str, dict[str, int]]:
     return out
 
 
-def counts_for_occupations(ids: list[str]) -> dict[str, dict[str, int]]:
+def counts_for_occupations(
+    ids: list[str], *, conn: object | None = None
+) -> dict[str, dict[str, int]]:
     """occupation: skill(distinct key), major(逆 prepares_for), industry 数。"""
     out = {i: _empty_counts() for i in ids}
     if not ids:
         return out
-    with connect() as conn:
+    with use_conn(conn) as conn:
         rows = conn.execute(
             f"""
             SELECT e.src_id AS id, count(DISTINCT ({SKILL_KEY_SQL})) AS c
@@ -231,6 +237,7 @@ def industries_for_occupations(
     ids: list[str],
     *,
     published_only: bool = False,
+    conn: object | None = None,
 ) -> dict[str, list[dict[str, str | None]]]:
     """
     occupation → industries[]（稳定序：name, id）。
@@ -253,7 +260,7 @@ def industries_for_occupations(
         m_ok = "COALESCE(m.status, 'published') NOT IN ('archived', 'disabled')"
         e_ok = "COALESCE(e.status, 'published') NOT IN ('archived')"
 
-    with connect() as conn:
+    with use_conn(conn) as conn:
         # 直连
         rows = conn.execute(
             f"""
@@ -303,6 +310,7 @@ def attach_counts_by_type(
     nodes: list[dict[str, Any]],
     *,
     node_type: str | None = None,
+    conn: object | None = None,
 ) -> list[dict[str, Any]]:
     """就地/拷贝附加 counts（及岗位 industries）。"""
     if not nodes:
@@ -312,12 +320,12 @@ def attach_counts_by_type(
     cmap: dict[str, dict[str, int]] = {}
     ind_map: dict[str, list[dict[str, str | None]]] = {}
     if ntype == "industry":
-        cmap = counts_for_industries(ids)
+        cmap = counts_for_industries(ids, conn=conn)
     elif ntype == "major":
-        cmap = counts_for_majors(ids)
+        cmap = counts_for_majors(ids, conn=conn)
     elif ntype == "occupation":
-        cmap = counts_for_occupations(ids)
-        ind_map = industries_for_occupations(ids)
+        cmap = counts_for_occupations(ids, conn=conn)
+        ind_map = industries_for_occupations(ids, conn=conn)
     else:
         for n in nodes:
             n.setdefault("counts", _empty_counts())

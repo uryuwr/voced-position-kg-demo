@@ -552,7 +552,7 @@ def occupation_skill_composition(occupation_id: str) -> dict[str, Any]:
     """岗位技能构成：逻辑技能 + 边权重 + 权重和（读路径只认边 weight）。"""
     from backend.kg.pg_store.query import get_node
 
-    occ = get_node(occupation_id)
+    occ = get_node(occupation_id, scope="public")
     if not occ or occ.get("type") != "occupation":
         raise ValueError("occupation not found")
     skills = occupation_skill_bundles(occupation_id, limit=200)

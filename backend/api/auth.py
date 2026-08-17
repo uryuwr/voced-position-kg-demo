@@ -81,7 +81,7 @@ async def require_auth_user(
                 return AuthUser(user_id=u.user_id, user_name=name)
         return u
 
-    if AUTH_BYPASS or AUTH_DEBUG:
+    if _bypass_enabled():
         uid = (x_test_uid or settings.DEV_USER_ID or "0").strip()
         uname = unquote((x_test_uname or settings.DEV_USER_NAME or "dev").strip())
         if uid:
@@ -93,6 +93,31 @@ async def require_auth_user(
         status_code=401,
         detail="未认证：需要 Authorization MAC Token（或开发旁路 AUTH_BYPASS=1）",
     )
+
+
+def _bypass_enabled() -> bool:
+    """开发旁路是否开启。
+
+    只认这两个显式开关。曾经 `AUTH_DEBUG` 会被 `DEBUG=1` 顺带打开
+    （见 settings.AUTH_DEBUG 的注释），那等于把「日志开详细点」做成了「不校验身份」。
+    """
+    return bool(AUTH_BYPASS or AUTH_DEBUG)
+
+
+def _bypass_user(request: Request) -> AuthUser | None:
+    """按测试头造一个用户；旁路未开启则 None。
+
+    这段逻辑原先在中间件里逐字抄了两份（无 Authorization / UC 校验失败各一份）。
+    鉴权旁路最怕的就是「收紧了一处，另一处还留着后门」，所以收口到这里，
+    要改条件只改 `_bypass_enabled()`。
+    """
+    if not _bypass_enabled():
+        return None
+    uid = request.headers.get("x-test-uid") or settings.DEV_USER_ID or "0"
+    uname = unquote(
+        request.headers.get("x-test-uname") or settings.DEV_USER_NAME or "dev"
+    )
+    return AuthUser(user_id=str(uid), user_name=uname or str(uid))
 
 
 def _should_skip(path: str) -> bool:
@@ -121,31 +146,16 @@ class UCAuthMiddleware(BaseHTTPMiddleware):
         try:
             if _should_skip(path) or not path.startswith("/v1/"):
                 # 开发旁路：静态/文档也可带测试头
-                if AUTH_BYPASS or AUTH_DEBUG:
-                    uid = request.headers.get("x-test-uid") or settings.DEV_USER_ID
-                    if uid:
-                        uname = unquote(
-                            request.headers.get("x-test-uname")
-                            or settings.DEV_USER_NAME
-                            or uid
-                        )
-                        _current_user.set(AuthUser(user_id=str(uid), user_name=uname))
+                dev = _bypass_user(request)
+                if dev:
+                    _current_user.set(dev)
                 return await call_next(request)
 
             authorization = request.headers.get("authorization", "")
             if not authorization:
-                if AUTH_BYPASS or AUTH_DEBUG:
-                    uid = (
-                        request.headers.get("x-test-uid")
-                        or settings.DEV_USER_ID
-                        or "0"
-                    )
-                    uname = unquote(
-                        request.headers.get("x-test-uname")
-                        or settings.DEV_USER_NAME
-                        or "dev"
-                    )
-                    _current_user.set(AuthUser(user_id=str(uid), user_name=uname))
+                dev = _bypass_user(request)
+                if dev:
+                    _current_user.set(dev)
                     return await call_next(request)
                 return JSONResponse(
                     status_code=401,
@@ -187,18 +197,9 @@ class UCAuthMiddleware(BaseHTTPMiddleware):
                     AuthUser(user_id=info["user_id"], user_name=uname or info["user_id"])
                 )
             except UCAuthError as e:
-                if AUTH_BYPASS or AUTH_DEBUG:
-                    uid = (
-                        request.headers.get("x-test-uid")
-                        or settings.DEV_USER_ID
-                        or "0"
-                    )
-                    uname = unquote(
-                        request.headers.get("x-test-uname")
-                        or settings.DEV_USER_NAME
-                        or "dev"
-                    )
-                    _current_user.set(AuthUser(user_id=str(uid), user_name=uname))
+                dev = _bypass_user(request)
+                if dev:
+                    _current_user.set(dev)
                     return await call_next(request)
                 return JSONResponse(
                     status_code=401,

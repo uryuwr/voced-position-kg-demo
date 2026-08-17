@@ -7,6 +7,8 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
+# pool extra = psycopg_pool，**运行时真的会 import**（kg/pg_store/client.py 的
+# 进程级 ConnectionPool）。别为了瘦身把 ,pool 去掉——缺了直接起不来。
 psycopg[binary,pool]>=3.1.0
 # httpx：BTS/LLM 出站调用，以及 sdp_config.py 拉配置中心
 httpx>=0.27.0

@@ -75,3 +75,9 @@ docs/.lark_api_doc
 
 # codegraph MCP 的本地索引（勿提交）
 .codegraph/
+
+# 验收产物（基线快照、浏览器截图、临时日志），不入库
+.baseline_*.json
+.baseline_*.log
+.after_*.log
+.ui_verify/

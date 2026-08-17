@@ -11,13 +11,14 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.kg.pg_store.client import connect
+from backend.kg.pg_store.client import connect, use_conn
 from backend.kg.pg_store.config import (
     ARCHIVED_STATUS,
     DEFAULT_REGION,
     edge_not_archived,
     edge_published,
     node_not_archived,
+    node_published,
 )
 from backend.kg.pg_store.migrate import stats as pg_stats
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
@@ -1119,6 +1120,7 @@ def list_nodes(
     published_only: bool = True,
     scope: str | None = None,
     order_by: str | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any]:
     """
     默认仅 published（图 Table / 探索 / 学员端）。
@@ -1176,7 +1178,7 @@ def list_nodes(
     else:
         order_sql = "sort_order NULLS LAST, name, id"
 
-    with connect() as conn:
+    with use_conn(conn) as conn:
         total = conn.execute(
             f"SELECT COUNT(*) AS c FROM kg_node WHERE {where_sql}",
             params,
@@ -1196,17 +1198,21 @@ def list_nodes(
         if manage and rows:
             ids = [r["id"] for r in rows]
             try:
-                pres = conn.execute(
-                    """
-                    SELECT DISTINCT ON (target_id)
-                      id, target_id, action, title, created_at
-                    FROM kg_change_request
-                    WHERE entity_kind = 'node'
-                      AND target_id = ANY(%s)
-                    ORDER BY target_id, created_at DESC
-                    """,
-                    (ids,),
-                ).fetchall()
+                # 包一层 savepoint：kg_change_request 缺表时 PG 会把**整个事务**置为
+                # aborted，如果这条连接是上层传下来的（一次请求一个事务），
+                # 后面所有查询都会跟着报 "current transaction is aborted"。
+                with conn.transaction():
+                    pres = conn.execute(
+                        """
+                        SELECT DISTINCT ON (target_id)
+                          id, target_id, action, title, created_at
+                        FROM kg_change_request
+                        WHERE entity_kind = 'node'
+                          AND target_id = ANY(%s)
+                        ORDER BY target_id, created_at DESC
+                        """,
+                        (ids,),
+                    ).fetchall()
                 for p in pres:
                     pending_map[p["target_id"]] = {
                         "pending_change_id": p["id"],
@@ -1241,11 +1247,41 @@ def list_nodes(
     }
 
 
-def get_node(node_id: str) -> dict[str, Any] | None:
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM kg_node WHERE id = %s", (node_id,)
-        ).fetchone()
+def get_node(
+    node_id: str,
+    *,
+    scope: str = "manage",
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    """按 id 取单节点 —— **唯一的取点入口，带可见性谓词**。
+
+    以前这里是裸 `WHERE id = %s`，一点状态都不过滤。`/v1/nodes/{id}` 在拿到行之后
+    自己补了一次过滤，但学员/业务侧按 id 取的那批没有：`get_profession` /
+    `get_position` / `student_position_match` / `set_goal` / 诊断里的
+    `get_node(occupation_id)`。结果是只要知道（或猜到 `CN:occupation:…` 这种）id，
+    就能读到 archived/draft/disabled 的节点，还能把它锁成学习目标、算匹配分。
+
+    scope：
+      - `public` —— 仅 published。**学员端 / 诊断 / 测评 / Agent 工具一律用这个**
+      - `manage` —— 除 archived 外都可见（含 draft / disabled）。默认值，
+        因为按 id 取点的调用点绝大多数在管理台写路径上，管理台确实要看草稿
+      - `any`    —— 不过滤。只给「刚写完再读回来」的场景用
+        （典型：`archive_node` 把 status 改成 archived 之后要把这行返回给接口）
+    """
+    sc = (scope or "").strip().lower()
+    if sc == "public":
+        pred = f" AND {node_published()}"
+    elif sc == "any":
+        pred = ""
+    else:
+        pred = f" AND {node_not_archived()}"
+    sql = f"SELECT * FROM kg_node WHERE id = %s{pred}"
+
+    if conn is not None:
+        row = conn.execute(sql, (node_id,)).fetchone()
+        return _node_dict(row) if row else None
+    with connect() as c:
+        row = c.execute(sql, (node_id,)).fetchone()
         if not row:
             return None
         return _node_dict(row)
@@ -1377,9 +1413,10 @@ def major_occupations(
     q: str | None = None,
     region: str | None = None,
     limit: int = 50,
+    conn: Any | None = None,
 ) -> list[dict[str, Any]]:
     reg = _default_region(region)
-    with connect() as conn:
+    with use_conn(conn) as conn:
         if major_id:
             rows = conn.execute(
                 f"""

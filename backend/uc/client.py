@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any
@@ -19,6 +20,44 @@ from backend import settings
 logger = logging.getLogger(__name__)
 
 _MAC_FIELD_RE = re.compile(r'(\w+)="([^"]*)"')
+
+# —— 共用 AsyncClient ——
+# httpx 本来就带连接池，但池的生命周期 = Client 实例的生命周期。
+# 原先写的是 `async with httpx.AsyncClient(...) as c:`，一出作用域连池一起销毁，
+# 于是**每个带 Authorization 的请求**都要重做 TCP + TLS 握手
+# （实测 94.78 ms → 复用后 27.61 ms）。UC 校验在每个接口前都跑一次，这笔最贵。
+#
+# AsyncClient 只在**单个 event loop 内**安全，所以连 loop 一起记：
+# 换了 loop（测试里常见：一个 TestClient 一个 loop）就重建，
+# 否则会在旧 loop 已关闭的连接上报 "Event loop is closed"。
+_async_client: httpx.AsyncClient | None = None
+_async_client_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_async_client() -> httpx.AsyncClient:
+    global _async_client, _async_client_loop
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # 非 async 上下文（单元测试直接调）——退回一次性客户端
+        loop = None
+    client = _async_client
+    if client is not None and not client.is_closed and _async_client_loop is loop:
+        return client
+    client = httpx.AsyncClient(timeout=10, verify=settings.tls_verify())
+    _async_client = client
+    _async_client_loop = loop
+    return client
+
+
+async def close_async_client() -> None:
+    """进程/应用退出时释放连接（FastAPI shutdown 调用）。"""
+    global _async_client, _async_client_loop
+    client, _async_client, _async_client_loop = _async_client, None, None
+    if client is not None and not client.is_closed:
+        try:
+            await client.aclose()
+        except Exception:  # noqa: BLE001 —— 退出路径不因清理失败而报错
+            pass
 
 
 class UCAuthError(Exception):
@@ -67,8 +106,8 @@ async def validate_uc_token(
         "sdp-app-id": app_id,
     }
     try:
-        async with httpx.AsyncClient(timeout=10, verify=False) as client:
-            resp = await client.post(url, json=body, headers=headers)
+        client = _get_async_client()
+        resp = await client.post(url, json=body, headers=headers)
     except httpx.HTTPError as e:
         logger.exception("UC token 验证请求失败: %s", e)
         raise UCAuthError("UC 服务不可用，请稍后重试") from e

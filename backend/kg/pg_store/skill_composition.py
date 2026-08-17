@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.kg.pg_store.client import connect, ensure_schema
+from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.config import attrs_level_int, edge_published
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
@@ -338,7 +338,6 @@ def set_skill(
     only_if_absent=True 用于「添加」入口：该技能已在构成中就报错，而不是静默改档。
     改档入口（点档位按钮）保持默认 False。
     """
-    ensure_schema()
     from backend.kg.pg_store.write import create_edge
 
     with connect() as conn:

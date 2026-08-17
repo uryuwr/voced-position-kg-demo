@@ -61,7 +61,7 @@ def get_occupation_skills(occupation_id: str, limit: int = 30) -> str:
         )
     except ValueError:
         pass
-    node = get_node(occupation_id)
+    node = get_node(occupation_id, scope="public")
     if not node or node.get("type") != "occupation":
         return json.dumps({"error": "occupation not found", "id": occupation_id})
     bundles = occupation_skill_bundles(occupation_id, limit=limit)
@@ -98,7 +98,7 @@ def get_occupation_skills(occupation_id: str, limit: int = 30) -> str:
 @tool
 def get_node_profile(node_id: str) -> str:
     """按 id 取节点档案（名称、类型、简介摘要）。"""
-    n = get_node(node_id)
+    n = get_node(node_id, scope="public")
     if not n:
         return json.dumps({"error": "not found", "id": node_id})
     return json.dumps(

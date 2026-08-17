@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from backend.kg.pg_store.biz_ddl import ACHIEVEMENT_SEEDS, BIZ_SCHEMA_SQL
-from backend.kg.pg_store.client import connect, ensure_schema
+from backend.kg.pg_store.client import connect, ensure_schema, use_conn
 from backend.kg.pg_store.counts import (
     counts_for_industries,
     counts_for_majors,
@@ -100,7 +99,7 @@ def position_match(
     名称对齐：用户技能名与 skill_key 先精确匹配，再退化为包含匹配
     （用户画像里的技能名来自诊断解析，不保证与国标 skill_key 完全一致）。
     """
-    occ = get_node(occupation_id)
+    occ = get_node(occupation_id, scope="public")
     if not occ or occ.get("type") != "occupation":
         raise ValueError("occupation not found")
     required = occupation_skill_bundles(occupation_id, limit=limit)
@@ -340,9 +339,11 @@ def _bundle_to_skill_out(b: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _attach_major_counts(items: list[dict[str, Any]]) -> None:
+def _attach_major_counts(
+    items: list[dict[str, Any]], *, conn: Any | None = None
+) -> None:
     ids = [x["id"] for x in items if x.get("id")]
-    cmap = counts_for_majors(ids)
+    cmap = counts_for_majors(ids, conn=conn)
     for x in items:
         x["counts"] = cmap.get(x["id"]) or {
             "major": 0,
@@ -354,10 +355,12 @@ def _attach_major_counts(items: list[dict[str, Any]]) -> None:
         }
 
 
-def _attach_position_extra(items: list[dict[str, Any]]) -> None:
+def _attach_position_extra(
+    items: list[dict[str, Any]], *, conn: Any | None = None
+) -> None:
     ids = [x["id"] for x in items if x.get("id")]
-    cmap = counts_for_occupations(ids)
-    ind = industries_for_occupations(ids)
+    cmap = counts_for_occupations(ids, conn=conn)
+    ind = industries_for_occupations(ids, conn=conn)
     for x in items:
         x["counts"] = cmap.get(x["id"]) or {
             "major": 0,
@@ -374,18 +377,26 @@ def _attach_position_extra(items: list[dict[str, Any]]) -> None:
 
 
 def list_professions(
-    *, q: str | None = None, page: int = 1, page_size: int = 20, region: str | None = None
+    *,
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    region: str | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any]:
-    data = list_nodes(
-        node_type="major",
-        region=region,
-        q=q,
-        page=page,
-        page_size=page_size,
-        published_only=True,
-    )
-    items = [_node_to_profession(n) for n in data["items"]]
-    _attach_major_counts(items)
+    # 一条连接跑完 list_nodes + counts_for_majors（原先各开各的）
+    with use_conn(conn) as c:
+        data = list_nodes(
+            node_type="major",
+            region=region,
+            q=q,
+            page=page,
+            page_size=page_size,
+            published_only=True,
+            conn=c,
+        )
+        items = [_node_to_profession(n) for n in data["items"]]
+        _attach_major_counts(items, conn=c)
     return {
         "items": items,
         "page": data["page"],
@@ -395,25 +406,41 @@ def list_professions(
     }
 
 
-def get_profession(pid: str) -> dict[str, Any] | None:
-    n = get_node(pid)
-    if not n:
-        return None
-    p = _node_to_profession(n)
-    _attach_major_counts([p])
+def get_profession(pid: str, *, conn: Any | None = None) -> dict[str, Any] | None:
+    with use_conn(conn) as c:
+        n = get_node(pid, scope="public", conn=c)
+        if not n:
+            return None
+        p = _node_to_profession(n)
+        _attach_major_counts([p], conn=c)
     return p
 
 
-def profession_positions(pid: str, limit: int = 50) -> list[dict[str, Any]]:
-    rows = major_occupations(pid, limit=limit)
-    items = [_node_to_position(r) for r in rows]
-    _attach_position_extra(items)
+def profession_positions(
+    pid: str, limit: int = 50, *, conn: Any | None = None
+) -> list[dict[str, Any]]:
+    with use_conn(conn) as c:
+        rows = major_occupations(pid, limit=limit, conn=c)
+        items = [_node_to_position(r) for r in rows]
+        _attach_position_extra(items, conn=c)
     return items
 
 
-def profession_ladder(pid: str) -> list[dict[str, Any]]:
-    """用关联岗位按名称序模拟成长阶梯（无官方 tier 时）。"""
-    positions = profession_positions(pid, limit=20)
+def profession_ladder(
+    pid: str,
+    *,
+    positions: list[dict[str, Any]] | None = None,
+    conn: Any | None = None,
+) -> list[dict[str, Any]]:
+    """用关联岗位按名称序模拟成长阶梯（无官方 tier 时）。
+
+    `positions`：调用方已经拿过这份列表就传进来。专业详情路由紧挨着
+    `profession_positions()` 调本函数，而本函数内部又查了一遍同一份数据
+    （两条连接、两个事务、两轮 counts 聚合）。只取前 4 条，顺序一致，
+    传进来的列表可以直接用。
+    """
+    if positions is None:
+        positions = profession_positions(pid, limit=20, conn=conn)
     ladder = []
     for i, p in enumerate(positions[:4], start=1):
         ladder.append(
@@ -428,18 +455,27 @@ def profession_ladder(pid: str) -> list[dict[str, Any]]:
 
 
 def list_positions(
-    *, q: str | None = None, page: int = 1, page_size: int = 20, region: str | None = None
+    *,
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    region: str | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any]:
-    data = list_nodes(
-        node_type="occupation",
-        region=region,
-        q=q,
-        page=page,
-        page_size=page_size,
-        published_only=True,
-    )
-    items = [_node_to_position(n) for n in data["items"]]
-    _attach_position_extra(items)
+    # 一条连接跑完 list_nodes + counts_for_occupations + industries_for_occupations
+    # （文档第 1 条点名的「一次学员列表 2–4 次连接」就是这里）
+    with use_conn(conn) as c:
+        data = list_nodes(
+            node_type="occupation",
+            region=region,
+            q=q,
+            page=page,
+            page_size=page_size,
+            published_only=True,
+            conn=c,
+        )
+        items = [_node_to_position(n) for n in data["items"]]
+        _attach_position_extra(items, conn=c)
     return {
         "items": items,
         "page": data["page"],
@@ -449,12 +485,13 @@ def list_positions(
     }
 
 
-def get_position(pid: str) -> dict[str, Any] | None:
-    n = get_node(pid)
-    if not n:
-        return None
-    p = _node_to_position(n)
-    _attach_position_extra([p])
+def get_position(pid: str, *, conn: Any | None = None) -> dict[str, Any] | None:
+    with use_conn(conn) as c:
+        n = get_node(pid, scope="public", conn=c)
+        if not n:
+            return None
+        p = _node_to_position(n)
+        _attach_position_extra([p], conn=c)
     return p
 
 
@@ -522,18 +559,25 @@ def get_skill_detail(skill_key: str, *, region: str | None = None) -> dict[str, 
 
 
 def list_industries_page(
-    *, q: str | None = None, page: int = 1, page_size: int = 50, region: str | None = None
+    *,
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    region: str | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any]:
-    data = list_nodes(
-        node_type="industry",
-        region=region,
-        q=q,
-        page=page,
-        page_size=page_size,
-        published_only=True,
-    )
-    ids = [n["id"] for n in data["items"]]
-    cmap = counts_for_industries(ids)
+    with use_conn(conn) as c:
+        data = list_nodes(
+            node_type="industry",
+            region=region,
+            q=q,
+            page=page,
+            page_size=page_size,
+            published_only=True,
+            conn=c,
+        )
+        ids = [n["id"] for n in data["items"]]
+        cmap = counts_for_industries(ids, conn=c)
     items = []
     for n in data["items"]:
         a = n.get("attrs") if isinstance(n.get("attrs"), dict) else {}
@@ -578,7 +622,6 @@ def _row_jsonable(row: Any) -> dict[str, Any]:
 
 def get_goal(user_id: str, occupation_id: str | None = None) -> dict[str, Any] | None:
     """默认取当前活跃目标；给 occupation_id 则取该岗位那条（含已归档的历史目标）。"""
-    ensure_biz_schema()
     with connect() as conn:
         if occupation_id:
             row = conn.execute(
@@ -603,11 +646,10 @@ def set_goal(
     occupation_id: str,
     major_id: str | None = None,
 ) -> dict[str, Any]:
-    ensure_biz_schema()
-    occ = get_node(occupation_id)
+    occ = get_node(occupation_id, scope="public")
     if not occ:
         raise ValueError("occupation not found")
-    major = get_node(major_id) if major_id else None
+    major = get_node(major_id, scope="public") if major_id else None
     with connect() as conn:
         # 换目标不删旧目标，只把它降为 archived：旧目标的测评结果与晋升进度仍要可查
         conn.execute(
@@ -645,7 +687,6 @@ def set_goal(
 
 def list_goals(user_id: str) -> list[dict[str, Any]]:
     """该用户的全部目标（活跃在前）。原型「当前活跃目标」之外还要能回看历史目标。"""
-    ensure_biz_schema()
     with connect() as conn:
         rows = conn.execute(
             "SELECT * FROM biz_user_goal WHERE user_id=%s "
@@ -656,7 +697,6 @@ def list_goals(user_id: str) -> list[dict[str, Any]]:
 
 
 def clear_goal(user_id: str, occupation_id: str | None = None) -> None:
-    ensure_biz_schema()
     with connect() as conn:
         if occupation_id:
             conn.execute(
@@ -689,7 +729,6 @@ def _add_points(user_id: str, user_name: str, delta: int) -> int:
 
 
 def _unlock(user_id: str, user_name: str, code: str) -> bool:
-    ensure_biz_schema()
     with connect() as conn:
         exists = conn.execute(
             "SELECT 1 FROM biz_user_achievement WHERE user_id=%s AND achievement_code=%s",
@@ -715,7 +754,6 @@ def _unlock(user_id: str, user_name: str, code: str) -> bool:
 
 
 def me_summary(user_id: str, user_name: str) -> dict[str, Any]:
-    ensure_biz_schema()
     goal = get_goal(user_id)
     with connect() as conn:
         pts = conn.execute(
@@ -755,7 +793,6 @@ def me_summary(user_id: str, user_name: str) -> dict[str, Any]:
 
 
 def list_badge_defs() -> list[dict[str, Any]]:
-    ensure_biz_schema()
     with connect() as conn:
         rows = conn.execute(
             "SELECT * FROM biz_achievement_def ORDER BY points"
@@ -765,40 +802,22 @@ def list_badge_defs() -> list[dict[str, Any]]:
 
 # ── 诊断 ─────────────────────────────────────────────────────
 
-_SKILL_KW = [
-    (r"直播|带货|话术", "直播"),
-    (r"投放|ROI|千川|广告", "投放"),
-    (r"数据分析|SQL|看板|指标", "数据"),
-    (r"脚本|短视频|内容", "内容"),
-    (r"运营|私域|用户", "运营"),
-    (r"python|java|开发|编程", "开发"),
-    (r"护理|医疗|康复", "护理"),
-    (r"会计|财务|审计", "财务"),
-]
-
-
 def _parse_resume_skills(text: str) -> list[dict[str, Any]]:
-    hits = []
-    for pat, label in _SKILL_KW:
-        if re.search(pat, text, re.I):
-            hits.append(
-                {
-                    "skill_name": label,
-                    "level": 2,
-                    "score": 40,
-                    "evidence": f"简历命中关键词规则：{pat}",
-                }
-            )
-    if not hits:
-        hits.append(
-            {
-                "skill_name": "通用职业素养",
-                "level": 1,
-                "score": 20,
-                "evidence": "未识别到领域关键词，给基础分",
-            }
-        )
-    return hits
+    """简历规则兜底 —— 词表与档位规则见 `backend.agent.skill_keywords`。
+
+    这里原来自带一份 `_SKILL_KW`（8 条），和 `agent/diagnose.py` 那份（10 条）
+    早就漂移了：少了 `C#`、汽车维修、航标作业，也不先查技能库。于是写着「汽车维修」
+    的简历走对话诊断命中、走简历诊断命不中。现在两条路径共用同一实现。
+
+    import 放函数内：`agent/` 依赖 `kg/pg_store/`，模块级反向 import 会成环。
+    """
+    from backend.agent.skill_keywords import rule_parse_skills
+
+    return rule_parse_skills(
+        text or "",
+        evidence_fmt="简历命中关键词规则：{pat}",
+        fallback_evidence="未识别到领域关键词，给基础分",
+    )
 
 
 def create_resume_diagnosis(
@@ -808,10 +827,9 @@ def create_resume_diagnosis(
     content_text: str,
     target_occupation_id: str | None = None,
 ) -> dict[str, Any]:
-    ensure_biz_schema()
     occ_name = None
     if target_occupation_id:
-        o = get_node(target_occupation_id)
+        o = get_node(target_occupation_id, scope="public")
         occ_name = (o or {}).get("name")
     # AI 网关 create_react_agent 优先，失败/未配置则规则
     try:
@@ -853,7 +871,6 @@ def _persist_resume_diagnosis(
     agent_summary: str | None,
 ) -> dict[str, Any]:
     """落库：简历资产 + 会话 + 技能画像 + 报告。同步与流式两条路径共用此段。"""
-    ensure_biz_schema()
     with connect() as conn:
         res = conn.execute(
             """
@@ -947,7 +964,6 @@ def save_learning_plan(
     学习计划内容由外部服务持有，这里只存 plan_id 与生成依据，便于列表回显、
     以及从综合能力报告追到它衍生出的计划。
     """
-    ensure_biz_schema()
     with connect() as conn:
         row = conn.execute(
             """
@@ -986,7 +1002,6 @@ def save_learning_plan(
 
 
 def list_learning_plans(user_id: str, occupation_id: str | None = None) -> list[dict[str, Any]]:
-    ensure_biz_schema()
     with connect() as conn:
         if occupation_id:
             rows = conn.execute(
@@ -1010,10 +1025,9 @@ def create_assessment_session(
     复用 biz_diagnosis_session（channel='assessment'）而不是另起一张表：
     报告落库、历史查询、学习计划等下游都已按这张表实现。
     """
-    ensure_biz_schema()
     occ_name = None
     if target_occupation_id:
-        occ_name = (get_node(target_occupation_id) or {}).get("name")
+        occ_name = (get_node(target_occupation_id, scope="public") or {}).get("name")
     with connect() as conn:
         row = conn.execute(
             """
@@ -1056,7 +1070,6 @@ def session_meta(session_id: int) -> dict[str, Any] | None:
 
 def save_assessment_report(session_id: int, user_id: str, report: dict[str, Any]) -> None:
     """测评收敛后落库：写报告 + 结束会话 + 更新技能画像。"""
-    ensure_biz_schema()
     measured = [
         {
             "skill_name": i.get("skill_key"),
@@ -1112,10 +1125,9 @@ def create_chat_session(
     *,
     target_occupation_id: str | None = None,
 ) -> dict[str, Any]:
-    ensure_biz_schema()
     occ_name = None
     if target_occupation_id:
-        o = get_node(target_occupation_id)
+        o = get_node(target_occupation_id, scope="public")
         occ_name = (o or {}).get("name")
     with connect() as conn:
         sess = conn.execute(
@@ -1157,7 +1169,6 @@ def _chat_prepare(
     单独提交：流式路径要先把这一轮回答落库，再花几秒跑模型，
     中途断连也不至于丢掉学员输入。
     """
-    ensure_biz_schema()
     with connect() as conn:
         sess = conn.execute(
             "SELECT * FROM biz_diagnosis_session WHERE id=%s AND user_id=%s",
@@ -1289,7 +1300,6 @@ def _persist_chat_message(
 def get_diagnosis_report(
     user_id: str, *, session_id: int | None = None, occupation_id: str | None = None
 ) -> dict[str, Any] | None:
-    ensure_biz_schema()
     with connect() as conn:
         if session_id:
             row = conn.execute(
@@ -1339,7 +1349,7 @@ def _build_report(
     required: list[dict[str, Any]] = []
     occ_name = None
     if occupation_id:
-        occ = get_node(occupation_id)
+        occ = get_node(occupation_id, scope="public")
         occ_name = (occ or {}).get("name")
         required = position_skills(occupation_id, limit=30)
     # simple match: name token overlap
@@ -1446,13 +1456,12 @@ def generate_path(
     *,
     occupation_id: str | None = None,
 ) -> dict[str, Any]:
-    ensure_biz_schema()
     if not occupation_id:
         g = get_goal(user_id)
         occupation_id = (g or {}).get("occupation_id")
     if not occupation_id:
         raise ValueError("occupation_id required (or set goal first)")
-    occ = get_node(occupation_id)
+    occ = get_node(occupation_id, scope="public")
     if not occ:
         raise ValueError("occupation not found")
     skills = position_skills(occupation_id, limit=12, aggregate=True)
@@ -1577,7 +1586,6 @@ def generate_path(
 
 
 def get_active_path(user_id: str) -> dict[str, Any] | None:
-    ensure_biz_schema()
     with connect() as conn:
         path = conn.execute(
             """
@@ -1642,7 +1650,6 @@ def get_active_path(user_id: str) -> dict[str, Any] | None:
 
 
 def complete_step(user_id: str, user_name: str, step_id: int) -> dict[str, Any]:
-    ensure_biz_schema()
     with connect() as conn:
         st = conn.execute(
             """
@@ -1712,7 +1719,6 @@ def list_resources(
 def admin_dashboard() -> dict[str, Any]:
     from backend.kg.pg_store.migrate import stats as kg_stats
 
-    ensure_biz_schema()
     kg = kg_stats()
     with connect() as conn:
         users_goal = conn.execute("SELECT COUNT(*) AS c FROM biz_user_goal").fetchone()["c"]

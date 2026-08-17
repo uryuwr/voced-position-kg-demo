@@ -50,6 +50,31 @@ class BtsClient:
             account or settings.BTS_ACCOUNT,
             secret or settings.BTS_PASSWORD,
         )
+        # 长生命周期 httpx.Client（本类已是进程单例，见 bts_client()）：
+        # 原先每次 request 都 `with httpx.Client(...)`，等于每次调用都重做 TCP+TLS。
+        # 同步 Client 多线程安全，直接复用。
+        self._http: httpx.Client | None = None
+        self._http_lock = threading.Lock()
+
+    def _client(self) -> httpx.Client:
+        c = self._http
+        if c is not None and not c.is_closed:
+            return c
+        with self._http_lock:
+            c = self._http
+            if c is None or c.is_closed:
+                c = httpx.Client(timeout=self.timeout, verify=settings.tls_verify())
+                self._http = c
+            return c
+
+    def close(self) -> None:
+        c, self._http = self._http, None
+        if c is not None and not c.is_closed:
+            try:
+                c.close()
+            except Exception:  # noqa: BLE001
+                pass
+        self._tm.close()
 
     def available(self) -> bool:
         """配置齐全才算可用；不可用时调用方应降级而不是报错。"""
@@ -89,8 +114,9 @@ class BtsClient:
         if extra_headers:
             headers.update({k: v for k, v in extra_headers.items() if v})
 
-        with httpx.Client(timeout=self.timeout, verify=False) as c:
-            resp = c.request(method.upper(), url, json=json, params=params, headers=headers)
+        resp = self._client().request(
+            method.upper(), url, json=json, params=params, headers=headers
+        )
 
         # token 可能在服务端被提前失效，重签一次再试
         if resp.status_code == 401 and retry_on_401:
@@ -135,6 +161,15 @@ def bts_client() -> BtsClient:
             if _CLIENT is None:
                 _CLIENT = BtsClient()
     return _CLIENT
+
+
+def close_bts_client() -> None:
+    """进程退出时释放 HTTP 连接（FastAPI shutdown 调用）。"""
+    global _CLIENT
+    with _LOCK:
+        c, _CLIENT = _CLIENT, None
+    if c is not None:
+        c.close()
 
 
 def bts_info() -> dict[str, Any]:

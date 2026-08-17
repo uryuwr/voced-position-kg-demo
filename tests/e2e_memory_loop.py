@@ -71,14 +71,16 @@ def pick_occupations(seen_text: str = "") -> tuple[dict, dict]:
                WHERE e.rel_type='requires' AND COALESCE(e.status,'published')='published'
                GROUP BY 1,2 HAVING COUNT(*) BETWEEN 3 AND 5 ORDER BY n LIMIT 40"""
         ).fetchall()
-        target = next((r for r in rows if r["name"] not in seen_text), rows[0])
-        # 跨岗位验证必须挑**与诊断岗位有共享技能**的岗位：
-        # 随便挑一个（比如拿航空试验的能力去比大地测量）技能零重叠，
-        # 返回 no_overlap 是正确行为，验不出「记忆是否被用上」
+        # 跨岗位验证必须挑**与诊断岗位有共享技能**的岗位：技能零重叠时
+        # 返回 no_overlap 是正确行为，验不出「记忆是否被用上」。
+        #
+        # 所以不能先定 target 再找同伴——技能越少的岗位越可能是冷门岗，
+        # 技能全库独有、一个同伴都没有（踩过：水生动物饲养工的
+        # 饲养技术/环境/设施管理三项无人共用，找同伴直接返回 None）。
+        # 改成逐个候选试，直到找到「不在画像里 且 确实有同伴」的那个。
         from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
-        other = c.execute(
-            f"""
+        peer_sql = f"""
             WITH tgt AS (
               SELECT DISTINCT ({SKILL_KEY_SQL}) AS k
               FROM kg_edge e JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level'
@@ -92,10 +94,17 @@ def pick_occupations(seen_text: str = "") -> tuple[dict, dict]:
             WHERE e.rel_type='requires' AND COALESCE(e.status,'published')='published'
               AND o.id <> %s AND ({SKILL_KEY_SQL}) IN (SELECT k FROM tgt)
             GROUP BY 1,2 ORDER BY shared DESC LIMIT 1
-            """,
-            (target["id"], target["id"]),
-        ).fetchone()
-    return dict(target), dict(other)
+        """
+        fresh = [r for r in rows if r["name"] not in seen_text] or rows
+        for cand in fresh:
+            peer = c.execute(peer_sql, (cand["id"], cand["id"])).fetchone()
+            if peer:
+                return dict(cand), dict(peer)
+
+    raise RuntimeError(
+        f"{len(fresh)} 个候选岗位都没有共享技能的同伴，跨岗位验证无从做起；"
+        "放宽 HAVING COUNT(*) 的区间再试"
+    )
 
 
 def main() -> int:

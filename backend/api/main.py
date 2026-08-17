@@ -77,7 +77,12 @@ from backend.api.routes_admin_biz import router as admin_biz_router
 from backend.api.routes_assessment import router as assessment_router
 from backend.api.routes_student import router as student_router
 from backend.kg.pg_store.biz_store import ensure_biz_schema
-from backend.kg.pg_store.client import ensure_schema, verify_connectivity
+from backend.kg.pg_store.client import (
+    close_pool,
+    ensure_schema,
+    open_pool,
+    verify_connectivity,
+)
 from backend.kg.pg_store.config import DEFAULT_REGION
 from backend.kg.pg_store.counts import attach_counts_by_type
 from backend.kg.pg_store.query import (
@@ -197,17 +202,45 @@ app.openapi = custom_openapi  # type: ignore[method-assign]
 
 @app.on_event("startup")
 def _startup() -> None:
-    try:
-        ensure_schema()
-        ensure_biz_schema()
-        ensure_review_schema()
-    except Exception:
-        pass
+    """建池 + 跑一次幂等 DDL。**失败就让进程起不来。**
+
+    以前这里是 `except Exception: pass`，代价是：启动时建表失败不报错，
+    然后每个热路径函数开头再 `ensure_*_schema()` 补一次 —— 整份 DDL
+    （含 created_at 回填 UPDATE 和表达式唯一索引）被打在 `GET /v1/student/goal`
+    这种请求上，还带目录锁。DDL 只在启动跑一次，跑不过就别起，
+    比"起来了但每个请求都在重试建表"清楚得多。
+
+    注意这段必须留在**启动事件**里，不能挪到模块 import 期：
+    没有 DB 的环境（比如只想 import 出 openapi）连 import 都会炸。
+    """
+    open_pool()
+    ensure_schema()
+    ensure_biz_schema()
+    ensure_review_schema()
+    # 布局序回填是数据补齐、不是表结构，缺了不影响接口可用性，保持宽容
     try:
         from backend.kg.pg_store.node_layout_meta import ensure_layout_meta_once
 
         ensure_layout_meta_once()
     except Exception:
+        pass
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    """释放长生命周期资源：PG 连接池 + 两个复用的 httpx 客户端。"""
+    close_pool()
+    try:
+        from backend.uc.client import close_async_client
+
+        await close_async_client()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from backend.bts.client import close_bts_client
+
+        close_bts_client()
+    except Exception:  # noqa: BLE001
         pass
 
 
@@ -440,10 +473,11 @@ def _node_detail_core(
     include_links: bool = False,
     scope: str | None = None,
 ) -> dict:
-    n = get_node(node_id)
+    n = get_node(node_id, scope="manage" if _is_manage_scope(scope) else "public")
     if not n:
         raise HTTPException(status_code=404, detail="node not found")
     # BR-07：前台/图仅 published；管理端 scope=manage 可读 draft/disabled
+    # （谓词已经进了 SQL，这里保留一层是防御：get_node 的 scope 一旦传错也不漏数据）
     if not _is_manage_scope(scope):
         if (n.get("status") or "published") != "published":
             raise HTTPException(status_code=404, detail="node not found")

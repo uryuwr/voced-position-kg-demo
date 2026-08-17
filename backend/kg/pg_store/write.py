@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.kg.pg_store.client import connect, ensure_schema
+from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.query import _node_dict, _rel_dict, get_node
 
 
@@ -82,7 +82,6 @@ def apply_node_links(
     按节点类型自动建边（系统填默认字段）。
     replace=True 时先删本节点上对应 rel 的旧边再重建（编辑关联时用）。
     """
-    ensure_schema()
     created: list[dict[str, Any]] = []
     ntype = (node_type or "").lower()
     region = "CN"
@@ -257,7 +256,6 @@ def create_node(
     user_id: str,
     user_name: str,
 ) -> dict[str, Any]:
-    ensure_schema()
     link_ids = extract_link_ids(data)
     body = _strip_link_fields(data)
     nid = (body.get("id") or "").strip() or f"CN:manual:{body['type']}:{uuid.uuid4().hex[:12]}"
@@ -334,7 +332,7 @@ def create_node(
         user_name=user_name,
         replace=True,
     )
-    node = get_node(nid)
+    node = get_node(nid, scope="any")  # 刚写完读回，可能还是 draft/archived
     assert node is not None
     node = dict(node)
     node["linked_edges"] = edges
@@ -349,7 +347,6 @@ def patch_node(
     user_id: str,
     user_name: str,
 ) -> dict[str, Any] | None:
-    ensure_schema()
     link_ids = extract_link_ids(data)
     has_links = any(link_ids.values())
     body = _strip_link_fields(data)
@@ -418,7 +415,7 @@ def patch_node(
         # 改 code 也要过唯一性校验：排除自身，避免「保存自己」被误判冲突
         from backend.kg.pg_store.query import get_node as _get_node
 
-        _cur = _get_node(node_id) or {}
+        _cur = _get_node(node_id, scope="any") or {}
         _assert_code_free(
             body["attrs"],
             _cur.get("type") or body.get("type") or "",
@@ -441,13 +438,13 @@ def patch_node(
                 return None
             conn.commit()
     elif not has_links:
-        return get_node(node_id)
+        return get_node(node_id, scope="any")
     else:
         # 仅改关联
-        if not get_node(node_id):
+        if not get_node(node_id, scope="any"):
             return None
 
-    node = get_node(node_id)
+    node = get_node(node_id, scope="any")  # 归档也要能把这行返回给接口
     if not node:
         return None
     edges: list[dict[str, Any]] = []
@@ -473,7 +470,6 @@ def create_edge(
     user_id: str,
     user_name: str,
 ) -> dict[str, Any]:
-    ensure_schema()
     src, dst, rel = data["src_id"], data["dst_id"], data["rel_type"]
     eid = (data.get("id") or "").strip() or f"edge:{src}|{rel}|{dst}"
     status = data.get("status") or "draft"
@@ -537,7 +533,6 @@ def archive_node(node_id: str, *, user_id: str, user_name: str) -> dict[str, Any
 
 
 def archive_edge(edge_id: str, *, user_id: str, user_name: str) -> bool:
-    ensure_schema()
     with connect() as conn:
         cur = conn.execute(
             """
