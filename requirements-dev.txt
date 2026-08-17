@@ -1,0 +1,12 @@
+# 开发/测试依赖。**不要把这些写进 backend/requirements.txt**——
+# 那个文件是 backend 独立部署的镜像清单，只能有运行时依赖
+# （见 CLAUDE.md「第一原则：backend 必须能独立部署」）。
+#
+#   pip install -r backend/requirements.txt      # 运行服务
+#   pip install -r requirements-dev.txt          # 跑单元测试
+#   python -m pytest                             # tests/unit/
+
+pytest>=8.0.0
+
+# e2e 脚本（tests/e2e_*.py）另需，按需安装：
+# playwright>=1.45.0

@@ -8,8 +8,19 @@
 - **关键能力短板**（需优先攻关提升）    → gaps[]，未测到的显示「待补强」，测到但不足的显示实际档
 - **基于短板一键生成学习计划**          → next_action 里带上短板技能，供学习计划接口直接消费
 
-匹配度算法沿用 position_match 的加权达标率（单项 min(实测/要求,1)，按国标权重加权），
-保证「岗位探索列表的匹配度」与「诊断报告的匹配度」同源，不会出现两个数字。
+匹配度口径（**与 position_match 同源**）
+--------------------------------------
+单项达标率 min(实测/要求, 1) 按权重加权，分母是岗位**全部**技能权重——没测到的
+按 0 分计入。它回答的是「这个岗位你整体准备好了多少」，所以未覆盖的技能必须拖低
+分数：那部分确实还没有证据。置信度由 coverage（本次覆盖了多少权重）说明。
+
+此前这里的分母只有**实测**技能权重，而岗位探索列表（`biz_store.match_with_profile`）
+用的是全权重：同一个学员、两个契合度完全一样的岗位，只因一个诊断过一个没诊断，
+列表上就并排显示 100% 和 30%。级联优先级本身没错，错在两个数不在同一刻度上却
+并排展示，因此统一到全权重分母。
+
+「你考过的部分掌握得怎样」这个口径仍有价值，另出 `tested_match_score`（分母只算
+实测权重）供报告详情页用；列表排序、目标卡一律用 match_score。
 """
 from __future__ import annotations
 
@@ -26,6 +37,35 @@ def _ratio(measured: int, required: int) -> float:
 
 RADAR_MIN_AXES = 3          # 少于 3 个轴画不成多边形
 RADAR_MAX_AXES = 6          # 轴太多标签会糊成一团
+LEVEL_MIN, LEVEL_MAX = 1, 5  # 产品档 L1–L5（真源 kg/pg_store/skill_level_meta.py）
+
+
+def _level(v: Any) -> int | None:
+    """读侧档位守卫：1–5 之外或非整数 → None（视作**缺失**）。
+
+    `skill_level_meta.base_score()` 对未知档位 raise KeyError，而档位两条来路都
+    不干净：required_level 来自 kg_edge 指向的 skill_level 节点 `attrs.level`
+    （无约束 TEXT；读侧 `config.attrs_level_int` 的正则只挡非数字，`9` 会原样穿过来），
+    measured_level 来自选项 level / 简历画像。写侧 `write._assert_attrs_sane` 校验过，
+    但采集脚本与直连改库绕得过应用层，读侧必须自己站得住——
+    一条脏档位不能打死一整份报告。
+
+    取 None 而不是夹到 5：把 9 当成 L5 会凭空给出「已达标」的结论。口径与
+    `config.attrs_level_int`（脏值取 NULL）一致。
+    """
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        lv = int(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+    return lv if LEVEL_MIN <= lv <= LEVEL_MAX else None
+
+
+def _score(level: Any) -> int:
+    """档位 → 基准分；缺失或越界取 0 分，不抛异常。"""
+    lv = _level(level)
+    return base_score(lv) if lv else 0
 
 
 def _build_radar(tested_rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -37,6 +77,9 @@ def _build_radar(tested_rows: list[dict[str, Any]]) -> dict[str, Any]:
     直接退化成「维度不足，无法绘制」。
 
     技能不足 3 项时退回大类聚合再试一次，仍不足才判定画不出来。
+
+    档位一律过 `_score()`：build_report 传进来的行已经夹过，但本函数是模块级的，
+    脏档位不该在这里变成 KeyError。
     """
     def _axes_from(rows: list[dict[str, Any]]) -> dict[str, Any]:
         top = sorted(rows, key=lambda x: -(x.get("weight") or 0))[:RADAR_MAX_AXES]
@@ -47,15 +90,15 @@ def _build_radar(tested_rows: list[dict[str, Any]]) -> dict[str, Any]:
                 {
                     "key": "user",
                     "name": "学员实测能力",
-                    "scores": [base_score(r["measured_level"]) if r["measured_level"] else 0 for r in top],
+                    "scores": [_score(r["measured_level"]) for r in top],
                 },
                 {
                     "key": "required",
                     "name": "岗位标准要求",
-                    "scores": [base_score(r["required_level"]) if r["required_level"] else 0 for r in top],
+                    "scores": [_score(r["required_level"]) for r in top],
                 },
             ],
-            "scores": [base_score(r["measured_level"]) if r["measured_level"] else 0 for r in top],
+            "scores": [_score(r["measured_level"]) for r in top],
         }
 
     if len(tested_rows) >= RADAR_MIN_AXES:
@@ -69,8 +112,8 @@ def _build_radar(tested_rows: list[dict[str, Any]]) -> dict[str, Any]:
         if cat not in acc:
             acc[cat] = {"user": [], "req": []}
             order.append(cat)
-        acc[cat]["user"].append(base_score(r["measured_level"]) if r["measured_level"] else 0)
-        acc[cat]["req"].append(base_score(r["required_level"]) if r["required_level"] else 0)
+        acc[cat]["user"].append(_score(r["measured_level"]))
+        acc[cat]["req"].append(_score(r["required_level"]))
 
     def _avg(v: list[float]) -> int:
         return round(sum(v) / len(v)) if v else 0
@@ -101,10 +144,12 @@ def build_report(
 
     for it in required_items:
         key = it.get("skill_key")
-        req = int(it.get("required_level") or 0)
+        # 档位在这里就夹干净：越界的 required_level 不只画歪雷达，
+        # 还会经 _ratio 污染 ratio / ok / urgency，所以守卫放在最上游而不是 _build_radar
+        req = _level(it.get("required_level")) or 0
         w = float(it.get("weight") or 0)
         m = measured.get(key) or {}
-        lv = int(m.get("level") or 0)
+        lv = _level(m.get("level")) or 0
         r = _ratio(lv, req)
         total_w += w
         got_w += r * w
@@ -129,13 +174,15 @@ def build_report(
             }
         )
 
-    # 匹配度只算**测过**的技能：一次测评覆盖 6–10 项核心技能，若把没考到的
-    # 二十多项也按 0 分计入，分数会被稀释成一个既不反映能力、也无法改善的数字
-    # （学员补再多短板，只要没被抽中出题就仍是 0）。未覆盖部分单独用 coverage 表达。
+    # match_score 分母是岗位**全部**技能权重（与 match_with_profile 同源，见模块 docstring）：
+    # 它答的是「这个岗位你整体准备好了多少」，没考到的那部分本就还没有证据，该拖低分数。
+    # 分子分母都在上面的循环里按行累加，未测项 ratio=0。
     tested_rows = [r for r in rows if r["tested"]]
     t_total = sum(r["weight"] for r in tested_rows) or 0.0
     t_got = sum(r["ratio"] * r["weight"] for r in tested_rows)
-    match_score = round(100 * t_got / t_total, 1) if t_total else 0.0
+    match_score = round(100 * got_w / total_w, 1) if total_w else 0.0
+    # 只算实测权重的那个口径：答「你考过的部分掌握得怎样」，不参与列表排序与横向比较
+    tested_match_score = round(100 * t_got / t_total, 1) if t_total else 0.0
     coverage = round(100 * t_total / total_w, 1) if total_w else 0.0
 
     # 优势/短板都只在测过的技能里选——没考过就没有证据，不该下结论
@@ -161,6 +208,8 @@ def build_report(
         "target_occupation_id": (occupation or {}).get("id"),
         "target_occupation_name": (occupation or {}).get("name"),
         "match_score": match_score,
+        # 只按实测技能算的匹配度：与 match_score 分母不同，不可混用（详情页展示用）
+        "tested_match_score": tested_match_score,
         # 本次测评覆盖了岗位技能权重的百分之多少 —— 匹配度的置信度靠它说明
         "coverage": coverage,
         "radar": radar,

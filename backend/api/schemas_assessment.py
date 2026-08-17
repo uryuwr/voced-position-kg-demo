@@ -177,7 +177,11 @@ class ReportItem(BaseModel):
     ratio: float = Field(..., description="达成比 = 实测/要求，封顶 1.0")
     ok: bool = Field(..., description="是否达标（实测 ≥ 要求）")
     tested: bool = Field(
-        ..., description="本次是否实际考到。false 时 measured_* 为 null，不参与匹配度计算"
+        ...,
+        description=(
+            "本次是否实际考到。false 时 measured_* 为 null、ratio 为 0，"
+            "仍按 0 分计入 match_score（只有 tested_match_score 把它排除在分母外）"
+        ),
     )
     source: str | None = Field(None, description="档位来源：choice / llm / rule")
     evidence_score: float | None = Field(None, description="证据充分度 0–1")
@@ -225,15 +229,33 @@ class ReportCounts(BaseModel):
 class AssessmentReportOut(BaseModel):
     """综合能力报告。
 
-    匹配度**只按实测到的技能算**：一次测评覆盖 6–10 项核心技能，若把没考到的
-    技能按 0 分计入，分数会被稀释成一个既不反映能力、也无法改善的数字。
-    覆盖率 `coverage` 就是这个分数的置信度说明，两者必须一起看。
+    两个匹配度，分母不同，**不要混用也不要相互换算**：
+
+    - `match_score`：分母是岗位**全部**技能权重，未测到的按 0 分计入。答「这个岗位
+      你整体准备好了多少」，与岗位探索列表（`match_with_profile`）同源，可跨岗位横向
+      比较、可用于列表排序。覆盖率 `coverage` 是它的置信度说明。
+    - `tested_match_score`：分母只有**实测**技能权重。答「你考过的部分掌握得怎样」，
+      只适合在报告详情页单点看；不同覆盖率之间不可比。
     """
 
     channel: str | None = Field(None, description="产生渠道：assessment / resume / chat / profile")
     target_occupation_id: str | None = Field(None, description="目标岗位节点 id")
     target_occupation_name: str | None = Field(None, description="目标岗位名")
-    match_score: float = Field(..., description="综合能力匹配度 0–100，仅按实测技能计")
+    match_score: float = Field(
+        ...,
+        description=(
+            "综合能力匹配度 0–100。分母是岗位**全部**技能权重（未测项按 0 分计入），"
+            "与岗位探索列表口径一致，可横向比较与排序"
+        ),
+    )
+    tested_match_score: float | None = Field(
+        None,
+        description=(
+            "仅按**实测**技能权重为分母的匹配度 0–100，即「考过的部分掌握得怎样」。"
+            "与 match_score 不同刻度，不可跨岗位比较；本次未测到任何技能时为 0。"
+            "历史报告（新增此字段之前生成）为 null"
+        ),
+    )
     coverage: float = Field(
         ..., description="本次测评覆盖的岗位技能权重百分比 0–100，是 match_score 的置信度"
     )

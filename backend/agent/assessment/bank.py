@@ -80,6 +80,28 @@ def _requirement_hint(item: dict[str, Any]) -> str | None:
 # ── 选技能 ───────────────────────────────────────────────────
 
 
+def _fit_budget(
+    cover: int, verify: int, *, budget: int, cover_floor: int
+) -> tuple[int, int]:
+    """把「想考的题数」压进 budget，两类题**按原比例缩**。
+
+    不能简单把清单截断到 budget：验证题一律排在覆盖题之后，一刀切等于把它们
+    全砍掉，要求 L4/L5 的技能就再也拿不到证据——而区分两类题正是
+    estimate_total 存在的理由。覆盖题另有下限（雷达至少 RADAR_MIN_SKILLS 根轴、
+    不少于 MIN_COVER_QUESTIONS 道），压缩时优先保它，验证题让位。
+    """
+    demand = cover + verify
+    if demand <= budget or budget <= 0:
+        return cover, verify
+    # 原本有验证题就至少留 1 道（比例算出 0 也留），否则高要求档岗位退化成纯选择题
+    v = min(verify, max(1, round(budget * verify / demand))) if verify else 0
+    c = budget - v
+    floor = min(cover_floor, budget)
+    if c < floor:
+        c, v = floor, max(0, budget - floor)
+    return c, min(v, verify)
+
+
 def plan_all_skills(
     items: list[dict[str, Any]], plan: dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
@@ -89,10 +111,21 @@ def plan_all_skills(
     躺在缓存里，不必等模型。代价是失去「按回答调难度」的自适应——权衡后选前者：
     等待十几秒换一点难度微调不划算，而验证题本来就可以按**岗位要求档**预先决定
     （要求 L4/L5 的技能一律追问，不必等学员先自评达标）。
+
+    题量以 `est['total']`（已受 MAX_QUESTIONS 约束）为预算，而不是照 `est['cover']`
+    照排——后者是**没夹过上限的需求量**，直接用它，20 项技能的岗位会排出 18 题。
     """
     est = plan or estimate_total(items)
     ranked = sorted(items, key=lambda x: -(float(x.get("weight") or 0)))
+    budget = min(int(est.get("total") or 0) or MAX_QUESTIONS, MAX_QUESTIONS)
     cover_n = min(int(est.get("cover") or 0) or MIN_COVER_QUESTIONS, len(ranked))
+    verify_n = max(0, int(est.get("verify") or 0))
+    cover_n, verify_n = _fit_budget(
+        cover_n,
+        verify_n,
+        budget=budget,
+        cover_floor=min(len(ranked), max(RADAR_MIN_SKILLS, MIN_COVER_QUESTIONS)),
+    )
 
     # 覆盖题：按权重降序，同大类限额以保证雷达维度分散；不足时放开限额补足
     picked: list[dict[str, Any]] = []
@@ -116,7 +149,7 @@ def plan_all_skills(
     out = [{**it, "_item_type": "choice", "_reason": "coverage"} for it in picked]
     # 验证题：要求档高的技能追加开放题，按权重优先
     hard = [it for it in picked if int(it.get("required_level") or 0) >= VERIFY_LEVEL]
-    for it in hard[: int(est.get("verify") or 0)]:
+    for it in hard[:verify_n]:
         out.append({**it, "_item_type": "open", "_reason": "verify_high_bar"})
     return out
 
@@ -202,6 +235,11 @@ def estimate_total(items: list[dict[str, Any]]) -> dict[str, Any]:
       每项一道开放追问，上限 OPEN_PER_RUN
 
     返回 {total, cover, verify, reason}，reason 供排查「为什么是这个题数」。
+
+    **口径**：`cover`/`verify` 是按岗位技能构成算出的**需求量**，没有夹 MAX_QUESTIONS
+    （留着它们才能看出「本想考 16 项，被上限压到 9 项」）；`total` 才是这场的题量，
+    受 MAX_QUESTIONS 封顶。排题只能以 `total` 为预算，两类题的配额由
+    `plan_all_skills` 调 `_fit_budget` 按 cover:verify 的比例分。
     """
     n = len(items)
     if not n:
