@@ -219,6 +219,13 @@ class CompositionItem(BaseModel):
     edge_id: str = Field(..., description="requires / covers 边的 id")
     skill_key: str = Field(..., description="技能聚合主键")
     category: str | None = Field(None, description="技能大类")
+    prereqs: list[str] = Field(
+        default_factory=list,
+        description=(
+            "先修技能的 skill_key 列表（来自 `kg_skill_prereq`）；空数组表示无先修。"
+            "**不限本节点的技能集**——前置技能可能不被本岗位/专业要求，但学员仍需先具备"
+        ),
+    )
     skill_level_id: str = Field(..., description="边指向的那个 skill_level 节点 id")
     available_levels: list[int] = Field(
         default_factory=list, description="该技能已配齐的档位 1–5"

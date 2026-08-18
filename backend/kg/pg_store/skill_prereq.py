@@ -29,6 +29,35 @@ def list_prereqs(skill_key: str, *, region: str | None = None) -> list[dict[str,
     return out
 
 
+def prereq_map(
+    conn, skill_keys: list[str], *, region: str | None = None
+) -> dict[str, list[str]]:
+    """批量取 `{技能 → 先修技能 key 列表}`，供「技能列表」类接口一次查完。
+
+    **只按左端 `skill_key` 筛，不要求先修技能也落在传入集合内**——原型要展示的是
+    「这个技能真正的前置」，哪怕那个前置不在本岗位的技能集里（学员照样得先会它）。
+    这与技能图谱（`industry_graph`）的语义**不同**：那里画的是集合内的依赖连线，
+    两端都必须在集内才有边可画。两处都对，别互相照搬。
+
+    收 `conn` 而不自己 `connect()`：调用方普遍已持有连接，先修查询总是与技能列表
+    查询同处一个请求，多开一条连接纯属浪费（本项目已因此栽过性能问题）。
+    """
+    keys = sorted({k for k in (skill_keys or []) if k})
+    if not keys:
+        return {}
+    out: dict[str, list[str]] = {}
+    for r in conn.execute(
+        """
+        SELECT skill_key, prereq_skill_key FROM kg_skill_prereq
+        WHERE region = %s AND skill_key = ANY(%s)
+        ORDER BY skill_key, prereq_skill_key
+        """,
+        (region or DEFAULT_REGION, keys),
+    ).fetchall():
+        out.setdefault(r["skill_key"], []).append(r["prereq_skill_key"])
+    return out
+
+
 def _would_cycle(
     skill_key: str, prereq_skill_key: str, *, region: str
 ) -> bool:

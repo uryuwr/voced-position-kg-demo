@@ -247,15 +247,10 @@ def _occupation_detail(conn, oid: str) -> dict[str, Any]:
 
     from backend.kg.pg_store.skill_aggregate import occupation_skill_bundles
 
+    from backend.kg.pg_store.skill_prereq import prereq_map
+
     bundles = occupation_skill_bundles(oid, limit=200)
-    keys = [b.get("skill_key") for b in bundles if b.get("skill_key")]
-    prereq_map: dict[str, list[str]] = {}
-    if keys:
-        for p in conn.execute(
-            "SELECT skill_key, prereq_skill_key FROM kg_skill_prereq WHERE skill_key = ANY(%s)",
-            (keys,),
-        ).fetchall():
-            prereq_map.setdefault(p["skill_key"], []).append(p["prereq_skill_key"])
+    pmap = prereq_map(conn, [b.get("skill_key") for b in bundles])
 
     skills = []
     wsum = 0.0
@@ -272,7 +267,7 @@ def _occupation_detail(conn, oid: str) -> dict[str, Any]:
                 "weight_pct": b.get("weight_pct"),
                 "is_core": b.get("is_core"),
                 # 原型：每技能显示先修，无则「无先修」
-                "prereqs": prereq_map.get(b.get("skill_key") or "", []),
+                "prereqs": pmap.get(b.get("skill_key") or "", []),
                 "levels": _levels_grid(b.get("available_levels") or [], b.get("required_level")),
             }
         )

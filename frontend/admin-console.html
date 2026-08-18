@@ -633,7 +633,9 @@
                value="${it.weight != null ? it.weight : ""}" data-w="${esc(it.skill_key)}" />`
           : `<span class="muted">—</span>`;
         return `<tr>
-          <td>${esc(it.skill_key)}<div class="muted">${esc(it.category || "未分类")}</div></td>
+          <td>${esc(it.skill_key)}<div class="muted">${(it.prereqs || []).length
+                ? "先修：" + (it.prereqs || []).map(esc).join("、")
+                : "无先修"}</div></td>
           <td>${btns}${reqLine}</td>
           <td>${wCell}</td>
           <td><button class="btn danger" type="button" data-rmsk="${esc(it.skill_key)}">移除</button></td>
@@ -651,7 +653,7 @@
         ${headRows}
         <div class="form-row"><label>技能（${(d.items || []).length}）</label><div>${wsumLine}</div></div>
         <table class="data">
-          <thead><tr><th>技能 / 分类</th><th>要求等级（点选）</th><th>权重</th><th>操作</th></tr></thead>
+          <thead><tr><th>技能 / 先修</th><th>要求等级（点选）</th><th>权重</th><th>操作</th></tr></thead>
           <tbody>${rows || `<tr><td colspan="4" class="empty">还没有技能，用下方搜索添加</td></tr>`}</tbody>
         </table>
         <div class="form-row"><label>添加技能</label>

@@ -247,6 +247,11 @@ def get_composition(node_id: str) -> dict[str, Any]:
         all_levels = {
             k: sorted({x["level"] for x in v if x["level"]}) for k, v in level_detail.items()
         }
+        # 先修：复用 skill_prereq.prereq_map，同一条连接内查完。
+        # 语义是「不限本节点技能集」——见该函数 docstring
+        from backend.kg.pg_store.skill_prereq import prereq_map
+
+        pmap = prereq_map(conn, keys, region=node["region"] or None)
 
     from backend.kg.pg_store.skill_aggregate import level_from_node
 
@@ -268,6 +273,8 @@ def get_composition(node_id: str) -> dict[str, Any]:
                 "edge_id": r["edge_id"],
                 "skill_key": r["skill_key"],
                 "category": r["category"],
+                # 原型第一列副行展示「先修」；不限本节点技能集内
+                "prereqs": pmap.get(r["skill_key"], []),
                 "skill_level_id": r["dst_id"],
                 # 该技能配齐的全部档 int 1–5（用于渲染档位按钮的可选性）
                 "available_levels": avail,
