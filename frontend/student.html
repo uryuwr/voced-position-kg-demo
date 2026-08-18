@@ -344,10 +344,13 @@
               <button class="act" id="dDiag">AI 智能诊断</button>
             </div>
           </div>
+          <div class="card" id="progBox"><div class="empty">晋升链路加载中…</div></div>
           <div class="card" id="courseBox"><div class="empty">课程资源加载中…</div></div>`;
         $("dLock").onclick = () => lockGoal(p);
         $("dDiag").onclick = () => lockGoal(p).then(() => document.querySelector('[data-tab="diag"]').click());
-        // 课程走独立接口异步填：岗位详情/技能构成接口都不含课程，加卡片不动既有契约
+        // 晋升链路与课程都走独立接口异步填：岗位详情/技能构成接口都不含它们，
+        // 加卡片不动既有契约
+        loadProgressionsInto(p.id, $("progBox"));
         loadCoursesInto(p.id, $("courseBox"));
         // 匹配度与「我的等级」列一起异步回填
         match = await loadMatchInto(p.id, $("matchBox"));
@@ -360,6 +363,82 @@
           });
         }
       } catch (e) { $("detailBox").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
+    }
+
+    /* ── ②' 岗位晋升链路 ────────────────────────────
+       独立接口 GET /v1/student/positions/progressions，不改岗位详情契约。
+       advances_to 是 1:N —— 一个岗位有多个向上方向（本方向纵深 / 管理路线 /
+       跨方向转型），每条路径一个 tab。早期本体误定 1:1、读路径 LIMIT 1，
+       Java 有三条向上路径却只显示「全栈工程师」一条。 */
+    const DIR_COLOR = {
+      "本方向纵深": "#10b981", "技术纵深": "#10b981",
+      "管理路线":   "#a78bfa",
+      "跨方向转型": "#f59e0b", "向上发展": "#60a5fa",
+    };
+    async function loadProgressionsInto(pid, box) {
+      try {
+        const d = await api("/v1/student/positions/progressions?id=" + encodeURIComponent(pid));
+        const paths = d.paths || [];
+        if (!paths.length) {
+          box.innerHTML = '<h3 style="margin:0 0 6px">岗位晋升链路</h3>'
+            + '<div class="empty">该岗位暂未配置晋升关系（advances_to 覆盖约 5%），补齐后此处显示各个向上方向</div>';
+          return;
+        }
+        const tabId = (i) => "progPath" + i;
+        box.innerHTML = `
+          <h3 style="margin:0 0 6px">岗位晋升链路</h3>
+          <div class="muted" style="margin-bottom:8px">
+            ${paths.length} 条向上路径${d.truncated ? "（已截断）" : ""} ·
+            由 AI 依据岗位职级与技能构成推断，点 tab 切换
+          </div>
+          <div class="row" id="progTabs" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">
+            ${paths.map((p, i) => `
+              <button class="ghost prog-tab" data-i="${i}"
+                style="border-color:${DIR_COLOR[p.direction] || "#60a5fa"}">
+                ${esc(p.target.name || "")}${p.depth > 1 ? ` · ${p.depth}步` : ""}
+              </button>`).join("")}
+          </div>
+          ${paths.map((p, i) => `
+            <div id="${tabId(i)}" class="prog-panel" style="display:${i ? "none" : "block"}">
+              <div class="row" style="gap:6px;margin-bottom:8px">
+                <span class="tag" style="color:${DIR_COLOR[p.direction] || "#60a5fa"};border-color:${DIR_COLOR[p.direction] || "#60a5fa"}">${esc(p.direction)}</span>
+                <span class="muted" style="font-size:12px">
+                  ${esc(p.hops[0].from.name || "")}${p.hops.map((h) => ` → ${esc(h.to.name || "")}`).join("")}
+                </span>
+              </div>
+              ${p.hops.map((h, j) => `
+                <div style="margin-bottom:10px;padding-left:10px;border-left:2px solid ${DIR_COLOR[h.direction] || "#334155"}">
+                  <div class="row" style="gap:6px">
+                    <b>第${j + 1}步：${esc(h.to.name || "")}</b>
+                    ${h.to.level ? `<span class="tag lv">L${h.to.level}</span>` : ""}
+                    ${h.to.level_name ? `<span class="tag">${esc(h.to.level_name)}</span>` : ""}
+                  </div>
+                  ${h.evidence ? `<div class="muted" style="font-size:12px;margin-top:4px">${esc(h.evidence)}</div>` : ""}
+                  <div class="muted" style="font-size:12px;margin-top:6px">进阶要补的技能：</div>
+                  <div style="margin-top:4px">
+                    ${(h.unlock_skills || []).length
+                      ? h.unlock_skills.map((s) => `<span class="tag">${esc(s.skill_key)}${
+                          s.required_level ? " L" + s.required_level : ""}${
+                          s.current_required_level ? "（现 L" + s.current_required_level + "）" : "（新增）"}</span>`).join(" ")
+                      : '<span class="muted">目标岗位暂未配置技能构成</span>'}
+                  </div>
+                </div>`).join("")}
+            </div>`).join("")}`;
+        box.querySelectorAll(".prog-tab").forEach((b) => {
+          b.onclick = () => {
+            box.querySelectorAll(".prog-panel").forEach((el, k) => {
+              el.style.display = String(k) === b.dataset.i ? "block" : "none";
+            });
+            box.querySelectorAll(".prog-tab").forEach((x) => x.classList.remove("act"));
+            b.classList.add("act");
+          };
+        });
+        const first = box.querySelector(".prog-tab");
+        if (first) first.classList.add("act");
+      } catch (e) {
+        box.innerHTML = '<h3 style="margin:0 0 6px">岗位晋升链路</h3>'
+          + `<div class="empty">加载失败：${esc(e.message || e)}</div>`;
+      }
     }
 
     /* ── ②'' 岗位相关课程 ───────────────────────────
@@ -375,11 +454,13 @@
             + '<div class="empty">该岗位技能暂无关联课程资源</div>';
           return;
         }
-        // 三类资源必须视觉可分：catalog 点开是课标目录页，不是课程内容
+        // 四类资源必须视觉可分：只有 real 点开当场能学。
+        // enroll 曾经也标「真课」，学员点进去是报名墙，还有一批往期课程已结课。
         const BADGE = {
-          real:    { text: "真课",   color: "#10b981", border: "#047857" },
+          real:    { text: "可直接学", color: "#10b981", border: "#047857" },
+          enroll:  { text: "需报名",   color: "#a78bfa", border: "#6d28d9" },
           catalog: { text: "课标目录", color: "#60a5fa", border: "#1d4ed8" },
-          landing: { text: "检索页",  color: "#f59e0b", border: "#b45309" },
+          landing: { text: "检索页",   color: "#f59e0b", border: "#b45309" },
         };
         const badge = (c) => {
           const b = BADGE[c.kind] || BADGE.landing;
@@ -388,7 +469,9 @@
         box.innerHTML = `
           <h3 style="margin:0 0 6px">岗位相关课程</h3>
           <div class="muted" style="margin-bottom:8px">
-            <b style="color:#10b981">真实课程 ${d.real_course_count}</b> ·
+            <b style="color:#10b981">可直接学 ${d.real_course_count}</b>${
+              d.enroll_count ? ` · <span style="color:#a78bfa">需报名 ${d.enroll_count}</span>` : ""
+            } ·
             检索入口 ${d.landing_count} · 覆盖 ${d.skill_count} 个技能${
               d.catalog_hidden
                 ? ` · <span style="color:#6b7280">另有 ${d.catalog_count} 条课标目录未显示（链接指向专业教学标准目录页，非课程）</span>`
@@ -627,8 +710,10 @@
       $("compBox").innerHTML = ""; $("planBox").innerHTML = "";
       try {
         const d = await api("/v1/student/goal/overview?occupation_id=" + encodeURIComponent(occId));
-        if (!d.has_goal) {
-          $("goalCard").innerHTML = '<div class="empty">该岗位没有目标记录</div>';
+        // has_goal 只说明「这岗位是不是我的目标」，不代表没数据 —— 诊断过但没锁定
+        // 的岗位照样有能力报告和学习计划。原来这里直接 return，整页空白。
+        if (!d.occupation || !d.occupation.id) {
+          $("goalCard").innerHTML = '<div class="empty">查不到该岗位</div>';
           return;
         }
         renderGoalCard(d);
@@ -653,7 +738,14 @@
         <div class="card" style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px">
           <div>
             <div class="row">
-              <span class="tag">当前活跃目标</span>
+              <!-- 详情与「有没有锁定目标」解耦：诊断过就能看，标签只如实反映状态 -->
+              ${(() => {
+                const g = d.goal || {};
+                if (!d.has_goal) return '<span class="tag">诊断记录</span>';
+                return g.status === "active"
+                  ? '<span class="tag" style="color:#34d399;border-color:#10b981">当前活跃目标</span>'
+                  : '<span class="tag">历史目标</span>';
+              })()}
               <span class="muted">归属：${esc((d.major || {}).name || "—")}</span>
               <span class="tag">${esc(matchScoreText(d.match_score, (d.assessment || {}).score_status))}</span>
             </div>
@@ -661,7 +753,9 @@
               <span class="tag">${esc(o.level_label || "—")}</span></h3>
             <div class="muted" style="max-width:640px">${esc((o.description || "暂无岗位职责描述").slice(0, 160))}</div>
             <div class="row" style="margin-top:12px">
-              <button class="ghost" id="btnSwitchGoal">↻ 更换目标</button>
+              ${d.has_goal
+                ? '<button class="ghost" id="btnSwitchGoal">↻ 更换目标</button>'
+                : `<button class="ghost" id="btnLockGoal">◎ 锁定为目标</button>`}
               <button class="act" id="btnDiag" ${o.skill_count ? "" : "disabled"}
                       title="${o.skill_count ? "" : "该岗位尚未配置技能构成，无法测评"}">⚡ AI 智能诊断</button>
               <span class="muted">技能项 ${o.skill_count || 0}</span>
@@ -689,9 +783,24 @@
           </div>
         </div>`;
       $("btnDiag").onclick = () => { location.href = "/assessment"; };
-      $("btnSwitchGoal").onclick = () => {
+      // 两个按钮互斥出现（锁定过 → 更换；没锁过 → 锁定），各自判存在再挂事件
+      const sw = $("btnSwitchGoal");
+      if (sw) sw.onclick = () => {
         document.querySelector('.tabs button[data-tab="explore"]').click();
         toast("在岗位探索里选择新的目标岗位");
+      };
+      const lk = $("btnLockGoal");
+      if (lk) lk.onclick = async () => {
+        lk.disabled = true;
+        try {
+          await api("/v1/student/goal", { method: "PUT", body: { occupation_id: o.id } });
+          toast("已锁定为学习目标");
+          loadGoal();                       // 刷新顶部目标条
+          loadPathDetail(o.id);             // 重渲染本页，标签变「当前活跃目标」
+        } catch (e) {
+          toast("锁定失败：" + (e.message || e));
+          lk.disabled = false;
+        }
       };
     }
 

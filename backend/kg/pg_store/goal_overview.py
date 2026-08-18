@@ -215,14 +215,27 @@ def diagnosed_occupations(
 
 
 def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, Any]:
-    """卡片数据。occupation_id 为空时取当前活跃目标。"""
+    """卡片数据。
+
+    `occupation_id` 为空时取当前活跃目标；**显式传了就以它为准，不要求锁定过目标**。
+
+    后半句是 2026-08-18 修的一个 bug：原来无论传不传 id，只要 `biz_user_goal` 里没有
+    对应行就回一个空壳（`has_goal=False` + 其余全空）。但「锁定目标」和「诊断过」是
+    两件独立的事——诊断会话自带 `target_occupation_id`，压根不需要先锁目标。
+    结果是 `/goal/diagnosed` 能列出 8 个诊断过的岗位、带着匹配度，点进任何一个
+    却什么都没有（前端显示「该岗位没有目标记录」），能力报告与学习计划全看不到。
+
+    `has_goal` 仍然如实反映「这个岗位是不是我的目标」，前端据它决定要不要显示
+    目标卡与「清除目标」入口，别再用它当「有没有数据」的开关。
+    """
     from backend.kg.pg_store import biz_store as biz
 
     goal = biz.get_goal(user_id, occupation_id)
-    if not goal or not goal.get("occupation_id"):
+    occ_id = (goal or {}).get("occupation_id") or (occupation_id or "").strip()
+    if not occ_id:
+        # 既没传 id 又没有活跃目标 —— 这才是真的无从下手
         return {"goal": None, "has_goal": False, "goals": biz.list_goals(user_id)}
-
-    occ_id = goal["occupation_id"]
+    has_goal = bool(goal and goal.get("occupation_id"))
     labels = label_map()
     with connect() as conn:
         occ = conn.execute(
@@ -231,9 +244,12 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
         cur_skills = _skill_keys(conn, occ_id)
         nxt = _next_level(conn, occ_id)
         report = _latest_report(conn, user_id, occ_id)
+        # 优先取推送成功的：失败记录的 plan_id 是空串，按时间排它可能压在最上面，
+        # 于是明明成功推过的计划在卡片上显示成"未生成"
         plan_row = conn.execute(
             "SELECT plan_id, created_at FROM biz_user_learning_plan "
-            "WHERE user_id=%s AND occupation_id=%s ORDER BY created_at DESC LIMIT 1",
+            "WHERE user_id=%s AND occupation_id=%s AND COALESCE(plan_id,'') <> '' "
+            "ORDER BY COALESCE(pushed_at, created_at) DESC LIMIT 1",
             (user_id, occ_id),
         ).fetchone()
         gap_skills: list[dict[str, Any]] = []
@@ -268,9 +284,13 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
 
     level = occ_d.get("level")
     return {
-        "has_goal": True,
+        # 如实反映「这个岗位是不是我的目标」。诊断过但没锁定时为 false，
+        # 但下面的岗位信息 / 测评结果 / 学习计划照常返回。
+        "has_goal": has_goal,
         "goal": goal,
-        # 学习计划 id（uuid 字符串）；未生成/接口未接通时为空串
+        # 学习计划 id；未生成时为空串。推送失败的记录 plan_id 是空串，
+        # 所以这里取到空串既可能是"没生成过"也可能是"推失败了"——
+        # 要区分看 GET /goal/learning-plans 的 push_status。
         "learning_plan_id": (plan_row or {}).get("plan_id") or "",
         "learning_plan_created_at": (
             plan_row["created_at"].isoformat() if plan_row and plan_row["created_at"] else None
@@ -285,8 +305,13 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
             "salary": (attrs or {}).get("salary"),
             "skill_count": len(cur_skills),
         },
-        "major": {"id": goal.get("major_id"), "name": goal.get("major_name")},
-        "industry": {"id": goal.get("industry_id"), "name": goal.get("industry_name")},
+        # 专业/行业归属来自「锁定目标」那一行。没锁过目标就没有这层信息
+        # （诊断不记专业与行业），两个 id 为 null，不是错误。
+        "major": {"id": (goal or {}).get("major_id"), "name": (goal or {}).get("major_name")},
+        "industry": {
+            "id": (goal or {}).get("industry_id"),
+            "name": (goal or {}).get("industry_name"),
+        },
         # 匹配度以最近一次针对该岗位的测评为准；没测过则为 None，前端提示先测评
         "match_score": (report or {}).get("match_score"),
         "assessment": report,

@@ -1473,6 +1473,7 @@ industry 节点 + parent_of 边（父→子）。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
+| `session_id` | integer |  | 产生这份报告的诊断会话 id。**生成学习计划要用它**（`POST /v1/student/goal/learning-plan` 的必填入参）。  数据层一直有这个字段，但响应模型此前没声明，被 Pydantic 丢掉了，导致前端拿不到 session_id、生成按钮永久禁用（2026-08-18 修）。 |
 | `channel` | string |  | 产生渠道：assessment / resume / chat / profile |
 | `target_occupation_id` | string |  | 目标岗位节点 id |
 | `target_occupation_name` | string |  | 目标岗位名 |
