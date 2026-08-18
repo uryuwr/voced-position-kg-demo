@@ -793,6 +793,15 @@ def _add_points(user_id: str, user_name: str, delta: int) -> int:
     return int(row["total"]) if row else delta
 
 
+def unlock_achievement(user_id: str, user_name: str, code: str) -> bool:
+    """解锁成就的**公开入口**。已解锁或 code 不存在时返回 False，不报错。
+
+    路由层用这个，不要直接叫 `_unlock` —— 私有名却被模块外调用，是审查文档
+    第 21 条点名的形状（改私有实现时看不出有外部调用方）。
+    """
+    return _unlock(user_id, user_name, code)
+
+
 def _unlock(user_id: str, user_name: str, code: str) -> bool:
     with connect() as conn:
         exists = conn.execute(
@@ -838,14 +847,6 @@ def me_summary(user_id: str, user_name: str) -> dict[str, Any]:
             "SELECT * FROM biz_user_skill WHERE user_id=%s ORDER BY updated_at DESC",
             (user_id,),
         ).fetchall()
-        path = conn.execute(
-            """
-            SELECT * FROM biz_learning_path
-            WHERE user_id=%s AND status='active'
-            ORDER BY created_at DESC LIMIT 1
-            """,
-            (user_id,),
-        ).fetchone()
     return {
         "user_id": user_id,
         "user_name": user_name,
@@ -853,7 +854,6 @@ def me_summary(user_id: str, user_name: str) -> dict[str, Any]:
         "points": int(pts["total"]) if pts else 0,
         "badges": [_row_jsonable(b) for b in badges],
         "skills": [_row_jsonable(s) for s in skills],
-        "active_path_id": path["id"] if path else None,
     }
 
 
@@ -1021,38 +1021,49 @@ def save_learning_plan(
     plan_id: str,
     *,
     session_id: int | None = None,
-    gap_skills: list[str] | None = None,
-    source: str = "api",
+    external_path_id: str,
+    payload_sha256: str,
+    push_status: str = "ok",
+    superseded_plan_id: str | None = None,
+    last_error: str | None = None,
 ) -> dict[str, Any]:
-    """记录「学员 × 岗位 × 学习计划」的关联。
+    """记录一次学习计划推送。
 
-    学习计划内容由外部服务持有，这里只存 plan_id 与生成依据，便于列表回显、
-    以及从综合能力报告追到它衍生出的计划。
+    计划内容由 e-ai-spaces 持有，这里只存关联与推送状态：便于列表回显、
+    从报告追到它衍生出的计划、以及失败后重推。
+
+    幂等键是 `(user_id, external_path_id)` 而不是 plan_id —— 推失败时根本没有
+    plan_id（存空串），只有 external_path_id 是我们自己算得出来的确定值，
+    重推要能覆盖到同一行。
     """
     with connect() as conn:
         row = conn.execute(
             """
             INSERT INTO biz_user_learning_plan
-              (user_id, occupation_id, plan_id, session_id, gap_skills, source)
-            VALUES (%s,%s,%s,%s,%s::jsonb,%s)
-            ON CONFLICT (user_id, occupation_id, plan_id) DO UPDATE SET
-              session_id = EXCLUDED.session_id,
-              gap_skills = EXCLUDED.gap_skills,
-              source = EXCLUDED.source,
-              created_at = NOW()
+              (user_id, occupation_id, plan_id, session_id, external_path_id,
+               payload_sha256, push_status, superseded_plan_id, last_error, pushed_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+            ON CONFLICT (user_id, external_path_id)
+              WHERE external_path_id IS NOT NULL
+            DO UPDATE SET
+              occupation_id      = EXCLUDED.occupation_id,
+              plan_id            = EXCLUDED.plan_id,
+              session_id         = EXCLUDED.session_id,
+              payload_sha256     = EXCLUDED.payload_sha256,
+              push_status        = EXCLUDED.push_status,
+              superseded_plan_id = EXCLUDED.superseded_plan_id,
+              last_error         = EXCLUDED.last_error,
+              pushed_at          = NOW()
             RETURNING *
             """,
             (
-                user_id,
-                occupation_id,
-                plan_id,
-                session_id,
-                json.dumps(gap_skills or [], ensure_ascii=False),
-                source,
+                user_id, occupation_id, plan_id, session_id, external_path_id,
+                payload_sha256, push_status, superseded_plan_id, last_error,
             ),
         ).fetchone()
-        # 报告里也留一份，方便「这份报告生成过哪个计划」独立可查
-        if session_id:
+        # 报告里也留一份，方便「这份报告生成过哪个计划」独立可查。
+        # 只在拿到真 plan_id 时写：推失败时写空串会把上一次成功的记录覆盖掉。
+        if session_id and plan_id:
             conn.execute(
                 """
                 UPDATE biz_diagnosis_result
@@ -1064,6 +1075,56 @@ def save_learning_plan(
             )
         conn.commit()
     return _row_jsonable(row)
+
+
+def session_for_learning_plan(user_id: str, session_id: int) -> dict[str, Any] | None:
+    """取诊断会话 + 岗位名，供生成学习计划用。不属于该用户则返回 None。
+
+    `biz_diagnosis_session` 有三个创建入口（测评 / 简历 / 对话），但
+    `biz_diagnosis_result` **不一定有**——测评要答完题、对话要跑完才写。
+    所以这里连 result 一起判，把「有会话」和「有诊断结果」分开返回，
+    让路由能给出不同的错误：前者是找不到（404），后者是状态不对（400）。
+
+    放过没有 result 的会话，会构造出一条没有短板数据的空路径，被对方 422 拒——
+    错误暴露在上游，排查成本高得多。
+    """
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT s.id, s.user_id, s.target_occupation_id, s.channel, s.status,
+                   n.name AS occupation_name,
+                   (d.session_id IS NOT NULL) AS has_result
+              FROM biz_diagnosis_session s
+              LEFT JOIN biz_diagnosis_result d ON d.session_id = s.id
+              LEFT JOIN kg_node n ON n.id = s.target_occupation_id
+                   AND COALESCE(n.status,'published') = 'published'
+             WHERE s.id = %s AND s.user_id = %s
+            """,
+            (session_id, str(user_id)),
+        ).fetchone()
+    return _row_jsonable(row) if row else None
+
+
+def previous_external_path_id(
+    user_id: str, occupation_id: str, *, exclude_external_path_id: str
+) -> str | None:
+    """同一学员同一岗位上一条推送成功的 external_path_id，用作换代的 revision_of。
+
+    只认 `push_status='ok'` 的：拿一条失败记录去当"上一版"，对方那边根本没有
+    这条路径，换代关系会挂空。
+    """
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT external_path_id FROM biz_user_learning_plan
+             WHERE user_id=%s AND occupation_id=%s AND push_status='ok'
+               AND external_path_id IS NOT NULL AND external_path_id <> %s
+             ORDER BY pushed_at DESC NULLS LAST, created_at DESC
+             LIMIT 1
+            """,
+            (str(user_id), occupation_id, exclude_external_path_id),
+        ).fetchone()
+    return (row or {}).get("external_path_id") or None
 
 
 def list_learning_plans(user_id: str, occupation_id: str | None = None) -> list[dict[str, Any]]:
@@ -1494,282 +1555,28 @@ def _build_report(
 # ── 学习路径 ─────────────────────────────────────────────────
 
 
-def _courses_for_skill_key(skill_key: str, limit: int = 2) -> list[dict[str, Any]]:
-    """技能→课程：taught_by / related_to，按 skill_key 找 skill_level 再扩边。"""
-    if not skill_key:
-        return []
-    with connect() as conn:
-        # attrs 为 TEXT，安全转 json
-        rows = conn.execute(
-            """
-            SELECT c.id, c.name, c.source_url, e.rel_type
-            FROM kg_node s
-            JOIN kg_edge e ON e.rel_type IN ('taught_by', 'related_to')
-              AND (e.src_id = s.id OR e.dst_id = s.id)
-            JOIN kg_node c ON c.type = 'course'
-              AND c.id = CASE WHEN e.src_id = s.id THEN e.dst_id ELSE e.src_id END
-              AND COALESCE(c.status,'published') = 'published'
-            WHERE s.type = 'skill_level'
-              AND COALESCE(s.status,'published') = 'published'
-              AND (
-                s.name LIKE %s
-                OR (
-                  s.attrs IS NOT NULL AND btrim(s.attrs) <> ''
-                  AND (
-                    COALESCE(s.attrs::json->>'skill_name','') = %s
-                    OR COALESCE(s.attrs::json->>'skill_key','') = %s
-                  )
-                )
-              )
-            LIMIT %s
-            """,
-            (f"%{skill_key}%", skill_key, skill_key, limit),
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def generate_path(
-    user_id: str,
-    user_name: str,
-    *,
-    occupation_id: str | None = None,
-) -> dict[str, Any]:
-    if not occupation_id:
-        g = get_goal(user_id)
-        occupation_id = (g or {}).get("occupation_id")
-    if not occupation_id:
-        raise ValueError("occupation_id required (or set goal first)")
-    occ = get_node(occupation_id, scope="public")
-    if not occ:
-        raise ValueError("occupation not found")
-    skills = position_skills(occupation_id, limit=12, aggregate=True)
-    gaps_report = get_diagnosis_report(user_id, occupation_id=occupation_id) or {}
-    gap_names = {
-        (g.get("skill_name") or "").lower()
-        for g in (gaps_report.get("gaps") or [])
-        if g.get("skill_name")
-    }
-    gap_ids = {g.get("skill_id") for g in gaps_report.get("gaps") or []}
-
-    def _prio(s: dict[str, Any]) -> tuple:
-        nm = (s.get("skill_name") or s.get("skill_key") or s.get("name") or "").lower()
-        is_gap = 0 if (s.get("id") in gap_ids or any(g and (g in nm or nm in g) for g in gap_names)) else 1
-        w = s.get("weight")
-        try:
-            wf = -float(w) if w is not None else 0.0
-        except (TypeError, ValueError):
-            wf = 0.0
-        return (is_gap, wf)
-
-    ordered = sorted(skills, key=_prio)
-
-    # 阶段划分：按技能大类分组，阶段顺序沿用国标「职业功能」推进顺序
-    # （安全环保 → 作业准备 → 操作加工 → 检修/质检 → 技术管理 → 培训指导），
-    # 与技能前置关系、技能图谱的分区顺序同源，学员看到的先后是一致的。
-    from backend.kg.pg_store.skill_taxonomy import category_rank
-
-    ordered = ordered[:8]
-    stage_of: dict[str, int] = {}
-    for cat in sorted(
-        {(s.get("category") or "未分类") for s in ordered}, key=category_rank
-    ):
-        stage_of[cat] = len(stage_of) + 1
-
-    # 建议耗时：按目标等级估算（无真实课时数据，标注为估算值）
-    _DURATION_BY_LEVEL = {1: 30, 2: 45, 3: 60, 4: 90, 5: 120}
-
-    with connect() as conn:
-        conn.execute(
-            "UPDATE biz_learning_path SET status='archived' WHERE user_id=%s AND status='active'",
-            (user_id,),
-        )
-        path = conn.execute(
-            """
-            INSERT INTO biz_learning_path
-              (user_id, user_name, occupation_id, occupation_name, status, source)
-            VALUES (%s,%s,%s,%s,'active','diagnosis')
-            RETURNING *
-            """,
-            (user_id, user_name, occupation_id, occ.get("name")),
-        ).fetchone()
-        steps = []
-        seq = 0
-        for s in ordered:
-            sk = s.get("skill_key") or s.get("skill_name") or s.get("name") or "技能"
-            seq += 1
-            req = s.get("required_level")
-            title = f"补齐技能：{sk}"
-            if req:
-                title += f"（目标 L{req}）"
-            cat = s.get("category") or "未分类"
-            st = conn.execute(
-                """
-                INSERT INTO biz_learning_step
-                  (path_id, seq, kind, skill_id, skill_name, title, status,
-                   stage, stage_title, category, weight, duration_min, required_level)
-                VALUES (%s,%s,'skill',%s,%s,%s,'pending',%s,%s,%s,%s,%s,%s)
-                RETURNING *
-                """,
-                (
-                    path["id"], seq, s.get("id"), sk, title,
-                    stage_of.get(cat), cat, cat,
-                    s.get("weight"),
-                    _DURATION_BY_LEVEL.get(int(req or 0), 45),
-                    req,
-                ),
-            ).fetchone()
-            steps.append(dict(st))
-            # 挂可学课程步骤（有边才有；无则跳过——HITL 资源不足）
-            for course in _courses_for_skill_key(str(sk), limit=1):
-                seq += 1
-                ct = f"学习资源：{course.get('name')}"
-                st2 = conn.execute(
-                    """
-                    INSERT INTO biz_learning_step
-                      (path_id, seq, kind, skill_id, skill_name, resource_id, resource_title, title, status,
-                       stage, stage_title, category, weight, duration_min, required_level)
-                    VALUES (%s,%s,'course',%s,%s,%s,%s,%s,'pending',%s,%s,%s,%s,%s,%s)
-                    RETURNING *
-                    """,
-                    (
-                        path["id"],
-                        seq,
-                        s.get("id"),
-                        sk,
-                        course.get("id"),
-                        course.get("name"),
-                        ct,
-                        stage_of.get(cat),
-                        cat,
-                        cat,
-                        # 课程步骤不重复计权，避免同一技能被算两次
-                        0.0,
-                        _DURATION_BY_LEVEL.get(int(req or 0), 45),
-                        req,
-                    ),
-                ).fetchone()
-                steps.append(dict(st2))
-        conn.commit()
-    _unlock(user_id, user_name, "first_path")
-    return {
-        "path": _row_jsonable(path),
-        "steps": [_row_jsonable(s) for s in steps],
-        "meta": {
-            "engine": "rule+graph",
-            "note": "技能按缺口/权重排序；课程来自 taught_by/related_to（稀缺时仅技能步）",
-            "skill_steps": sum(1 for s in steps if s.get("kind") == "skill"),
-            "course_steps": sum(1 for s in steps if s.get("kind") == "course"),
-        },
-    }
-
-
-def get_active_path(user_id: str) -> dict[str, Any] | None:
-    with connect() as conn:
-        path = conn.execute(
-            """
-            SELECT * FROM biz_learning_path
-            WHERE user_id=%s AND status='active'
-            ORDER BY created_at DESC LIMIT 1
-            """,
-            (user_id,),
-        ).fetchone()
-        if not path:
-            return None
-        steps = conn.execute(
-            "SELECT * FROM biz_learning_step WHERE path_id=%s ORDER BY seq",
-            (path["id"],),
-        ).fetchall()
-    done = sum(1 for s in steps if s["status"] == "completed")
-    rows = [_row_jsonable(s) for s in steps]
-
-    # 阶段任务树（原型 4.8）：按 stage 分组，阶段权重 = 该阶段任务权重和 / 总权重
-    total_w = sum(float(s.get("weight") or 0) for s in rows)
-    done_w = sum(
-        float(s.get("weight") or 0) for s in rows if s.get("status") == "completed"
-    )
-    stages: dict[int, dict[str, Any]] = {}
-    for s in rows:
-        stg = s.get("stage") or 0
-        g = stages.setdefault(
-            stg,
-            {
-                "stage": stg,
-                "title": s.get("stage_title") or s.get("category") or "未分组",
-                "steps": [],
-                "weight": 0.0,
-                "duration_min": 0,
-            },
-        )
-        g["steps"].append(s)
-        g["weight"] += float(s.get("weight") or 0)
-        g["duration_min"] += int(s.get("duration_min") or 0)
-    stage_list = []
-    for g in sorted(stages.values(), key=lambda x: x["stage"]):
-        g_done = sum(1 for s in g["steps"] if s.get("status") == "completed")
-        g["stage_weight_pct"] = round(100 * g["weight"] / total_w) if total_w else 0
-        g["completed"] = g_done
-        g["total"] = len(g["steps"])
-        stage_list.append(g)
-
-    return {
-        "path": _row_jsonable(path),
-        "steps": rows,
-        "stages": stage_list,
-        "progress": {
-            "completed": done,
-            "total": len(steps),
-            "ratio": round(done / len(steps), 3) if steps else 0,
-            # 原型顶部「35%（完成权重/总权重）」用这个，而非按任务条数
-            "weighted_ratio": round(done_w / total_w, 3) if total_w else 0,
-            "weighted_pct": round(100 * done_w / total_w) if total_w else 0,
-            "duration_min_total": sum(int(s.get("duration_min") or 0) for s in rows),
-        },
-    }
-
-
-def complete_step(user_id: str, user_name: str, step_id: int) -> dict[str, Any]:
-    with connect() as conn:
-        st = conn.execute(
-            """
-            SELECT s.*, p.user_id FROM biz_learning_step s
-            JOIN biz_learning_path p ON p.id = s.path_id
-            WHERE s.id=%s AND p.user_id=%s
-            """,
-            (step_id, user_id),
-        ).fetchone()
-        if not st:
-            raise ValueError("step not found")
-        conn.execute(
-            "UPDATE biz_learning_step SET status='completed', completed_at=NOW() WHERE id=%s",
-            (step_id,),
-        )
-        conn.commit()
-    _unlock(user_id, user_name, "first_step")
-    # streak-ish
-    with connect() as conn:
-        n = conn.execute(
-            """
-            SELECT COUNT(*) AS c FROM biz_learning_step s
-            JOIN biz_learning_path p ON p.id=s.path_id
-            WHERE p.user_id=%s AND s.status='completed'
-            """,
-            (user_id,),
-        ).fetchone()
-    if n and int(n["c"]) >= 3:
-        _unlock(user_id, user_name, "streak_3")
-    return get_active_path(user_id)  # type: ignore[return-value]
-
-
 def list_resources(
     *, skill_id: str | None = None, q: str | None = None, page: int = 1, page_size: int = 20
 ) -> dict[str, Any]:
-    """学习资源：优先 KG course 节点。"""
+    """学习资源：KG course 节点中**真正能学**的那部分。
+
+    必须带 `learnable_course()`：库里 91% 的 course 是教育部课标的课目名称
+    （`role=curriculum_catalog`），链接指向专业教学标准的大类目录页，
+    学员点开没有任何课程内容。详见 config.learnable_course 的说明。
+    """
+    from backend.kg.pg_store.config import learnable_course
+
     data = list_nodes(
-        node_type="course", q=q, page=page, page_size=page_size, published_only=True
+        node_type="course", q=q, page=page, page_size=page_size, published_only=True,
+        extra_where=learnable_course(""),
+        # 真实课程排在检索入口前面：过滤掉课标后列表会被 search_landing 占满，
+        # 学员翻好几页才看到一门真课
+        order_by="resource_quality",
     )
     items = []
     for n in data["items"]:
         a = n.get("attrs") if isinstance(n.get("attrs"), dict) else {}
+        is_landing = a.get("match_method") == "search_landing"
         items.append(
             {
                 "id": n["id"],
@@ -1780,6 +1587,9 @@ def list_resources(
                 "url": n.get("source_url"),
                 "skill_hint": skill_id,
                 "desc": n.get("description"),
+                # 让前端能区分「点开是课程」还是「点开是搜索页」
+                "kind": "landing" if is_landing else "real",
+                "learner_count": a.get("learner_count"),
             }
         )
     return {
@@ -1801,7 +1611,10 @@ def admin_dashboard() -> dict[str, Any]:
     with connect() as conn:
         users_goal = conn.execute("SELECT COUNT(*) AS c FROM biz_user_goal").fetchone()["c"]
         diag = conn.execute("SELECT COUNT(*) AS c FROM biz_diagnosis_session").fetchone()["c"]
-        paths = conn.execute("SELECT COUNT(*) AS c FROM biz_learning_path").fetchone()["c"]
+        # 路径本体在学习空间服务，这里能数的只有「成功推送过几条」
+        plans = conn.execute(
+            "SELECT COUNT(*) AS c FROM biz_user_learning_plan WHERE push_status='ok'"
+        ).fetchone()["c"]
         pend = 0
         try:
             pending = conn.execute(
@@ -1822,6 +1635,6 @@ def admin_dashboard() -> dict[str, Any]:
         "nodes_by_type": kg.get("nodes_by_type"),
         "users_with_goal": int(users_goal),
         "diagnosis_sessions": int(diag),
-        "learning_paths": int(paths),
+        "learning_plans_pushed": int(plans),
         "pending_proposals": pend,
     }

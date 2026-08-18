@@ -63,6 +63,36 @@ def node_not_archived(alias: str = "") -> str:
     return f"COALESCE({col}, 'published') <> '{ARCHIVED_STATUS}'"
 
 
+def learnable_course(alias: str = "n") -> str:
+    """【前台】课程节点是否**真的能学** —— 学员端所有资源查询都必须带上这个条件。
+
+    库里 17482 个 course 节点中 **15960 个（91%）是教育部课标的「课目名称」**
+    （`role=curriculum_catalog`、`playable=false`），它们的 `source_url` 全指向
+    「职业教育专业教学标准」的大类列表页 —— 点开是「农林牧渔大类 / 资源环境与安全
+    大类 …」，与具体技能毫无关系，学员根本没法用。
+
+    这批数据本身没错：它是**专业培养方案的课程体系**，在「专业开设哪些课」
+    （`major -offers_course-> course`）语境下是对的，不该删。错的是把它当成
+    「可学资源」推给学员。
+
+    判定只认 attrs，不认 source_system —— 将来任何来源只要标了 `playable=false`
+    或 `role=curriculum_catalog`，一律不进学员资源列表。
+
+    ⚠ 这是**唯一判定源**。别在各接口里再抄一份 `source_system <> 'MOE_CN'`：
+    本轮已经因为「同一判定多处各写一份」出过四次问题（清单脚本只认 ICOURSE163、
+    新增 OFFICIAL_DOCS 没同步常量……），症状都是「数据在库里但页面不对」。
+    """
+    a = f"{alias}." if alias else ""
+    attrs_json = (
+        f"(CASE WHEN {a}attrs IS NULL OR btrim({a}attrs) = '' "
+        f"THEN NULL ELSE {a}attrs::json END)"
+    )
+    return (
+        f"COALESCE({attrs_json}->>'role', '') <> 'curriculum_catalog' "
+        f"AND COALESCE({attrs_json}->>'playable', 'true') <> 'false'"
+    )
+
+
 def attrs_level_int(alias: str = "n") -> str:
     """技能产品档 `attrs.level` → int，**脏值取 NULL 而不是让整条查询炸**。
 

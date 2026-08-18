@@ -1123,6 +1123,7 @@ def list_nodes(
     published_only: bool = True,
     scope: str | None = None,
     order_by: str | None = None,
+    extra_where: str | None = None,
     conn: Any | None = None,
 ) -> dict[str, Any]:
     """
@@ -1156,6 +1157,10 @@ def list_nodes(
     if q_like:
         where.append("lower(name) LIKE lower(%s)")
         params.append(q_like)
+    if extra_where:
+        # 调用方注入的**无参数** SQL 片段（如 config.learnable_course()）。
+        # 只接受本模块常量拼出的片段，不要把用户输入拼进来。
+        where.append(f"({extra_where})")
     if st == ARCHIVED_STATUS:
         # archived 是逻辑删除：任何接口都不返回，恢复只能直接改库
         where.append("1=0")
@@ -1178,6 +1183,18 @@ def list_nodes(
         order_sql = "created_at DESC NULLS LAST, sort_order NULLS LAST, name, id"
     elif order_by == "name":
         order_sql = "name, id"
+    elif order_by == "resource_quality":
+        # 学习资源列表专用：真实课程 > 检索入口，同档按学习人数降序。
+        # 不这样排的话，1000+ 条 search_landing 会把为数不多的真课冲到后面几页。
+        _aj = (
+            "(CASE WHEN attrs IS NULL OR btrim(attrs) = '' THEN NULL ELSE attrs::json END)"
+        )
+        order_sql = (
+            f"(CASE WHEN COALESCE({_aj}->>'match_method','') = 'search_landing' "
+            f"THEN 1 ELSE 0 END), "
+            f"COALESCE(NULLIF({_aj}->>'learner_count','')::bigint, 0) DESC, "
+            "name, id"
+        )
     else:
         order_sql = "sort_order NULLS LAST, name, id"
 
