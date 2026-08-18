@@ -1,0 +1,8 @@
+{
+  "stage": "verify",
+  "total": 44,
+  "passed": 44,
+  "failed": 0,
+  "failed_detail": [],
+  "out": "D:\\workspace\\职业教育知识图谱\\data\\staging\\official_docs_verified.json"
+}

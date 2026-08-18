@@ -242,6 +242,14 @@ class CourseResourceOut(BaseModel):
     id: str = Field(..., description="课程节点 id")
     name: str = Field(..., description="课程名")
     url: str | None = Field(None, description="课程/检索页地址，可直接点开")
+    search_url: str | None = Field(
+        None,
+        description=(
+            "仅 `kind=catalog` 有值：按课程名生成的慕课检索地址。"
+            "课标条目自身的 `url` 是教育部专业教学标准的**大类目录页**（与技能无关），"
+            "真要展示时请用这个而不是 `url`"
+        ),
+    )
     platform: str | None = Field(None, description="来源系统，如 ICOURSE163 / XUETANGX")
     platform_label: str | None = Field(None, description="平台中文名，直接展示用")
     kind: Literal["real", "catalog", "landing"] = Field(
@@ -290,6 +298,10 @@ class PositionCoursesOut(BaseModel):
     real_course_count: int = Field(..., ge=0, description="真实课程数，**看这个判断资源是否可用**")
     catalog_count: int = Field(
         0, ge=0, description="课标目录条目数（点开是培养方案，不是课程）"
+    )
+    catalog_hidden: bool = Field(
+        False,
+        description="课标条目是否被隐藏（默认 true 且 catalog_count>0 时）。用于提示「这里还有数据缺口」",
     )
     landing_count: int = Field(..., ge=0, description="检索入口数")
     note: str | None = Field(None, description="口径说明")
@@ -358,7 +370,7 @@ class GoalOverviewOut(BaseModel):
         None, description="晋升路径的下一档岗位；无 advances_to 边时为 null"
     )
     learning_plan_id: str = Field(
-        "", description="学习计划 id（uuid 字符串）；尚未生成或外部接口未接通时为空串"
+        "", description="学习计划 id（学习空间服务的主键）；尚未生成时为空串"
     )
     learning_plan_created_at: str | None = Field(None, description="学习计划生成时间 ISO8601")
 
@@ -419,41 +431,73 @@ class DiagnosedOccupationListOut(BaseModel):
 
 
 class LearningPlanBody(BaseModel):
-    """生成学习计划。"""
+    """生成学习计划。
 
-    occupation_id: str | None = Field(None, description="目标岗位 id；不传取当前活跃目标")
-    session_id: int | None = Field(None, description="据以生成的诊断会话 id")
-    gap_skills: list[str] = Field(
-        default_factory=list, description="需要补齐的短板技能（skill_key 列表）"
+    只需要一个 `session_id`：岗位从该会话取，短板由服务端从诊断报告读——
+    不信客户端传的短板列表，那会让「学员看到的计划」和「诊断结论」对不上。
+    """
+
+    session_id: int = Field(
+        ...,
+        ge=1,
+        description=(
+            "据以生成的诊断会话 id（必填）。学习计划必须基于一次真实诊断："
+            "没有诊断结果就没有短板数据，生成出来是一条空路径。\n\n"
+            "取值来自测评/简历/对话诊断完成后返回的 `session_id`。"
+        ),
+    )
+    recommend_resources: bool = Field(
+        True, description="是否为每个技能挂载可学课程（图谱里有 taught_by/related_to 边时）"
     )
 
 
 class LearningPlanItem(BaseModel):
-    """一条学习计划记录（对应 biz_user_learning_plan 一行）。"""
+    """一条学习计划推送记录（对应 `biz_user_learning_plan` 一行）。
+
+    计划内容不在本服务——本地只留关联与推送状态，进度真源在学习空间服务。
+    """
 
     id: int = Field(..., description="本地记录 id")
     user_id: str = Field(..., description="UC 用户 id")
     occupation_id: str = Field(..., description="目标岗位 id")
-    plan_id: str = Field(..., description="学习计划 id（uuid 字符串），外部计划服务的主键")
-    session_id: int | None = Field(None, description="据以生成的诊断会话 id")
-    gap_skills: list[str] = Field(default_factory=list, description="短板技能列表")
-    source: Literal["bts", "mock", "api"] = Field(
-        ..., description="bts=外部计划服务生成；mock=服务不可用时的本地兜底"
+    plan_id: str = Field(
+        ..., description="学习空间返回的计划 id；推送失败时为空串"
     )
+    session_id: int | None = Field(None, description="据以生成的诊断会话 id")
+    push_status: Literal["ok", "failed"] | None = Field(
+        None,
+        description="ok=已成功推送；failed=推送失败，`last_error` 里是原因，可重推",
+    )
+    last_error: str | None = Field(
+        None, description="最近一次推送失败的原因；成功时为 null"
+    )
+    pushed_at: str | None = Field(None, description="最近一次推送时间 ISO8601")
     created_at: str | None = Field(None, description="创建时间 ISO8601")
 
 
-class LearningPlanCreatedOut(LearningPlanItem):
+class LearningPlanCreatedOut(BaseModel):
     """生成学习计划的回执。
 
-    外部服务不可用时不拖住学员：降级为 mock 并把上游原因原样带出去，
-    前端可据 `source` 与 `upstream_error` 提示「计划为本地兜底」。
+    **没有本地兜底**：推不上去就返回错误码，不再像旧版那样发个假 plan_id。
+    学习计划是业务主数据，给假 id 会让学员点进去看到空白页。
     """
 
-    upstream_error: str | None = Field(
-        None, description="外部计划服务的失败原因；成功或未调用时为 null"
+    plan_id: str = Field(..., description="学习空间返回的计划 id")
+    created: bool = Field(
+        ...,
+        description=(
+            "true=本次新建；false=幂等命中（同一次诊断重复调用，"
+            "对方返回已存在的计划，无副作用）"
+        ),
     )
-    upstream_status: int | None = Field(None, description="外部服务 HTTP 状态码")
+    superseded_plan_id: str | None = Field(
+        None, description="本次换代时被归档的旧计划 id；首次生成为 null"
+    )
+    occupation_id: str = Field(..., description="目标岗位 id（取自该诊断会话）")
+    session_id: int = Field(..., description="据以生成的诊断会话 id")
+    phases_count: int = Field(..., ge=1, description="阶段数")
+    tasks_count: int = Field(..., ge=1, description="任务总数")
+    pushed_at: str | None = Field(None, description="推送时间 ISO8601")
 
 
 # ── 五维画像 ─────────────────────────────────────────────────

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import urllib.parse
 from typing import Any
 
 from backend.kg.pg_store.client import connect
@@ -591,13 +592,19 @@ def occupation_skill_composition(occupation_id: str) -> dict[str, Any]:
 #   landing  检索入口，点开是搜索结果页
 _ROLE_LEARNABLE = "learnable_resource"
 _ROLE_CATALOG = "curriculum_catalog"
-_REAL_COURSE_SOURCES = ("ICOURSE163", "XUETANGX", "SMART_EDU_VOC")
+# ⚠ 新增课程来源时**必须同步这里**，否则 _course_kind 会落到 fallback 分支
+# 把它判成 catalog，默认过滤掉 —— 节点入了库但页面上看不到（已踩过一次：OFFICIAL_DOCS）。
+_REAL_COURSE_SOURCES = ("ICOURSE163", "XUETANGX", "SMART_EDU_VOC", "OFFICIAL_DOCS")
+# 课标条目自带的 source_url 是「专业教学标准」大类目录页，对学员无意义；
+# 真要展示时改用按课程名生成的检索地址
+_MOOC_SEARCH = "https://www.icourse163.org/search.htm?search="
 _PLATFORM_LABEL = {
     "ICOURSE163": "中国大学MOOC",
     "XUETANGX": "学堂在线",
     "SEARCH_LANDING_CN": "检索入口",
     "MOE_CN": "专业课标目录",
     "SMART_EDU_VOC": "国家智慧教育",
+    "OFFICIAL_DOCS": "官方文档",
 }
 
 
@@ -612,11 +619,26 @@ def _course_kind(role: str | None, platform: str, match_method: str | None) -> s
     return "real" if platform in _REAL_COURSE_SOURCES else "catalog"
 
 
-def occupation_courses(occupation_id: str, *, limit_per_skill: int = 5) -> dict[str, Any]:
+def occupation_courses(
+    occupation_id: str,
+    *,
+    limit_per_skill: int = 5,
+    include_catalog: bool = False,
+) -> dict[str, Any]:
     """岗位相关课程：occupation -requires-> skill_level -taught_by-> course。
 
-    独立于 `occupation_skill_composition`：岗位详情接口不变，这里单独聚合课程，
-    按技能分组，并区分**真实课程**与**检索入口**。
+    独立于 `occupation_skill_composition`：岗位详情接口不变，这里单独聚合课程。
+
+    **默认排除课标目录条目**（`include_catalog=False`）：那 15960 门 MOE_CN 课程的
+    `source_url` 全指向教育部「职业教育专业教学标准」的**大类列表页**，点进去是
+    「农林牧渔大类 / 资源环境与安全大类 / …」，与具体技能毫无关系 —— 对学员零价值。
+
+    它们在**专业培养方案**语境下有意义（major 的课程体系），但在「学员想学这个技能」
+    的语境下不该出现。实测技术类 112 个有资源的岗位中，没有任何一个是「只剩课标目录」，
+    所以排除它不会让任何岗位变空。
+
+    要看课标体系传 `include_catalog=True`（管理台/专业维度用）；届时返回的
+    `search_url` 是按课程名生成的慕课检索地址，比那个大类目录页有用。
     """
     from backend.kg.pg_store.client import session
     from backend.kg.pg_store.config import attrs_level_int, edge_published, node_published
@@ -675,16 +697,24 @@ def occupation_courses(occupation_id: str, *, limit_per_skill: int = 5) -> dict[
             attrs = attrs or {}
             platform = r["platform"] or ""
             kind = _course_kind(attrs.get("role"), platform, attrs.get("match_method"))
-            if kind == "real":
-                real_n += 1
-            elif kind == "catalog":
+            if kind == "catalog":
                 catalog_n += 1
+                if not include_catalog:
+                    continue  # 计数保留（便于观察数据缺口），但不返回给学员
+            elif kind == "real":
+                real_n += 1
             else:
                 landing_n += 1
+            url = r["url"]
+            search_url = None
+            if kind == "catalog":
+                # 课标条目那个大类目录页没意义，给个按课程名的检索地址兜底
+                search_url = _MOOC_SEARCH + urllib.parse.quote(str(r["course_name"] or ""))
             g["courses"].append({
                 "id": r["course_id"],
                 "name": r["course_name"],
-                "url": r["url"],
+                "url": url,
+                "search_url": search_url,
                 "platform": platform,
                 "platform_label": _PLATFORM_LABEL.get(platform, platform),
                 "kind": kind,
@@ -693,7 +723,9 @@ def occupation_courses(occupation_id: str, *, limit_per_skill: int = 5) -> dict[
                 "img_url": attrs.get("img_url"),
             })
 
-    items = sorted(groups.values(), key=lambda x: -(x["weight"] or 0))
+    # catalog 被过滤后可能出现空组，不返回空壳
+    items = sorted((g for g in groups.values() if g["courses"]),
+                   key=lambda x: -(x["weight"] or 0))
     return {
         "occupation": {
             "id": occ.get("id"),
@@ -704,6 +736,7 @@ def occupation_courses(occupation_id: str, *, limit_per_skill: int = 5) -> dict[
         "course_count": real_n + catalog_n + landing_n,
         "real_course_count": real_n,
         "catalog_count": catalog_n,
+        "catalog_hidden": (not include_catalog) and catalog_n > 0,
         "landing_count": landing_n,
         "note": (
             "kind=real 平台真实课程页，点开可学（带 learner_count 判热度）；"

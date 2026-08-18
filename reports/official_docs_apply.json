@@ -1,0 +1,29 @@
+{
+  "stage": "apply",
+  "l1": "技术",
+  "dry_run": false,
+  "verified_docs": 44,
+  "skills_matched": 16,
+  "new_course_nodes": 15,
+  "taught_by_edges": 16,
+  "sample_skills": [
+    "API接口对接",
+    "CI/CD流水线搭建",
+    "Django开发",
+    "ES6+特性应用",
+    "Git版本控制",
+    "HTML/CSS开发",
+    "JMeter工具使用",
+    "K8s容器编排",
+    "Kotlin开发",
+    "Objective-C开发",
+    "PHP开发",
+    "Redis应用",
+    "TypeScript开发",
+    "接口自动化测试",
+    "监控告警配置",
+    "鸿蒙系统能力调用"
+  ],
+  "nodes_upserted": 15,
+  "edges_upserted": 16
+}

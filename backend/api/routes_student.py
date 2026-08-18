@@ -36,9 +36,7 @@ from backend.api.schemas_biz import (
     GoalOut,
     GoalPutBody,
     IndustryListOut,
-    LearningPathOut,
     MeOut,
-    PathGenerateBody,
     PositionDetailOut,
     PositionListOut,
     ProfessionDetailOut,
@@ -202,13 +200,21 @@ def student_position_skill_composition_q(
         "**与岗位详情接口相互独立**：详情接口不返回课程，本接口专供「岗位相关课程」卡片。\n\n"
         "`kind` 区分资源性质：`real` = 平台真实课程（带 `learner_count` 可判热度）；"
         "`landing` = 检索入口（课程库无覆盖时的兜底，点开是搜索页而非课程）。"
-        "前端务必分开展示，否则「有 N 门课」会掩盖资源质量差异。"
+        "前端务必分开展示，否则「有 N 门课」会掩盖资源质量差异。\n\n"
+        "**课标目录条目默认不返回**（`include_catalog=false`）：那批 MOE_CN 课程的链接"
+        "全指向教育部「专业教学标准」大类列表页，与具体技能无关，对学员没有意义。"
+        "`catalog_count` 仍会给出数量、`catalog_hidden` 标记是否被隐藏，"
+        "便于观察数据缺口。要看课标体系（管理台/专业维度）传 `include_catalog=true`。"
     ),
     response_model=PositionCoursesOut,
 )
 def student_position_courses(
     id: str = Query(..., description="岗位节点 id"),
     limit_per_skill: int = Query(5, ge=1, le=20, description="每个技能最多返回几门课"),
+    include_catalog: bool = Query(
+        False,
+        description="是否返回课标目录条目。默认 false —— 它们点开是专业教学标准目录页，不是课程",
+    ),
     user: TempUser = Depends(require_temp_user),
 ) -> PositionCoursesOut:
     _ = user
@@ -216,7 +222,9 @@ def student_position_courses(
         from backend.kg.pg_store.skill_aggregate import occupation_courses
 
         return PositionCoursesOut.model_validate(
-            occupation_courses(id, limit_per_skill=limit_per_skill)
+            occupation_courses(
+                id, limit_per_skill=limit_per_skill, include_catalog=include_catalog
+            )
         )
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
@@ -537,78 +545,103 @@ def student_list_goals(user: TempUser = Depends(require_temp_user)) -> list[Goal
     return biz.list_goals(user.user_id)
 
 
-class LearningPlanBody(BaseModel):
-    occupation_id: str | None = Field(None, description="留空取当前活跃目标")
-    session_id: int | None = Field(None, description="基于哪次诊断生成")
-    gap_skills: list[str] = Field(default_factory=list, description="生成依据的短板技能")
-
-
 @router.post(
     "/goal/learning-plan",
     tags=["前台 · 岗位探索与详情"],
-    summary="基于短板生成自适应学习计划（当前为 mock）",
+    summary="基于诊断短板生成学习计划并推送到学习空间",
     description=(
         "对应报告页「基于短板一键生成个人自适应学习计划」。\n\n"
-        "**学习计划由外部服务生成**，本接口只负责调用它并把返回的 `plan_id`（uuid 字符串）"
-        "与「学员 × 岗位」绑定入库（`biz_user_learning_plan`），同时写进该次诊断报告的 "
-        "`learning_plan_id`，两处都能查。\n\n"
-        "**调用方式**：配置了 BTS（`BTS_ENDPOINT`/`BTS_ACCOUNT`/`BTS_PASSWORD`）与 "
-        "`LEARNING_PLAN_PATH` 时，走 **BTS 服务间鉴权**请求外部学习计划服务，"
-        "取其返回的 `plan_id`，`source=bts`；\n\n"
-        "未配置或外部服务报错时**降级**为本地生成 uuid、`source=mock`，"
-        "并在 `upstream` 里带回原因——外部服务不可用不该挡住学员。"
+        "本服务按诊断结果编排出**阶段任务树**（技能按短板优先排序、按技能大类分阶段、"
+        "有课程边的挂上可学资源），推送给学习空间服务，返回它的 `plan_id`。\n\n"
+        "**计划内容与学习进度都不在本服务**：这里只保存一行关联记录，"
+        "同时把 `plan_id` 写进该次诊断报告的 `learning_plan_id`，两处都能查到。\n\n"
+        "**幂等**：一次诊断对应一条路径。同一个 `session_id` 重复调用不会产生新计划，"
+        "返回 `created=false` 与原有 `plan_id`；重新测评会产生新会话，"
+        "推送时自动带上换代关系，旧计划被归档并在 `superseded_plan_id` 里返回。\n\n"
+        "**没有本地兜底**：学习空间不可用时返回 502，不会发一个假的 `plan_id`——"
+        "假 id 会让学员点进去看到空白页。前端需要按错误码给文案，"
+        "并允许稍后重试（记录已存为 `push_status=failed`，重试不会产生重复计划）。"
     ),
     response_model=LearningPlanCreatedOut,
+    responses={
+        400: {"description": "该会话还没有诊断结果，或它没有目标岗位——都无法编排出有效路径"},
+        404: {"description": "会话不存在，或不属于当前用户"},
+        409: {"description": "同一路径 id 的内容发生了变化（多为两次推送之间图谱数据被改），需人工确认"},
+        502: {"description": "学习空间服务未配置或不可用"},
+    },
 )
 def student_create_learning_plan(
     body: LearningPlanBody,
     user: TempUser = Depends(require_temp_user),
 ) -> LearningPlanCreatedOut:
-    import uuid as _uuid
+    from backend.learningplan import build_payload, external_path_id_for, push_learning_plan
+    from backend.learningplan.courses import courses_for_skill_keys
+    from backend.learningplan.push import PlanPushError, payload_sha256
 
-    from backend.bts import BtsError, bts_client
-
-    occ = body.occupation_id or (biz.get_goal(user.user_id) or {}).get("occupation_id")
+    sess = biz.session_for_learning_plan(user.user_id, body.session_id)
+    # 不存在与越权同样回 404：不泄漏「这个 id 是否存在」（CLAUDE.md 约定）
+    if not sess:
+        raise HTTPException(404, "诊断会话不存在")
+    if not sess.get("has_result"):
+        raise HTTPException(400, "该诊断会话还没有出结果，请先完成诊断再生成学习计划")
+    occ = sess.get("target_occupation_id")
     if not occ:
-        raise HTTPException(400, "缺少目标岗位：请先锁定学习目标或传 occupation_id")
+        raise HTTPException(400, "该诊断会话没有目标岗位，无法生成学习计划")
 
-    client = bts_client()
-    source, plan_id, upstream = "mock", "", None
-    if client.available() and settings.LEARNING_PLAN_PATH:
-        # 外部学习计划服务：走 BTS 服务间鉴权
-        try:
-            upstream = client.post(
-                settings.LEARNING_PLAN_PATH,
-                json={
-                    "user_id": user.user_id,
-                    "user_name": user.user_name,
-                    "occupation_id": occ,
-                    "session_id": body.session_id,
-                    "gap_skills": body.gap_skills,
-                },
-            )
-            data = upstream.get("data") if isinstance(upstream, dict) else None
-            src = data if isinstance(data, dict) else (upstream if isinstance(upstream, dict) else {})
-            plan_id = str(src.get("plan_id") or src.get("id") or "").strip()
-            source = "bts" if plan_id else "mock"
-        except BtsError as e:
-            # 外部服务不可用不该挡住学员，降级为本地 mock 并把原因带回去
-            upstream = {"error": str(e), "status": e.status}
-    if not plan_id:
-        plan_id = str(_uuid.uuid4())
+    skills = biz.position_skills(occ, limit=12, aggregate=True)
+    report = biz.get_diagnosis_report(user.user_id, session_id=body.session_id) or {}
+    courses = (
+        courses_for_skill_keys([s.get("skill_key") or s.get("name") or "" for s in skills])
+        if body.recommend_resources
+        else {}
+    )
+
+    path_id = external_path_id_for(settings.KG_REGION, body.session_id)
+    try:
+        payload = build_payload(
+            session_id=body.session_id,
+            region=settings.KG_REGION,
+            occupation_id=occ,
+            occupation_name=sess.get("occupation_name") or occ,
+            skills=skills,
+            report=report,
+            courses_by_key=courses,
+            revision_of=biz.previous_external_path_id(
+                user.user_id, occ, exclude_external_path_id=path_id
+            ),
+        )
+    except ValueError as e:
+        # 岗位没有技能构成之类的数据问题，属于「当前状态做不了」，不是服务器错误
+        raise HTTPException(400, str(e)) from e
+
+    digest = payload_sha256(payload)
+    try:
+        res = push_learning_plan(payload, uc_user_id=user.user_id)
+    except PlanPushError as e:
+        # 失败也落库：支持重推，且能查到是哪一次、错在哪，不静默丢弃
+        biz.save_learning_plan(
+            user.user_id, occ, "", session_id=body.session_id,
+            external_path_id=path_id, payload_sha256=digest,
+            push_status="failed", last_error=str(e)[:2000],
+        )
+        raise HTTPException(
+            {"conflict": 409, "rejected": 422}.get(e.kind, 502), str(e)
+        ) from e
 
     row = biz.save_learning_plan(
-        user.user_id, occ, plan_id,
-        session_id=body.session_id, gap_skills=body.gap_skills, source=source,
+        user.user_id, occ, res["plan_id"], session_id=body.session_id,
+        external_path_id=path_id, payload_sha256=digest, push_status="ok",
+        superseded_plan_id=res.get("superseded_plan_id"),
     )
     return {
-        "plan_id": plan_id,
+        "plan_id": res["plan_id"],
+        "created": res["created"],
+        "superseded_plan_id": res.get("superseded_plan_id"),
         "occupation_id": occ,
         "session_id": body.session_id,
-        "gap_skills": body.gap_skills,
-        "source": source,
-        "created_at": row.get("created_at"),
-        "upstream": upstream if source != "bts" else None,
+        "phases_count": len(payload.phases),
+        "tasks_count": sum(len(p.tasks) for p in payload.phases),
+        "pushed_at": row.get("pushed_at"),
     }
 
 
@@ -985,61 +1018,6 @@ def diag_report(
         user.user_id, session_id=session_id, occupation_id=occupation_id
     )
     return DiagnosisReportOut.model_validate(rep) if rep else None
-
-
-# ── 学习中心 ─────────────────────────────────────────────────
-
-
-@router.get(
-    "/learn/path",
-    tags=["前台 · 学习路径"],
-    response_model=LearningPathOut | None,
-    summary="当前学习路径",
-    description="对齐 vLearnPath / vLearnCenter 路径进度。",
-)
-def learn_path_get(user: TempUser = Depends(require_temp_user)) -> LearningPathOut | None:
-    p = biz.get_active_path(user.user_id)
-    return LearningPathOut.model_validate(p) if p else None
-
-
-@router.post(
-    "/learn/path/generate",
-    tags=["前台 · 学习路径"],
-    response_model=LearningPathOut,
-    summary="按目标/诊断生成学习路径",
-    description="缺口技能优先；无 goal 时 body.occupation_id 必填。",
-)
-def learn_path_gen(
-    body: PathGenerateBody,
-    user: TempUser = Depends(require_temp_user),
-) -> LearningPathOut:
-    try:
-        p = biz.generate_path(
-            user.user_id, user.user_name, occupation_id=body.occupation_id
-        )
-        # attach progress
-        full = biz.get_active_path(user.user_id)
-        return LearningPathOut.model_validate(full or p)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-
-
-@router.post(
-    "/learn/steps/{step_id}/complete",
-    tags=["前台 · 学习路径"],
-    response_model=LearningPathOut,
-    summary="完成学习步骤",
-    description="对齐「已标记学完」。",
-)
-def learn_step_done(
-    step_id: int,
-    user: TempUser = Depends(require_temp_user),
-) -> LearningPathOut:
-    try:
-        p = biz.complete_step(user.user_id, user.user_name, step_id)
-        return LearningPathOut.model_validate(p)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
 
 
 @router.get(

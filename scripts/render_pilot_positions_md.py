@@ -18,6 +18,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.kg.pg_store.client import session
+# 真实资源的判定**只有一处真源**：后端 _REAL_COURSE_SOURCES。
+# 这里曾硬编码成「只有 ICOURSE163 算真课」，于是学堂在线和官方文档
+# 全被算进「检索入口」，清单统计与页面显示对不上。别再抄一份。
+from backend.kg.pg_store.skill_aggregate import _REAL_COURSE_SOURCES
 
 DOC = ROOT / "docs" / "热门岗位TOP100与方法论.md"
 MARK_BEGIN = "<!-- PILOT_POSITIONS:BEGIN -->"
@@ -31,7 +35,7 @@ WITH occ AS (
          NULLIF(attrs::jsonb->>'level','')::int AS lv
   FROM kg_node
   WHERE type='occupation' AND source_system='BOSS'
-    AND (attrs::jsonb->>'boss_l1') = %s
+    AND (attrs::jsonb->>'boss_l1') = %(l1)s
     AND COALESCE(status,'published')='published'
 ),
 ind AS (SELECT src_id oid, count(*)::int n FROM kg_edge
@@ -43,11 +47,11 @@ adv AS (SELECT src_id oid, count(*)::int n FROM kg_edge
 sk AS (SELECT src_id oid, dst_id sid FROM kg_edge
        WHERE rel_type='requires' AND COALESCE(status,'published')='published'),
 skn AS (SELECT oid, count(*)::int n FROM sk GROUP BY 1),
--- 课程按来源分：ICOURSE163=真实慕课课程，SEARCH_LANDING_CN=检索入口
+-- 课程按性质分：真实可学资源（慕课/学堂在线/官方文档）vs 其它（检索入口、课标目录）
 crs AS (
   SELECT sk.oid,
-         count(*) FILTER (WHERE c.source_system='ICOURSE163')::int  AS real_n,
-         count(*) FILTER (WHERE c.source_system<>'ICOURSE163')::int AS landing_n
+         count(*) FILTER (WHERE c.source_system = ANY(%(real_src)s))::int  AS real_n,
+         count(*) FILTER (WHERE c.source_system <> ALL(%(real_src)s))::int AS landing_n
   FROM sk
   JOIN kg_edge te ON te.src_id = sk.sid AND te.rel_type='taught_by'
                  AND COALESCE(te.status,'published')='published'
@@ -70,7 +74,7 @@ ORDER BY o.l2, o.name
 
 def build(l1: str = "技术") -> str:
     with session() as c, c.cursor() as cur:
-        cur.execute(SQL, (l1,))
+        cur.execute(SQL, {"l1": l1, "real_src": list(_REAL_COURSE_SOURCES)})
         rows = cur.fetchall()
 
     tot = len(rows)
@@ -87,11 +91,11 @@ def build(l1: str = "技术") -> str:
         "**验收方式**：打开 `/student` 或 `/capability`，直接搜「岗位」列的词。",
         "",
         f"- 五段齐全（行业+专业+技能+课程）：**{full}/{tot}**",
-        f"- 有真实慕课课程（非检索入口）：**{real_course}/{tot}**",
+        f"- 有真实可学资源（慕课 / 学堂在线 / 官方文档）：**{real_course}/{tot}**",
         f"- 有晋升链：**{with_adv}/{tot}**（跨族路径，平行技术方向不算晋升）",
         "",
         "列含义：**行业** `belongs_to` ｜ **专业** `prepares_for` ｜ **技能** `requires`（权重 Σ=1）",
-        "｜ **晋升** `advances_to` ｜ **课程** `taught_by`，其中「真课」= 中国大学MOOC 实际课程（带选课人数），",
+        "｜ **晋升** `advances_to` ｜ **课程** `taught_by`，其中「真课」= 可直接学习的资源（中国大学MOOC / 学堂在线课程，带选课人数；技术栈官方文档），",
         "「检索」= 慕课检索入口（课程库无覆盖时的兜底，**不等于真实课程**）。",
         "",
         "| 岗位（搜这个） | 方向 | 职级 | 岗位族 | 行业 | 专业 | 技能 | 晋升 | 真课 | 检索 |",

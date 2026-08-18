@@ -388,10 +388,12 @@
         box.innerHTML = `
           <h3 style="margin:0 0 6px">岗位相关课程</h3>
           <div class="muted" style="margin-bottom:8px">
-            共 ${d.course_count} 条 ·
             <b style="color:#10b981">真实课程 ${d.real_course_count}</b> ·
-            <span style="color:#60a5fa">课标目录 ${d.catalog_count ?? 0}</span> ·
-            检索入口 ${d.landing_count} · 覆盖 ${d.skill_count} 个技能
+            检索入口 ${d.landing_count} · 覆盖 ${d.skill_count} 个技能${
+              d.catalog_hidden
+                ? ` · <span style="color:#6b7280">另有 ${d.catalog_count} 条课标目录未显示（链接指向专业教学标准目录页，非课程）</span>`
+                : ""
+            }
           </div>
           ${groups.map((g) => `
             <div style="margin-bottom:10px">
