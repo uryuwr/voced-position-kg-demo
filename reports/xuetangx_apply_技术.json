@@ -1,0 +1,12 @@
+{
+  "stage": "apply",
+  "platform": "xuetangx",
+  "l1": "技术",
+  "dry_run": false,
+  "skills_with_course": 10,
+  "new_course_nodes": 8,
+  "taught_by_edges": 12,
+  "search_landing_edges_removed": 10,
+  "nodes_upserted": 8,
+  "edges_upserted": 12
+}

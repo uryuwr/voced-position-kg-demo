@@ -1,0 +1,51 @@
+{
+  "stage": "merge",
+  "l1": "技术",
+  "input_names": 641,
+  "canon_skills": 552,
+  "merged_groups": 66,
+  "llm_failed": [],
+  "sample_merges": {
+    "C#编程开发": [
+      "C#脚本编程"
+    ],
+    "C++开发": [
+      "C++ UE4编程",
+      "C++编程开发"
+    ],
+    "C/C++开发": [
+      "C/C++嵌入式开发",
+      "C/C++编程"
+    ],
+    "CI/CD流水线搭建": [
+      "CI/CD集成"
+    ],
+    "C语言开发": [
+      "C语言编程"
+    ],
+    "EMC/EMI设计": [
+      "EMC/EMI优化",
+      "EMC/EMI设计整改"
+    ],
+    "JavaScript编程": [
+      "JS核心语法"
+    ],
+    "Linux操作": [
+      "Linux系统操作"
+    ],
+    "Linux系统运维": [
+      "Linux运维基础"
+    ],
+    "MySQL数据库": [
+      "MySQL应用"
+    ],
+    "PCB Layout设计": [
+      "原理图PCB设计"
+    ],
+    "Python开发": [
+      "Python工程开发",
+      "Python编程"
+    ]
+  },
+  "canon_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_canon_技术.json"
+}

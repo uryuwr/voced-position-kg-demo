@@ -1,0 +1,25 @@
+{
+  "stage": "fetch",
+  "l1": "技术",
+  "skills": 552,
+  "with_course": 104,
+  "no_course": 448,
+  "min_learners": 3000,
+  "failed": [],
+  "empty_sample": [
+    "ArcGIS开发",
+    "ArkTS开发",
+    "CUDA编程",
+    "DOM/BOM操作",
+    "Django开发",
+    "EF Core使用",
+    "EMC/EMI设计",
+    "FFmpeg开发",
+    "HTML/CSS开发",
+    "Kotlin开发",
+    "MBIST设计",
+    "Objective-C开发"
+  ],
+  "out": "D:\\workspace\\职业教育知识图谱\\data\\staging\\mooc_courses.json",
+  "sample": {}
+}

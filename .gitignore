@@ -81,3 +81,11 @@ docs/.lark_api_doc
 .baseline_*.log
 .after_*.log
 .ui_verify/
+
+# 本地跑测试/服务留下的临时日志与快照（.after_*.log 那条匹配不到带数字的变体）
+.after*.log
+.before*.log
+.baseline*.log
+.frontend_server.log
+.test_server.log
+.backfill_snapshot.json

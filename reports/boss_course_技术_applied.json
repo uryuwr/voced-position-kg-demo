@@ -1,0 +1,20 @@
+{
+  "stage": "course",
+  "l1": "技术",
+  "dry_run": false,
+  "skills_total": 552,
+  "matched_real_course": 41,
+  "search_landing": 511,
+  "taught_by_edges": 594,
+  "new_course_nodes": 511,
+  "sample": [
+    "技能「.NET Core开发」课程库无覆盖，提供大学MOOC检索入口作为可学资源",
+    "技能「.NET框架应用」课程库无覆盖，提供大学MOOC检索入口作为可学资源",
+    "技能「3D图形渲染」课程库无覆盖，提供大学MOOC检索入口作为可学资源",
+    "技能「3D美术资源制作」课程库无覆盖，提供大学MOOC检索入口作为可学资源",
+    "技能「3GPP标准参与」课程库无覆盖，提供大学MOOC检索入口作为可学资源",
+    "技能「5G/6G技术原理」课程库无覆盖，提供大学MOOC检索入口作为可学资源"
+  ],
+  "nodes_upserted": 511,
+  "edges_upserted": 594
+}

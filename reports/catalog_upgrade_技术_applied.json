@@ -1,0 +1,91 @@
+{
+  "l1": "技术",
+  "dry_run": false,
+  "catalog_entries_on_skills": 55,
+  "distinct_catalog_names": 47,
+  "matched_names": 16,
+  "new_course_nodes": 25,
+  "taught_by_edges": 34,
+  "catalog_marked": 19,
+  "failed": [],
+  "sample": {
+    "Linux操作系统": [
+      [
+        "Linux操作系统编程",
+        99062
+      ],
+      [
+        "零基础学Linux操作系统",
+        39906
+      ]
+    ],
+    "Linux操作系统管理": [
+      [
+        "Linux系统管理",
+        73173
+      ]
+    ],
+    "NoSQL数据库技术与应用": [
+      [
+        "数据库技术与应用",
+        27009
+      ],
+      [
+        "数据库技术与应用",
+        23219
+      ]
+    ],
+    "Python应用开发": [
+      [
+        "Python语言程序设计",
+        5661669
+      ],
+      [
+        "Python开发与应用",
+        4095
+      ]
+    ],
+    "Python编程基础": [
+      [
+        "Python编程基础",
+        491948
+      ],
+      [
+        "Python编程基础",
+        38625
+      ]
+    ],
+    "Python网络爬虫": [
+      [
+        "Python网络爬虫与信息提取",
+        815982
+      ],
+      [
+        "Python网络爬虫程序技术",
+        86985
+      ]
+    ],
+    "Web前端框架开发": [
+      [
+        "Web前端开发",
+        265524
+      ],
+      [
+        "零基础做毕业设计（Web开发与创新创业思维）",
+        9925
+      ]
+    ],
+    "数字电路": [
+      [
+        "数字电路与系统",
+        84950
+      ],
+      [
+        "数字电路与系统设计",
+        72584
+      ]
+    ]
+  },
+  "nodes_upserted": 25,
+  "edges_upserted": 34
+}

@@ -1,0 +1,90 @@
+{
+  "source_system": "BOSS",
+  "api": "https://www.zhipin.com/wapi/zpCommon/data/position.json",
+  "fetched_at": "2026-08-17T06:31:23+00:00",
+  "from_cache": true,
+  "dry_run": false,
+  "api_code": 0,
+  "boss_positions_total": 851,
+  "new_nodes": 821,
+  "skipped_same_name": 30,
+  "skipped_sample": [
+    "包装工",
+    "医药代表",
+    "咖啡师",
+    "安检员",
+    "客房服务员",
+    "导游",
+    "小学教师",
+    "律师",
+    "心理咨询师",
+    "快递员",
+    "模具工",
+    "模特",
+    "民宿管家",
+    "法律顾问",
+    "灯光师",
+    "焊工",
+    "生物学研究人员",
+    "电工",
+    "磨工",
+    "缝纫工"
+  ],
+  "new_by_l1": {
+    "技术": 117,
+    "生产制造": 100,
+    "服务业": 79,
+    "教育培训": 66,
+    "医疗健康": 61,
+    "销售": 52,
+    "人力/财务/行政": 41,
+    "客服/运营": 39,
+    "房地产/建筑": 39,
+    "市场/公关/广告": 35,
+    "设计": 34,
+    "直播/影视/传媒": 34,
+    "金融": 29,
+    "供应链/物流": 28,
+    "咨询/翻译/法律": 21,
+    "产品": 15,
+    "采购/贸易": 13,
+    "高级管理": 8,
+    "旅游": 5,
+    "农/林/牧/渔": 4,
+    "其他": 1
+  },
+  "upserted": 821,
+  "stats_after": {
+    "nodes": 36994,
+    "edges": 134325,
+    "nodes_by_type": {
+      "course": 16790,
+      "credential": 470,
+      "industry": 149,
+      "major": 2281,
+      "occupation": 3726,
+      "skill_level": 13578
+    },
+    "nodes_by_region": {
+      "CN": 31069,
+      "EU": 4503,
+      "US": 1422
+    },
+    "edges_by_confidence": {
+      "ai_inferred": 16162,
+      "derived": 1643,
+      "official": 116520
+    },
+    "nodes_by_source": {
+      "BOSS": 821,
+      "BOSS_ZHIPIN": 149,
+      "ESCO": 4503,
+      "MOE_CN": 18241,
+      "MOHRSS_CN": 10558,
+      "ONET": 1422,
+      "ONE_PLUS_X": 470,
+      "SEARCH_LANDING_CN": 800,
+      "SMART_EDU_VOC": 30
+    }
+  }
+}

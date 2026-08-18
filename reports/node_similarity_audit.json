@@ -1,0 +1,517 @@
+{
+  "industry": {
+    "type": "industry",
+    "nodes": 149,
+    "compared_pairs": 17,
+    "same_after_norm": 0,
+    "similar_pairs": 0,
+    "same_name_groups": 0,
+    "same_norm_sample": [],
+    "similar_sample": [],
+    "same_name_sample": {}
+  },
+  "major": {
+    "type": "major",
+    "nodes": 2283,
+    "compared_pairs": 297,
+    "same_after_norm": 286,
+    "similar_pairs": 0,
+    "same_name_groups": 183,
+    "same_norm_sample": [
+      {
+        "a": "文物修复与保护",
+        "b": "文物修复与保护",
+        "a_id": "CN:major:MOE_CN:voc_associate:550404",
+        "b_id": "CN:major:MOE_CN:voc_bachelor:350401",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_associate",
+        "b_level": "voc_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "游戏艺术设计",
+        "b": "游戏艺术设计",
+        "a_id": "CN:major:MOE_CN:voc_associate:550109",
+        "b_id": "CN:major:MOE_CN:ug_bachelor:130515TK",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_associate",
+        "b_level": "ug_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "航海技术",
+        "b": "航海技术",
+        "a_id": "CN:major:MOE_CN:voc_associate:500301",
+        "b_id": "CN:major:MOE_CN:ug_bachelor:081803K",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_associate",
+        "b_level": "ug_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "现代物业管理",
+        "b": "现代物业管理",
+        "a_id": "CN:major:MOE_CN:voc_associate:440703",
+        "b_id": "CN:major:MOE_CN:voc_bachelor:240702",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_associate",
+        "b_level": "voc_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "学前教育",
+        "b": "学前教育",
+        "a_id": "CN:major:MOE_CN:voc_associate:570102K",
+        "b_id": "CN:major:MOE_CN:voc_bachelor:370101",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_associate",
+        "b_level": "voc_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "地球物理勘探技术",
+        "b": "地球物理勘探技术",
+        "a_id": "CN:major:MOE_CN:voc_secondary:620205",
+        "b_id": "CN:major:MOE_CN:voc_bachelor:220202",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_secondary",
+        "b_level": "voc_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "跨境电子商务",
+        "b": "跨境电子商务",
+        "a_id": "CN:major:MOE_CN:voc_secondary:730702",
+        "b_id": "CN:major:MOE_CN:ug_bachelor:120803T",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_secondary",
+        "b_level": "ug_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "音乐表演",
+        "b": "音乐表演",
+        "a_id": "CN:major:MOE_CN:voc_secondary:750201",
+        "b_id": "CN:major:MOE_CN:voc_bachelor:350201",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_secondary",
+        "b_level": "voc_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "影视编导",
+        "b": "影视编导",
+        "a_id": "CN:major:MOE_CN:voc_associate:560204",
+        "b_id": "CN:major:MOE_CN:voc_bachelor:360204",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_associate",
+        "b_level": "voc_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "休闲体育",
+        "b": "休闲体育",
+        "a_id": "CN:major:MOE_CN:ug_bachelor:040207T",
+        "b_id": "CN:major:MOE_CN:voc_bachelor:370302",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "ug_bachelor",
+        "b_level": "voc_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "旅游管理",
+        "b": "旅游管理",
+        "a_id": "CN:major:MOE_CN:voc_bachelor:340101",
+        "b_id": "CN:major:MOE_CN:ug_bachelor:120901K",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_bachelor",
+        "b_level": "ug_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "药学",
+        "b": "药学",
+        "a_id": "CN:major:MOE_CN:voc_associate:520301",
+        "b_id": "CN:major:MOE_CN:voc_bachelor:320301",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_associate",
+        "b_level": "voc_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "医学检验技术",
+        "b": "医学检验技术",
+        "a_id": "CN:major:MOE_CN:voc_associate:520501",
+        "b_id": "CN:major:MOE_CN:voc_bachelor:320501",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_associate",
+        "b_level": "voc_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "医学影像技术",
+        "b": "医学影像技术",
+        "a_id": "CN:major:MOE_CN:voc_associate:520502",
+        "b_id": "CN:major:MOE_CN:ug_bachelor:101003",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_associate",
+        "b_level": "ug_bachelor",
+        "verdict": "归一后同名"
+      },
+      {
+        "a": "舞蹈表演",
+        "b": "舞蹈表演",
+        "a_id": "CN:major:MOE_CN:voc_associate:550202",
+        "b_id": "CN:major:MOE_CN:voc_secondary:750202",
+        "a_src": "MOE_CN",
+        "b_src": "MOE_CN",
+        "a_level": "voc_associate",
+        "b_level": "voc_secondary",
+        "verdict": "归一后同名"
+      }
+    ],
+    "similar_sample": [],
+    "same_name_sample": {
+      "园艺技术": [
+        {
+          "name": "园艺技术",
+          "level": "中等职业教育",
+          "id": "CN:major:MOE_CN:voc_secondary:610105"
+        },
+        {
+          "name": "园艺技术",
+          "level": "高等职业教育专科",
+          "id": "CN:major:MOE_CN:voc_associate:410105"
+        }
+      ],
+      "植物保护": [
+        {
+          "name": "植物保护",
+          "level": "中等职业教育",
+          "id": "CN:major:MOE_CN:voc_secondary:610106"
+        },
+        {
+          "name": "植物保护",
+          "level": "普通本科",
+          "id": "CN:major:MOE_CN:ug_bachelor:090103"
+        }
+      ],
+      "农产品加工与质量检测": [
+        {
+          "name": "农产品加工与质量检测",
+          "level": "中等职业教育",
+          "id": "CN:major:MOE_CN:voc_secondary:610114"
+        },
+        {
+          "name": "农产品加工与质量检测",
+          "level": "高等职业教育专科",
+          "id": "CN:major:MOE_CN:voc_associate:410114"
+        }
+      ],
+      "园林技术": [
+        {
+          "name": "园林技术",
+          "level": "中等职业教育",
+          "id": "CN:major:MOE_CN:voc_secondary:610202"
+        },
+        {
+          "name": "园林技术",
+          "level": "高等职业教育专科",
+          "id": "CN:major:MOE_CN:voc_associate:410202"
+        }
+      ],
+      "地球物理勘探技术": [
+        {
+          "name": "地球物理勘探技术",
+          "level": "中等职业教育",
+          "id": "CN:major:MOE_CN:voc_secondary:620205"
+        },
+        {
+          "name": "地球物理勘探技术",
+          "level": "高等职业教育专科",
+          "id": "CN:major:MOE_CN:voc_associate:420206"
+        },
+        {
+          "name": "地球物理勘探技术",
+          "level": "高等职业教育本科",
+          "id": "CN:major:MOE_CN:voc_bachelor:220202"
+        }
+      ],
+      "工程测量技术": [
+        {
+          "name": "工程测量技术",
+          "level": "中等职业教育",
+          "id": "CN:major:MOE_CN:voc_secondary:620301"
+        },
+        {
+          "name": "工程测量技术",
+          "level": "高等职业教育专科",
+          "id": "CN:major:MOE_CN:voc_associate:420301"
+        }
+      ],
+      "环境监测技术": [
+        {
+          "name": "环境监测技术",
+          "level": "中等职业教育",
+          "id": "CN:major:MOE_CN:voc_secondary:620801"
+        },
+        {
+          "name": "环境监测技术",
+          "level": "高等职业教育专科",
+          "id": "CN:major:MOE_CN:voc_associate:420801"
+        }
+      ],
+      "应急救援技术": [
+        {
+          "name": "应急救援技术",
+          "level": "中等职业教育",
+          "id": "CN:major:MOE_CN:voc_secondary:620902"
+        },
+        {
+          "name": "应急救援技术",
+          "level": "高等职业教育专科",
+          "id": "CN:major:MOE_CN:voc_associate:420905"
+        }
+      ]
+    }
+  },
+  "occupation": {
+    "type": "occupation",
+    "nodes": 2462,
+    "compared_pairs": 127,
+    "same_after_norm": 0,
+    "similar_pairs": 4,
+    "same_name_groups": 0,
+    "same_norm_sample": [],
+    "similar_sample": [
+      {
+        "a": "设计总监/经理",
+        "b": "视觉设计总监/经理",
+        "a_id": "CN:occupation:BOSS:120401",
+        "b_id": "CN:occupation:BOSS:120404",
+        "a_src": "BOSS",
+        "b_src": "BOSS",
+        "ratio": 0.857,
+        "a_level": null,
+        "b_level": null
+      },
+      {
+        "a": "运营经理/主管",
+        "b": "运输经理/主管",
+        "a_id": "CN:occupation:BOSS:130405",
+        "b_id": "CN:occupation:BOSS:240110",
+        "a_src": "BOSS",
+        "b_src": "BOSS",
+        "ratio": 0.833,
+        "a_level": null,
+        "b_level": null
+      },
+      {
+        "a": "产品专员/助理",
+        "b": "商品专员/助理",
+        "a_id": "CN:occupation:BOSS:110108",
+        "b_id": "CN:occupation:BOSS:250111",
+        "a_src": "BOSS",
+        "b_src": "BOSS",
+        "ratio": 0.833,
+        "a_level": null,
+        "b_level": null
+      },
+      {
+        "a": "财务经理/主管",
+        "b": "法务经理/主管",
+        "a_id": "CN:occupation:BOSS:150402",
+        "b_id": "CN:occupation:BOSS:150506",
+        "a_src": "BOSS",
+        "b_src": "BOSS",
+        "ratio": 0.833,
+        "a_level": null,
+        "b_level": null
+      }
+    ],
+    "same_name_sample": {}
+  },
+  "skill": {
+    "type": "skill_level",
+    "nodes": 2591,
+    "compared_pairs": 373,
+    "same_after_norm": 0,
+    "similar_pairs": 12,
+    "same_name_groups": 2,
+    "same_norm_sample": [],
+    "similar_sample": [
+      {
+        "a": "C++开发",
+        "b": "C/C++开发",
+        "a_id": "CN:skill_level:LLM_CN:C_开发|L1",
+        "b_id": "CN:skill_level:LLM_CN:C_C_开发|L1",
+        "a_src": "LLM_CN",
+        "b_src": "LLM_CN",
+        "ratio": 0.909,
+        "a_level": 1,
+        "b_level": 1
+      },
+      {
+        "a": "冷轧机操作",
+        "b": "热、冷轧机操作",
+        "a_id": "CN:skill_level:MOHRSS_CN:6-17-09-02|冷轧机操作|L4",
+        "b_id": "CN:skill_level:MOHRSS_CN:6-17-09-02|热、冷轧机操作|L2",
+        "a_src": "MOHRSS_CN",
+        "b_src": "MOHRSS_CN",
+        "ratio": 0.909,
+        "a_level": "四级/中级工",
+        "b_level": "二级/技师"
+      },
+      {
+        "a": "Python开发",
+        "b": "Python爬虫开发",
+        "a_id": "CN:skill_level:LLM_CN:Python开发|L1",
+        "b_id": "CN:skill_level:LLM_CN:Python爬虫开发|L1",
+        "a_src": "LLM_CN",
+        "b_src": "LLM_CN",
+        "ratio": 0.889,
+        "a_level": 1,
+        "b_level": 1
+      },
+      {
+        "a": "Python脚本开发",
+        "b": "Python开发",
+        "a_id": "CN:skill_level:LLM_CN:Python脚本开发|L1",
+        "b_id": "CN:skill_level:LLM_CN:Python开发|L1",
+        "a_src": "LLM_CN",
+        "b_src": "LLM_CN",
+        "ratio": 0.889,
+        "a_level": 1,
+        "b_level": 1
+      },
+      {
+        "a": "故障判断与处理",
+        "b": "事故/故障判断与处理",
+        "a_id": "CN:skill_level:MOHRSS_CN:4-09-07-02|故障判断与处理|L5",
+        "b_id": "CN:skill_level:MOHRSS_CN:6-28-01-06|事故_故障判断与处理|L5",
+        "a_src": "MOHRSS_CN",
+        "b_src": "MOHRSS_CN",
+        "ratio": 0.875,
+        "a_level": "五级/初级工",
+        "b_level": "五级/初级工"
+      },
+      {
+        "a": "__e2e_skill_103525",
+        "b": "__e2e_skill_102225",
+        "a_id": "CN:skill_level:MANUAL:3464934abb78508a",
+        "b_id": "CN:skill_level:MANUAL:e1ab266f381d538d",
+        "a_src": "MANUAL",
+        "b_src": "MANUAL",
+        "ratio": 0.857,
+        "a_level": 1,
+        "b_level": 2
+      },
+      {
+        "a": "管理、培训与指导",
+        "b": "管理、培训和指导",
+        "a_id": "CN:skill_level:MOHRSS_CN:4-08-10-01|管理、培训与指导|L2",
+        "b_id": "CN:skill_level:MOHRSS_CN:6-20-03-02|管理、培训和指导|L2",
+        "a_src": "MOHRSS_CN",
+        "b_src": "MOHRSS_CN",
+        "ratio": 0.857,
+        "a_level": "二级/技师",
+        "b_level": "二级/技师"
+      },
+      {
+        "a": "指导与创新",
+        "b": "培训、指导与创新",
+        "a_id": "CN:skill_level:MOHRSS_CN:4-03-02-03|指导与创新|L1",
+        "b_id": "CN:skill_level:MOHRSS_CN:6-04-03-01|培训、指导与创新|L3",
+        "a_src": "MOHRSS_CN",
+        "b_src": "MOHRSS_CN",
+        "ratio": 0.833,
+        "a_level": "一级/高级技师",
+        "b_level": "三级/高级工"
+      },
+      {
+        "a": "培训与指导",
+        "b": "管理、培训与指导",
+        "a_id": "CN:skill_level:MOHRSS_CN:4-09-08-03|培训与指导|T2",
+        "b_id": "CN:skill_level:MOHRSS_CN:4-08-10-01|管理、培训与指导|L2",
+        "a_src": "MOHRSS_CN",
+        "b_src": "MOHRSS_CN",
+        "ratio": 0.833,
+        "a_level": "中级",
+        "b_level": "二级/技师"
+      },
+      {
+        "a": "培训和指导",
+        "b": "管理、培训和指导",
+        "a_id": "CN:skill_level:MOHRSS_CN:6-17-09-05|培训和指导|L1",
+        "b_id": "CN:skill_level:MOHRSS_CN:6-20-03-02|管理、培训和指导|L2",
+        "a_src": "MOHRSS_CN",
+        "b_src": "MOHRSS_CN",
+        "ratio": 0.833,
+        "a_level": "一级/高级技师",
+        "b_level": "二级/技师"
+      },
+      {
+        "a": "培训与管理",
+        "b": "指导、培训与管理",
+        "a_id": "CN:skill_level:MOHRSS_CN:4-10-01-04|培训与管理|L3",
+        "b_id": "CN:skill_level:MOHRSS_CN:4-13-02-06|指导、培训与管理|L2",
+        "a_src": "MOHRSS_CN",
+        "b_src": "MOHRSS_CN",
+        "ratio": 0.833,
+        "a_level": "三级/高级工",
+        "b_level": "二级/技师"
+      },
+      {
+        "a": "自动化测试",
+        "b": "UI自动化测试",
+        "a_id": "CN:skill_level:LLM_CN:自动化测试|L1",
+        "b_id": "CN:skill_level:LLM_CN:UI自动化测试|L1",
+        "a_src": "LLM_CN",
+        "b_src": "LLM_CN",
+        "ratio": 0.833,
+        "a_level": 1,
+        "b_level": 1
+      }
+    ],
+    "same_name_sample": {
+      "培训指导与研究": [
+        {
+          "name": "培训、指导与研究",
+          "level": "三级/高级工",
+          "id": "CN:skill_level:MOHRSS_CN:4-14-01-04|培训、指导与研究|L3"
+        },
+        {
+          "name": "培训指导与研究",
+          "level": "二级/技师",
+          "id": "CN:skill_level:MOHRSS_CN:4-14-02-05|培训指导与研究|L2"
+        }
+      ],
+      "培训指导与创新": [
+        {
+          "name": "培训、指导与创新",
+          "level": "三级/高级工",
+          "id": "CN:skill_level:MOHRSS_CN:6-04-03-01|培训、指导与创新|L3"
+        },
+        {
+          "name": "培训指导与创新",
+          "level": "二级/技师",
+          "id": "CN:skill_level:MOHRSS_CN:6-17-02-01|培训指导与创新|L2"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "stage": "fetch",
+  "platform": "xuetangx",
+  "l1": "技术",
+  "only_missing": true,
+  "skills_queried": 425,
+  "with_course": 10,
+  "no_course": 415,
+  "min_learners": 3000,
+  "failed": [],
+  "empty_sample": [
+    "ATPG向量生成",
+    "BI工具可视化",
+    "BMS开发调试",
+    "CI/CD流水线搭建",
+    "Cocos引擎开发",
+    "DFT仿真验证",
+    "DFT架构设计",
+    "DFT设计集成",
+    "DWDM系统配置",
+    "EMC设计整改",
+    "EPC网络运维",
+    "ES6+特性应用"
+  ],
+  "sample": {}
+}

@@ -1,0 +1,8 @@
+{
+  "stage": "apply",
+  "dry_run": false,
+  "skills_with_desc": 552,
+  "node_updates": 2760,
+  "skills_not_in_db": [],
+  "updated": 2760
+}
