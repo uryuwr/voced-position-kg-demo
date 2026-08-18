@@ -578,3 +578,137 @@ def occupation_skill_composition(occupation_id: str) -> dict[str, Any]:
         "weight_sum_ok": weighted == 0 or 0.85 <= weight_sum <= 1.15,
         "note": "weight 来自 requires 边；节点 attrs.weight_pct 仅历史兼容",
     }
+
+
+# 课程资源三分类 —— 判定依据是 **attrs.role**，不是 source_system。
+#
+# 踩过的坑：曾把 MOE_CN 归进「真实课程」，结果点开是教育部课标**目录页**。
+# 那 15960 门是课标里的「课目名称」，`role=curriculum_catalog`，
+# 本体明确写了「不能单独冒充可学资源」—— 它们是培养方案条目，不是能学的课。
+#
+#   real     平台真实课程页，点开就能学（中国大学MOOC / 学堂在线）
+#   catalog  课标目录条目，点开是专业培养方案，**没有具体课程内容**
+#   landing  检索入口，点开是搜索结果页
+_ROLE_LEARNABLE = "learnable_resource"
+_ROLE_CATALOG = "curriculum_catalog"
+_REAL_COURSE_SOURCES = ("ICOURSE163", "XUETANGX", "SMART_EDU_VOC")
+_PLATFORM_LABEL = {
+    "ICOURSE163": "中国大学MOOC",
+    "XUETANGX": "学堂在线",
+    "SEARCH_LANDING_CN": "检索入口",
+    "MOE_CN": "专业课标目录",
+    "SMART_EDU_VOC": "国家智慧教育",
+}
+
+
+def _course_kind(role: str | None, platform: str, match_method: str | None) -> str:
+    """课程资源性质。role 优先，其次看来源与匹配方式。"""
+    if role == _ROLE_CATALOG:
+        return "catalog"
+    if match_method == "search_landing" or platform == "SEARCH_LANDING_CN":
+        return "landing"
+    if role == _ROLE_LEARNABLE and platform in _REAL_COURSE_SOURCES:
+        return "real"
+    return "real" if platform in _REAL_COURSE_SOURCES else "catalog"
+
+
+def occupation_courses(occupation_id: str, *, limit_per_skill: int = 5) -> dict[str, Any]:
+    """岗位相关课程：occupation -requires-> skill_level -taught_by-> course。
+
+    独立于 `occupation_skill_composition`：岗位详情接口不变，这里单独聚合课程，
+    按技能分组，并区分**真实课程**与**检索入口**。
+    """
+    from backend.kg.pg_store.client import session
+    from backend.kg.pg_store.config import attrs_level_int, edge_published, node_published
+    from backend.kg.pg_store.query import get_node
+
+    occ = get_node(occupation_id, scope="public")
+    if not occ or occ.get("type") != "occupation":
+        raise ValueError("occupation not found")
+
+    sql = f"""
+        SELECT ({SKILL_KEY_SQL})                AS skill_key,
+               ({attrs_level_int('n')})         AS req_level,
+               re.weight                        AS skill_weight,
+               n.category                       AS category,
+               c.id                             AS course_id,
+               c.name                           AS course_name,
+               c.source_url                     AS url,
+               c.source_system                  AS platform,
+               c.attrs                          AS course_attrs,
+               te.weight                        AS course_weight
+        FROM kg_edge re
+        JOIN kg_node n  ON n.id = re.dst_id
+        JOIN kg_edge te ON te.src_id = n.id AND te.rel_type = 'taught_by'
+                       AND {edge_published('te')}
+        JOIN kg_node c  ON c.id = te.dst_id AND {node_published('c')}
+        WHERE re.src_id = %s AND re.rel_type = 'requires'
+          AND {edge_published('re')} AND {node_published('n')}
+        ORDER BY re.weight DESC NULLS LAST, te.weight DESC NULLS LAST, c.name
+    """
+    groups: dict[str, dict[str, Any]] = {}
+    real_n = catalog_n = landing_n = 0
+    seen: set[tuple[str, str]] = set()
+    with session() as conn, conn.cursor() as cur:
+        cur.execute(sql, (occupation_id,))
+        for r in cur.fetchall():
+            key = r["skill_key"]
+            if not key:
+                continue
+            g = groups.setdefault(key, {
+                "skill_key": key,
+                "required_level": r["req_level"],
+                "weight": float(r["skill_weight"]) if r["skill_weight"] is not None else None,
+                "category": r["category"],
+                "courses": [],
+            })
+            if (key, r["course_id"]) in seen or len(g["courses"]) >= limit_per_skill:
+                continue
+            seen.add((key, r["course_id"]))
+
+            attrs = r["course_attrs"]
+            if isinstance(attrs, str):
+                try:
+                    attrs = json.loads(attrs or "{}")
+                except Exception:
+                    attrs = {}
+            attrs = attrs or {}
+            platform = r["platform"] or ""
+            kind = _course_kind(attrs.get("role"), platform, attrs.get("match_method"))
+            if kind == "real":
+                real_n += 1
+            elif kind == "catalog":
+                catalog_n += 1
+            else:
+                landing_n += 1
+            g["courses"].append({
+                "id": r["course_id"],
+                "name": r["course_name"],
+                "url": r["url"],
+                "platform": platform,
+                "platform_label": _PLATFORM_LABEL.get(platform, platform),
+                "kind": kind,
+                "learner_count": attrs.get("learner_count"),
+                "school": attrs.get("school"),
+                "img_url": attrs.get("img_url"),
+            })
+
+    items = sorted(groups.values(), key=lambda x: -(x["weight"] or 0))
+    return {
+        "occupation": {
+            "id": occ.get("id"),
+            "name": occ.get("display_name") or occ.get("name"),
+        },
+        "by_skill": items,
+        "skill_count": len(items),
+        "course_count": real_n + catalog_n + landing_n,
+        "real_course_count": real_n,
+        "catalog_count": catalog_n,
+        "landing_count": landing_n,
+        "note": (
+            "kind=real 平台真实课程页，点开可学（带 learner_count 判热度）；"
+            "kind=catalog 课标目录条目，点开是专业培养方案而非课程内容；"
+            "kind=landing 检索入口，点开是搜索结果页。"
+            "只有 real 才是真正可学的资源。"
+        ),
+    }

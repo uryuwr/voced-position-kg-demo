@@ -233,6 +233,68 @@ class SkillCompositionOut(BaseModel):
     note: str | None = Field(None, description="口径说明")
 
 
+# ── 岗位相关课程 ──────────────────────────────────────────────
+
+
+class CourseResourceOut(BaseModel):
+    """一门课程资源。`kind` 决定前端怎么展示，别把两类混在一起计数。"""
+
+    id: str = Field(..., description="课程节点 id")
+    name: str = Field(..., description="课程名")
+    url: str | None = Field(None, description="课程/检索页地址，可直接点开")
+    platform: str | None = Field(None, description="来源系统，如 ICOURSE163 / XUETANGX")
+    platform_label: str | None = Field(None, description="平台中文名，直接展示用")
+    kind: Literal["real", "catalog", "landing"] = Field(
+        ...,
+        description=(
+            "资源性质，决定前端怎么展示，**只有 real 是真正可学的**：\n\n"
+            "- `real`：平台真实课程页，点开能学，带 `learner_count`\n"
+            "- `catalog`：教育部课标里的课目条目（`role=curriculum_catalog`），"
+            "点开是专业培养方案目录，**没有课程内容**\n"
+            "- `landing`：检索入口，点开是搜索结果页\n\n"
+            "判定以课程节点的 `attrs.role` 为准，不是按 source_system —— "
+            "曾把 MOE_CN 当成真课，结果学员点开是课标目录页。"
+        ),
+    )
+    learner_count: int | None = Field(
+        None, description="学习/选课人数，质量信号；landing 类无此值"
+    )
+    school: str | None = Field(None, description="开课院校/机构")
+    img_url: str | None = Field(None, description="封面图")
+
+
+class PositionCourseSkillGroup(BaseModel):
+    """按技能分组的课程。技能顺序按岗位 requires 权重倒序。"""
+
+    skill_key: str = Field(..., description="逻辑技能名")
+    required_level: int | None = Field(
+        None, ge=1, le=5, description="该岗位要求的档位 1–5，来自 attrs.level"
+    )
+    weight: float | None = Field(
+        None, description="该技能在岗位能力结构中的权重，**小数**（同岗位 Σ≈1）"
+    )
+    category: str | None = Field(None, description="技能大类")
+    courses: list[CourseResourceOut] = Field(default_factory=list, description="课程列表")
+
+
+class PositionCoursesOut(BaseModel):
+    """岗位相关课程（GET /v1/student/positions/courses）。
+
+    独立于岗位详情与技能构成接口：详情接口不含课程，避免为了加卡片改动既有契约。
+    """
+
+    occupation: OccupationBrief = Field(..., description="岗位摘要")
+    by_skill: list[PositionCourseSkillGroup] = Field(..., description="按技能分组的课程")
+    skill_count: int = Field(..., ge=0, description="有课程的技能数")
+    course_count: int = Field(..., ge=0, description="课程总数（real + catalog + landing）")
+    real_course_count: int = Field(..., ge=0, description="真实课程数，**看这个判断资源是否可用**")
+    catalog_count: int = Field(
+        0, ge=0, description="课标目录条目数（点开是培养方案，不是课程）"
+    )
+    landing_count: int = Field(..., ge=0, description="检索入口数")
+    note: str | None = Field(None, description="口径说明")
+
+
 # ── 学习目标 ─────────────────────────────────────────────────
 
 

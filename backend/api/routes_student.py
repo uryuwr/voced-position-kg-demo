@@ -23,6 +23,7 @@ from backend.api.schemas_student import (
     PositionMatchOut,
     ResumeExtractOut,
     ResumeSampleOut,
+    PositionCoursesOut,
     SkillCompositionOut,
     StudentProfileOut,
     UserSkillItem,
@@ -188,6 +189,35 @@ def student_position_skill_composition_q(
         from backend.kg.pg_store.skill_aggregate import occupation_skill_composition
 
         return occupation_skill_composition(id)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@router.get(
+    "/positions/courses",
+    tags=["前台 · 岗位探索与详情"],
+    summary="岗位相关课程（按技能分组）",
+    description=(
+        "沿 occupation -requires-> skill_level -taught_by-> course 聚合课程资源。\n\n"
+        "**与岗位详情接口相互独立**：详情接口不返回课程，本接口专供「岗位相关课程」卡片。\n\n"
+        "`kind` 区分资源性质：`real` = 平台真实课程（带 `learner_count` 可判热度）；"
+        "`landing` = 检索入口（课程库无覆盖时的兜底，点开是搜索页而非课程）。"
+        "前端务必分开展示，否则「有 N 门课」会掩盖资源质量差异。"
+    ),
+    response_model=PositionCoursesOut,
+)
+def student_position_courses(
+    id: str = Query(..., description="岗位节点 id"),
+    limit_per_skill: int = Query(5, ge=1, le=20, description="每个技能最多返回几门课"),
+    user: TempUser = Depends(require_temp_user),
+) -> PositionCoursesOut:
+    _ = user
+    try:
+        from backend.kg.pg_store.skill_aggregate import occupation_courses
+
+        return PositionCoursesOut.model_validate(
+            occupation_courses(id, limit_per_skill=limit_per_skill)
+        )
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
 

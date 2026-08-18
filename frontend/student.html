@@ -343,9 +343,12 @@
               <button class="ghost" id="dLock">锁定目标</button>
               <button class="act" id="dDiag">AI 智能诊断</button>
             </div>
-          </div>`;
+          </div>
+          <div class="card" id="courseBox"><div class="empty">课程资源加载中…</div></div>`;
         $("dLock").onclick = () => lockGoal(p);
         $("dDiag").onclick = () => lockGoal(p).then(() => document.querySelector('[data-tab="diag"]').click());
+        // 课程走独立接口异步填：岗位详情/技能构成接口都不含课程，加卡片不动既有契约
+        loadCoursesInto(p.id, $("courseBox"));
         // 匹配度与「我的等级」列一起异步回填
         match = await loadMatchInto(p.id, $("matchBox"));
         if (match) {
@@ -357,6 +360,64 @@
           });
         }
       } catch (e) { $("detailBox").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
+    }
+
+    /* ── ②'' 岗位相关课程 ───────────────────────────
+       独立接口 GET /v1/student/positions/courses，不改岗位详情契约。
+       real（平台真实课程）与 landing（检索入口）必须分开显示：
+       混在一起报「N 门课程」会让「点开是搜索页」冒充「有课可学」。 */
+    async function loadCoursesInto(pid, box) {
+      try {
+        const d = await api("/v1/student/positions/courses?id=" + encodeURIComponent(pid));
+        const groups = d.by_skill || [];
+        if (!groups.length) {
+          box.innerHTML = '<h3 style="margin:0 0 6px">岗位相关课程</h3>'
+            + '<div class="empty">该岗位技能暂无关联课程资源</div>';
+          return;
+        }
+        // 三类资源必须视觉可分：catalog 点开是课标目录页，不是课程内容
+        const BADGE = {
+          real:    { text: "真课",   color: "#10b981", border: "#047857" },
+          catalog: { text: "课标目录", color: "#60a5fa", border: "#1d4ed8" },
+          landing: { text: "检索页",  color: "#f59e0b", border: "#b45309" },
+        };
+        const badge = (c) => {
+          const b = BADGE[c.kind] || BADGE.landing;
+          return `<span class="tag" style="color:${b.color};border-color:${b.border}">${b.text}</span>`;
+        };
+        box.innerHTML = `
+          <h3 style="margin:0 0 6px">岗位相关课程</h3>
+          <div class="muted" style="margin-bottom:8px">
+            共 ${d.course_count} 条 ·
+            <b style="color:#10b981">真实课程 ${d.real_course_count}</b> ·
+            <span style="color:#60a5fa">课标目录 ${d.catalog_count ?? 0}</span> ·
+            检索入口 ${d.landing_count} · 覆盖 ${d.skill_count} 个技能
+          </div>
+          ${groups.map((g) => `
+            <div style="margin-bottom:10px">
+              <div class="row" style="gap:6px">
+                <b>${esc(g.skill_key)}</b>
+                <span class="tag lv">L${g.required_level ?? "-"}</span>
+                <span class="muted">权重 ${g.weight != null ? (g.weight * 100).toFixed(0) + "%" : "-"}</span>
+              </div>
+              <div style="margin-left:10px;margin-top:4px">
+                ${(g.courses || []).map((c) => `
+                  <div class="row" style="gap:6px;margin-top:2px">
+                    ${badge(c)}
+                    ${c.url
+                      ? `<a href="${esc(c.url)}" target="_blank" rel="noreferrer noopener">${esc(c.name)}</a>`
+                      : esc(c.name)}
+                    <span class="muted">${c.platform_label ? esc(c.platform_label) : ""}${
+                      c.learner_count ? " · " + c.learner_count.toLocaleString() + " 人学过" : ""
+                    }${c.school ? " · " + esc(c.school) : ""}</span>
+                  </div>`).join("")}
+              </div>
+            </div>`).join("")}
+          <div class="muted" style="margin-top:6px">${esc(d.note || "")}</div>`;
+      } catch (e) {
+        box.innerHTML = '<h3 style="margin:0 0 6px">岗位相关课程</h3>'
+          + `<div class="empty">失败：${esc(e.message || e)}</div>`;
+      }
     }
 
     /* ── ②' 我的画像：五维记忆 + 技能画像 + 诊断记录 ─────────
