@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.kg.graph_store import connect, stats, upsert_edges, upsert_nodes
+from backend.kg.level_scale import normalize_skill_level_node
 from backend.kg.paths import RAW, REPORTS, ensure_dirs
 from backend.kg.provenance import make_edge_id, make_node_id, utc_now_iso
 
@@ -49,14 +50,9 @@ LEVEL_PAT = re.compile(
     r"初级|中级|高级)"
 )
 
-# 国标原码 → 产品等级（1 了解 → 5 专家）。
-# 国标技能五级制是**一级最高**，与产品方向相反，故 L1→5 … L5→1；
-# 专业技术三级制（T1/T2/T3）无 L2/L4 粒度，均匀铺到 1/3/5。
-# 归一只在此处发生一次并落库（attrs.level），读路径不再做任何刻度换算。
-PRODUCT_LEVEL = {
-    "L1": 5, "L2": 4, "L3": 3, "L4": 2, "L5": 1,
-    "T1": 1, "T2": 3, "T3": 5,
-}
+# 刻度归一由 backend/kg/level_scale.py 统一负责（映射表曾在三处各存一份并漂移）。
+# 这里只管把国标原样采下来，`normalize_skill_level_node` 负责转成产品档并剥掉
+# 国标文案，与 pg_store/migrate.py 灌库时走的是同一份逻辑。
 
 # 2022 大典与部分 2021 标准旧码对照（名称对齐优先，此为辅助）
 CODE_ALIASES = {
@@ -556,11 +552,9 @@ def make_skill_node(
     name = f"{function} · {level_zh}"
     attrs = {
         "skill_name": function,
-        # 产品等级（1 了解 → 5 专家），全站判定与展示的唯一真源
-        "level": PRODUCT_LEVEL.get(level_code.upper()),
-        # 以下两项仅溯源：国标原等级名与原码
+        # 国标原样，下面交给 normalize_skill_level_node 转成 attrs.level 并剥掉
         "level_zh": level_zh,
-        "source_level_code": level_code,
+        "level_code": level_code,
         "scale": SCALE,
         "occupation_code": occ_code,
         "occupation_name": occ_name,
@@ -569,7 +563,7 @@ def make_skill_node(
         "source_file": source_file,
         "standard_type": "national_skill_standard",
     }
-    return {
+    node = {
         "id": make_node_id(REGION, "skill_level", SOURCE_SYSTEM, sid),
         "region": REGION,
         "type": "skill_level",
@@ -586,6 +580,10 @@ def make_skill_node(
         "fetched_at": fetched_at,
         "confidence": "official",
     }
+    # 采集端与灌库端走同一份归一，落地形态才一致；少了这一步，采下来的节点
+    # 留着 level_zh、name 还是「制备 · 三级/高级工」，与迁移后的存量对不上。
+    normalize_skill_level_node(node)
+    return node
 
 
 def make_requires_edge(

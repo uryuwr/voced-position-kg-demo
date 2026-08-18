@@ -1,41 +1,38 @@
-"""把 skill_level 节点的等级刻度一次性迁到产品语义，消灭运行时映射。
+"""把存量 skill_level 节点的等级刻度迁到产品语义。PG 与源 SQLite 两边都能修。
 
-背景
+这个脚本现在只是**存量补齐**
+------------------------------
+转换逻辑本身已经收进 `backend/kg/level_scale.py`，并挂在两条写入路径上：
+
+- `backend/kg/pg_store/migrate.py` 每次灌库都过一遍（所以重灌不再抹掉产品档）
+- `crawlers/cn/ingest_skill_standards.py` 建节点时过一遍（所以新采的数据一进来就是对的）
+
+于是本脚本**不再是「必须记得跑」的一次性补丁**，只用来修那些在上述改动之前
+就已经落库、且短期内不会被重灌的存量数据。
+
+为什么当初会丢
+--------------
+2026-08-14 跑过一次，8919 个节点补上产品档，可评分岗位 117 → 608。
+四天后有人重灌了一次库，`migrate.py` 的 `attrs = EXCLUDED.attrs` 无条件覆盖，
+数字**逐位退回**回填前，全程零报错。所以修完存量还要修路径，缺一不可。
+
+用法
 ----
-库里 8919 个 skill_level 节点原先存的是**国标原码**：
-    attrs.level_code = L1..L5，其中 L1=一级/高级技师（最高）、L5=五级/初级工（最低）
-另有 625 个走的是专业技术三级制 T1/T2/T3（初级/中级/高级）。
-产品侧只有一套 L1–L5（了解→掌握→熟练→精通→专家，**越大越强**），方向与国标相反，
-于是读路径长期挂着 level_map 做运行时反转 —— 而只要有一条路径漏传 level_zh，
-就会把国标 L4 当成产品 L4，造成「提交 level=4、回显 selected_level=2」这类不一致。
+    python -X utf8 scripts/migrate_skill_level_to_product.py            # dry-run，只看会改什么
+    python -X utf8 scripts/migrate_skill_level_to_product.py --apply    # 改 PG
+    python -X utf8 scripts/migrate_skill_level_to_product.py --apply --sqlite   # PG + 源 SQLite
 
-迁移后（两阶段，一次跑完）
---------------------------
-阶段 1 · 统一刻度
-    attrs.level             = int 1..5   产品语义，唯一真源（越大越强）
-    attrs.source_level_code = 'L4'/'T3'  国标原码，只留在 attrs 内做溯源，不对外输出
-    移除 attrs.level_code（语义已被 level 取代，留着必然再被误读）与 attrs.product_level_int。
+`--sqlite` 连 `data/graph/kg.sqlite` 一起修：离线采集链路直接读那个文件，
+只修 PG 的话，crawlers 看到的仍是国标形态。注意那个文件可能正被采集任务占用，
+锁冲突时脚本会报错退出，换个空窗期再跑即可。
 
-阶段 2 · 剥离国标等级文案
-    「四级/中级工」这类国标等级名与产品 L1–L5（了解/掌握/熟练/精通/专家）是两套说法，
-    同屏出现必然打架（且数字方向相反：国标四级 = 产品 L2）。因此：
-    移除 attrs.level_zh；
-    name        「制备 · 三级/高级工」 → 「制备 · L3」
-    description 占位串里的「· 四级/中级工 ·」→「· L2 ·」（国标正文描述不受影响）
-
-id / source_id 不动
--------------------
-标识符形如 `CN:skill_level:MOHRSS_CN:4-04-05-07|运维|L2`，其中 L2 是**源系统**的
-等级码。它是不透明标识，且采集端 source_id 继续用国标原码生成，重跑不会产生重复节点。
-
-幂等：两阶段各自判断，已完成的部分跳过；可反复执行。
-用法：python -X utf8 scripts/migrate_skill_level_to_product.py [--apply]
-不带 --apply 只做 dry-run，打印将要变更的分布。
+跑完用 `scripts/verify_backfill.py after` 逐档核对转换方向——
+那个脚本另存了一份独立的期望表，**故意不 import level_scale**，否则等于自己比自己。
 """
 from __future__ import annotations
 
 import json
-import re
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -43,143 +40,137 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from backend.kg.level_scale import normalize_skill_level_node  # noqa: E402
 from backend.kg.pg_store.client import connect  # noqa: E402
-
-# 国标等级原文名 → 产品 level。精确匹配（库里 level_zh 就是这 8 个规范值），
-# 不用子串匹配——「高级」会误伤「高级工」「高级技师」。
-ZH_TO_LEVEL = {
-    "五级/初级工": 1,
-    "四级/中级工": 2,
-    "三级/高级工": 3,
-    "二级/技师": 4,
-    "一级/高级技师": 5,
-    # 专业技术人才三级制：三档均匀铺到产品五档（L2/L4 因源数据无此粒度而空缺）
-    "初级": 1,
-    "中级": 3,
-    "高级": 5,
-}
-
-# level_zh 缺失时的兜底：国标五级码需反转（L1=一级=最高→5），T 码按三级制铺开
-CODE_TO_LEVEL = {
-    "L1": 5, "L2": 4, "L3": 3, "L4": 2, "L5": 1,
-    "T1": 1, "T2": 3, "T3": 5,
-}
+from backend.kg.pg_store.config import SQLITE_PATH  # noqa: E402
 
 
-def product_level(level_zh: str | None, level_code: str | None) -> int | None:
-    zh = (level_zh or "").strip()
-    if zh in ZH_TO_LEVEL:
-        return ZH_TO_LEVEL[zh]
-    return CODE_TO_LEVEL.get((level_code or "").strip().upper())
+def _attrs_of(v) -> dict:
+    if isinstance(v, str):
+        try:
+            v = json.loads(v)
+        except Exception:
+            return {}
+    return v if isinstance(v, dict) else {}
 
 
-# 只替换被「·」包住或位于串尾的等级词，避免误伤国标正文里的「初级工应能…」
-GRADE_IN_TEXT = re.compile(
-    r"·\s*(一级/高级技师|二级/技师|三级/高级工|四级/中级工|五级/初级工|初级|中级|高级)"
-    r"(?=\s*·|\s*$)"
-)
+def _plan(rows: list[dict]) -> tuple[list[tuple], dict, int, int]:
+    """对一批节点做归一，返回 (更新元组, 分布统计, 跳过数, 判定不了数)。
 
-
-def skill_key_of(attrs: dict, name: str) -> str:
-    """与 SKILL_KEY_SQL 一致：attrs.skill_key → skill_name → name 首段。"""
-    for k in ("skill_key", "skill_name"):
-        v = str(attrs.get(k) or "").strip()
-        if v:
-            return v
-    return (name or "").split(" · ")[0].split("·")[0].strip() or (name or "")
-
-
-def main(apply: bool) -> int:
+    分布统计要在归一**之前**取原码/等级名——归一会把它们剥掉，之后再取就没了。
+    """
+    updates: list[tuple] = []
     stats: dict[tuple[str, str, int | None], int] = {}
     skipped = unresolved = 0
-    phase2 = 0
-    updates: list[tuple[str, str, str, str]] = []
 
+    for r in rows:
+        before = _attrs_of(r.get("attrs"))
+        code = str(before.get("level_code") or before.get("source_level_code") or "?").strip().upper()
+        zh = str(before.get("level_zh") or "-")
+
+        node = dict(r)
+        result = normalize_skill_level_node(node)
+        if result == "unresolved":
+            unresolved += 1
+            if unresolved <= 10:   # 上千行刷屏会把真正要看的分布顶掉
+                print(f"  [未能判定] {r['id']} level_zh={zh!r} level_code={code!r}")
+            elif unresolved == 11:
+                print("  [未能判定] …（后续省略，总数见下方汇总）")
+            continue
+        if result == "skip":
+            skipped += 1
+            continue
+
+        lv = _attrs_of(node["attrs"]).get("level")
+        stats[(code, zh, lv)] = stats.get((code, zh, lv), 0) + 1
+        updates.append(
+            (
+                json.dumps(_attrs_of(node["attrs"]), ensure_ascii=False),
+                node["name"],
+                node["description"],
+                r["id"],
+            )
+        )
+    return updates, stats, skipped, unresolved
+
+
+def _report(label: str, updates: list, stats: dict, skipped: int, unresolved: int) -> None:
+    print(f"\n=== {label} ===")
+    if stats:
+        print("  变更分布（国标原码 / 国标等级名 → 产品档）")
+        for (code, zh, lv), n in sorted(stats.items(), key=lambda x: (x[0][2] or 0, x[0][0])):
+            print(f"    {code:4s} {zh:16s} → level={lv}  {n:6d}")
+    print(f"  待更新 {len(updates)} · 已就绪跳过 {skipped} · 无法判定 {unresolved}")
+
+
+def do_pg(apply: bool) -> int:
     with connect() as conn:
-        rows = conn.execute(
-            "SELECT id, attrs, name, description FROM kg_node WHERE type='skill_level'"
-        ).fetchall()
-        print(f"skill_level 节点总数: {len(rows)}")
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, attrs, name, name_zh, description FROM kg_node WHERE type='skill_level'"
+            ).fetchall()
+        ]
+        print(f"PG skill_level 节点总数: {len(rows)}")
+        updates, stats, skipped, unresolved = _plan(rows)
+        _report("PostgreSQL", updates, stats, skipped, unresolved)
 
-        for r in rows:
-            try:
-                a = json.loads(r["attrs"]) if isinstance(r["attrs"], str) else (r["attrs"] or {})
-            except Exception:
-                a = {}
-            if not isinstance(a, dict):
-                a = {}
-
-            code = str(a.get("level_code") or "").strip().upper()
-            zh = a.get("level_zh")
-            name = r["name"] or ""
-            desc = r["description"] or ""
-
-            # —— 阶段 1：统一刻度 ——
-            need1 = a.get("level") is None or bool(code) or "product_level_int" in a
-            if need1:
-                lv = product_level(zh, code)
-                if lv is None:
-                    unresolved += 1
-                    print(f"  [未能判定] {r['id']} level_zh={zh!r} level_code={code!r}")
-                    continue
-
-                # 旧 backfill 写过 product_level_int，不一致要暴露出来而非默默覆盖
-                old_pli = a.get("product_level_int")
-                if old_pli is not None and int(old_pli) != lv:
-                    print(f"  [冲突] {r['id']} product_level_int={old_pli} 但按等级名应为 {lv}")
-
-                stats[(code or "?", str(zh), lv)] = stats.get((code or "?", str(zh), lv), 0) + 1
-                a["level"] = lv
-                if code:
-                    a["source_level_code"] = code   # 只留 attrs 内溯源，不对外输出
-                a.pop("level_code", None)           # 语义已由 level 承担
-                a.pop("product_level_int", None)    # 与 level 重复
-            else:
-                lv = a.get("level")
-
-            # —— 阶段 2：剥离国标等级文案 ——
-            need2 = ("level_zh" in a) or GRADE_IN_TEXT.search(name) or GRADE_IN_TEXT.search(desc)
-            if need2:
-                phase2 += 1
-                a.pop("level_zh", None)
-                key = skill_key_of(a, name)
-                name = f"{key} · L{lv}" if lv else key
-                desc = GRADE_IN_TEXT.sub(f"· L{lv}" if lv else "", desc)
-
-            if need1 or need2:
-                updates.append(
-                    (json.dumps(a, ensure_ascii=False), name, desc, r["id"])
-                )
-            else:
-                skipped += 1
-
-        if stats:
-            print("\n=== 阶段1 变更分布（国标原码 / 国标等级名 → 产品 level）===")
-            for (code, zh, lv), n in sorted(stats.items(), key=lambda x: (x[0][2] or 0, x[0][0])):
-                print(f"  {code:4s} {zh:16s} → level={lv}  {n:6d}")
-        print(f"\n阶段1 待迁移 {sum(stats.values())} · 阶段2 待剥离文案 {phase2}")
-        print(f"合计更新 {len(updates)} · 已完成跳过 {skipped} · 无法判定 {unresolved}")
-        if updates:
-            print("\n=== 变更样例 ===")
-            for u in updates[:3]:
-                print(f"  name → {u[1][:44]}")
-                print(f"  desc → {(u[2] or '')[:80]}")
-
-        if not apply:
-            print("\n[dry-run] 未写库。加 --apply 执行。")
-            return 0
-        if unresolved:
-            print("\n[中止] 存在无法判定等级的节点，请先修数据再迁移。")
-            return 1
-
+        if not apply or not updates:
+            return 1 if unresolved and apply else 0
         with conn.cursor() as cur:
             cur.executemany(
                 "UPDATE kg_node SET attrs=%s, name=%s, description=%s WHERE id=%s", updates
             )
         conn.commit()
-        print(f"\n[已提交] 更新 {len(updates)} 个节点。")
+        print(f"  [已提交] PG 更新 {len(updates)} 个节点")
     return 0
 
 
+def do_sqlite(path: Path, apply: bool) -> int:
+    if not path.exists():
+        print(f"  [跳过] 源 SQLite 不存在: {path}")
+        return 0
+    # 采集任务可能正握着这个文件；给 15 秒等锁，等不到就报错退出而不是硬等
+    conn = sqlite3.connect(str(path), timeout=15)
+    conn.row_factory = sqlite3.Row
+    try:
+        # 只动 CN：ONET 用 IM1–IM5（重要性刻度）、ESCO 另有一套，都不是国标等级，
+        # 拿国标映射表去套是错的。它们的产品档另有归属，不在本脚本范围内。
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, attrs, name, name_zh, description FROM nodes "
+                "WHERE type='skill_level' AND region='CN'"
+            )
+        ]
+        print(f"\nSQLite skill_level（region=CN）节点数: {len(rows)}  ({path})")
+        updates, stats, skipped, unresolved = _plan(rows)
+        _report("源 SQLite", updates, stats, skipped, unresolved)
+
+        if not apply or not updates:
+            return 0
+        conn.executemany(
+            "UPDATE nodes SET attrs=?, name=?, description=? WHERE id=?", updates
+        )
+        conn.commit()
+        print(f"  [已提交] SQLite 更新 {len(updates)} 个节点")
+    finally:
+        conn.close()
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    apply = "--apply" in argv
+    also_sqlite = "--sqlite" in argv
+
+    rc = do_pg(apply)
+    if also_sqlite:
+        rc = do_sqlite(SQLITE_PATH, apply) or rc
+
+    if not apply:
+        print("\n[dry-run] 未写任何库。加 --apply 执行（再加 --sqlite 连源文件一起修）。")
+    return rc
+
+
 if __name__ == "__main__":
-    raise SystemExit(main("--apply" in sys.argv))
+    raise SystemExit(main(sys.argv[1:]))

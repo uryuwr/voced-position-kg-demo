@@ -34,6 +34,10 @@ if str(ROOT) not in sys.path:
 SNAP = ROOT / ".backfill_snapshot.json"
 
 # 国标 → 产品档 的**正确**映射。回填后逐档核对，错一档就报。
+#
+# 这份表是 `backend/kg/level_scale.CODE_TO_LEVEL` 的**故意重复**，别去 import 它。
+# 校验的意义在于用一份独立写死的期望值去比对实际落库结果；改成 import 之后
+# 就是拿转换逻辑比它自己，方向搞反也照样绿。改 level_scale 时手动同步这里。
 EXPECT = {
     "L1": 5, "L2": 4, "L3": 3, "L4": 2, "L5": 1,   # 五级工制，反向
     "T1": 1, "T2": 3, "T3": 5,                      # 三级制铺开
@@ -131,20 +135,22 @@ def main() -> int:
         print(f"\n  快照已存 {SNAP}；回填后跑 `verify_backfill.py after`")
         return 0
 
-    if not SNAP.exists():
-        print(f"缺少回填前快照 {SNAP}；先跑 `verify_backfill.py before`")
-        return 2
-    before = json.loads(SNAP.read_text(encoding="utf-8"))
+    # 没有前置快照也要能跑：这个脚本挂在「每次灌完库」上（见 CLAUDE.md），
+    # 而方向核对本来就不依赖对比——缺快照只是少了增量，不该整个退出。
+    if SNAP.exists():
+        before = json.loads(SNAP.read_text(encoding="utf-8"))
+        show(before, "回填前")
+        show(now, "回填后")
 
-    show(before, "回填前")
-    show(now, "回填后")
-
-    b, a = before["occupations"], now["occupations"]
-    gain = a["full_cnt"] - b["full_cnt"]
-    print(f"\n  可评分岗位增加 {gain} 个"
-          f"（{b['full_cnt']} → {a['full_cnt']}，占比 "
-          f"{b['full_cnt'] / max(1, b['total']) * 100:.0f}% → "
-          f"{a['full_cnt'] / max(1, a['total']) * 100:.0f}%）")
+        b, a = before["occupations"], now["occupations"]
+        gain = a["full_cnt"] - b["full_cnt"]
+        print(f"\n  可评分岗位增加 {gain} 个"
+              f"（{b['full_cnt']} → {a['full_cnt']}，占比 "
+              f"{b['full_cnt'] / max(1, b['total']) * 100:.0f}% → "
+              f"{a['full_cnt'] / max(1, a['total']) * 100:.0f}%）")
+    else:
+        show(now, "当前")
+        print(f"\n  （无前置快照，跳过增量对比；要看增量就在改动前跑 `verify_backfill.py before`）")
 
     print("\n  === 转换方向逐档核对（搞反了不会报错，只会把高手判成入门）===")
     for row in now["code_to_level"]:

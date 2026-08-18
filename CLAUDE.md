@@ -13,6 +13,7 @@ python -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8088
 # 本地要看自测页：先在 backend/.env 里 SERVE_DEV_UI=1（见下方「配置」——命令行传 env 无效）
 
 python -m backend.kg.pg_store.migrate --clear --region CN   # SQLite → PG 灌图数据
+python -X utf8 scripts/verify_backfill.py after             # 灌完必跑：技能档位逐档核对方向
 
 python -X utf8 tests/e2e_skill_level.py        # Playwright E2E（自起 18099 端口实例）
 python -X utf8 tests/run_assessment_demo.py    # 命令行跑一次完整测评工作流
@@ -57,7 +58,11 @@ pipelines/  旧路径 shim，勿写新逻辑
 
 **中间件顺序**（`api/main.py`）—— Starlette 中「后 add = 更靠外」。CORS 必须最后 add 包在鉴权外层，否则预检 OPTIONS 被 401、且 401 响应缺 CORS 头，浏览器只报跨域看不到真实原因。`CORS_ORIGINS=*` 时用 `allow_origin_regex` 而非 `allow_origins=["*"]`（后者与 `allow_credentials` 冲突）。
 
-**技能等级**：一技能一档——一个技能在库里是 L1–L5 五个 `skill_level` 节点，读路径按 `attrs.skill_key`（`SKILL_KEY_SQL`）聚合成逻辑 bundle。「要求哪一档」由**边指向哪个等级节点**表达，改档 = 删旧边建新边。产品档 1(了解)–5(专家)，`attrs.level` 是唯一真源，已无国标刻度映射。档位名称/基准分/行为锚**只能**从 `kg/pg_store/skill_level_meta.py` 或 `GET /v1/student/meta/skill-levels` 读，禁止在业务代码或前端硬编码。
+**技能等级**：一技能一档——一个技能在库里是 L1–L5 五个 `skill_level` 节点，读路径按 `attrs.skill_key`（`SKILL_KEY_SQL`）聚合成逻辑 bundle。「要求哪一档」由**边指向哪个等级节点**表达，改档 = 删旧边建新边。产品档 1(了解)–5(专家)，`attrs.level` 是唯一真源，读路径不做任何刻度换算。档位名称/基准分/行为锚**只能**从 `kg/pg_store/skill_level_meta.py` 或 `GET /v1/student/meta/skill-levels` 读，禁止在业务代码或前端硬编码。
+
+**国标刻度归一只有一份，在 `kg/level_scale.py`，且必须发生在入库期**——采集端建节点（`crawlers/cn/ingest_skill_standards.py`）与灌库（`pg_store/migrate.py`）都调 `normalize_skill_level_node`，别在第三处另写映射表。刻度方向是**反的**：国标 L1=一级/高级技师=最高 → 产品档 5，L5 → 1；搞反了不报错、不崩，只把高级技师判成入门。`scripts/verify_backfill.py` 里那份期望表是**故意重复**的独立校验，别去 import `level_scale` 把它「去重」掉，否则等于自己比自己。
+
+> 2026-08-14 手工回填 8919 个节点（可评分岗位 117 → 608），08-18 有人重灌了一次库，`migrate.py` 的 `attrs = EXCLUDED.attrs` 把源里的旧形态原样盖回去，数字**逐位退回**，全程零报错。现在归一挂在灌库必经之路上，重灌会自愈——回归闸门是 `scripts/verify_reload_keeps_levels.py`（临时库跑一次 `migrate --clear`，验证产品档还在），改动这条链路后必须跑它。**灌完库跑一次 `scripts/verify_backfill.py after` 逐档核对方向。**
 
 **边模型**：岗位 `requires` 技能（带 weight，Σ≈1）；专业 `covers` 技能（无权重、不归一）。本体见 `schemas/graph_schema.yaml`；发布门禁规则 BR-01~BR-08 在 `kg/pg_store/publish_rules.py`。
 

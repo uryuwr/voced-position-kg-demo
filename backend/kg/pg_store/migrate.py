@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from backend.kg.level_scale import normalize_nodes
 from backend.kg.pg_store.client import connect, ensure_schema, verify_connectivity
 from backend.kg.pg_store.config import DEFAULT_REGION, SQLITE_PATH
 
@@ -255,6 +256,16 @@ def main() -> None:
     t0 = time.time()
     nodes, edges = _load_sqlite(args.sqlite, region if region.lower() != "all" else None)
     print(f"  sqlite subset nodes={len(nodes)} edges={len(edges)}")
+
+    # 技能等级归一。**必须在这里做，不能指望源 SQLite 已经是对的**：
+    # 下面 insert_nodes 是 `attrs = EXCLUDED.attrs` 无条件覆盖，源里少一个
+    # attrs.level，库里已有的产品档就被抹掉，而且不报错。2026-08-14 手工回填的
+    # 8919 个节点就是这么在 08-18 一声不响地退回原样的（可评分岗位 608 → 117）。
+    lv = normalize_nodes(nodes)
+    print(f"  skill_level 归一: 转换 {lv['ok']} · 已就绪 {lv['skip']} · 判定不了 {lv['unresolved']}")
+    if lv["unresolved"]:
+        print(f"  [警告] {lv['unresolved']} 个 skill_level 既无等级名也无可识别原码，"
+              f"按原样入库；这些节点的岗位算不出匹配度")
 
     with connect() as conn:
         ensure_schema(conn)
