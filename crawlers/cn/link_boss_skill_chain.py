@@ -57,6 +57,7 @@ if str(ROOT) not in sys.path:
 from backend.kg.graph_store import connect, upsert_edges, upsert_nodes
 from backend.kg.paths import REPORTS, STAGING
 from backend.kg.provenance import make_edge_id, make_node_id, utc_now_iso
+from backend.kg.pg_store.skill_taxonomy import FALLBACK_CODE, SKILL_CATEGORIES, to_code
 
 REGION = "CN"
 SRC_SKILL = "LLM_CN"
@@ -65,10 +66,11 @@ SOURCE_URL = "llm://voced-kg/boss-skill-chain"
 LICENSE = "LLM 推断，需人工抽检"
 LEVELS = (1, 2, 3, 4, 5)
 
-CATEGORIES = [
-    "技术工程", "数据能力", "运营策略", "内容创作", "商业分析",
-    "设计创意", "沟通协作", "管理领导", "通用素养",
-]
+# 给 LLM 看的候选项用**中文名**（模型对 TECH/OPERATE 这种 code 的语义把握不如中文），
+# 落库前一律 `to_code()` 转成分类 code —— `kg_node.category` 存的是 code。
+# 候选项直接取自字典表真源，不再手写一份：手写的那份曾与库里的国标口径完全不重合，
+# 导致 LLM 产出的分类在页面上一个都对不上。
+CATEGORIES = [c["name"] for c in SKILL_CATEGORIES if not c["code"] == FALLBACK_CODE]
 
 _CJK = r"一-龥"
 
@@ -114,19 +116,25 @@ PROMPT_MERGE = """下面是从招聘岗位推断出的技能名列表，同一�
 只输出 JSON：
 {{"groups": [{{"canon": "规范名", "aliases": ["别名1", "别名2"]}}]}}"""
 
-PROMPT_ADVANCE = """下面是同一领域内的招聘岗位及其职级判定。请找出**真实存在的晋升路径**。
+PROMPT_ADVANCE = """下面是同一领域内的招聘岗位及其职级判定。请**逐个岗位**列出它的向上发展方向。
 
 岗位列表（格式：岗位名 | 岗位族 | 职级1-5）：
 {jobs}
 
-规则：
-1. 只输出真实的职业晋升路径，from 的职级必须**低于** to 的职级
-2. 允许跨岗位族（如 Java 工程师 → 技术经理 → 技术总监），这是主要场景
-3. 平行的技术方向**不是**晋升（Java → PHP 不算，Java → Python 不算）
-4. 一个岗位可以有多条向上路径（Java → 技术经理 / Java → 架构师）
-5. 宁缺勿滥：不确定的不要输出
+做法：对列表里的**每一个**岗位，都想一遍「干这行的人往上走，能走到列表中的哪些岗位」，
+尽量覆盖下面三类方向，有几条写几条（某类没有就跳过，不要硬凑）：
+  A 本方向纵深 —— 同领域做深做精（Java → 架构师）
+  B 转管理    —— 带团队、管项目（Java → 技术经理 → 技术总监）
+  C 跨方向转型 —— 相邻领域的向上流动（测试工程师 → 测试开发）
 
-只输出 JSON：
+规则：
+1. from 与 to 都必须是上面列表里**原样出现**的岗位名，不要自造
+2. from 的职级必须**严格低于** to 的职级；职级相同的一律不要输出
+3. 平行的技术方向**不是**晋升（Java → PHP 不算，Java → Python 不算）
+4. 同一个岗位通常有 2-4 条向上路径，不要只给一条
+5. reason 只写最终结论，**不要写推理过程**，一句话即可
+
+只输出 JSON，不要任何解释文字：
 {{"paths": [{{"from": "岗位名", "to": "岗位名", "reason": "一句话依据"}}]}}"""
 
 
@@ -233,9 +241,10 @@ def normalize_skills(d: dict) -> dict | None:
             continue
         if w <= 0:
             continue
-        cat = str(s.get("category") or "").strip()
+        # LLM 回的是中文名，转成 code 再落库；认不出的落兜底而不是硬塞「通用素养」
+        cat = to_code(str(s.get("category") or "").strip())
         out.append({"name": name, "level": lv, "weight": w,
-                    "category": cat if cat in CATEGORIES else "通用素养"})
+                    "category": cat})
     if not out:
         return None
     merged: dict[str, dict] = {}
@@ -500,6 +509,21 @@ def stage_apply(*, l1: str, dry_run: bool) -> dict:
         if not dry_run:
             if new_nodes:
                 rep["nodes_upserted"] = upsert_nodes(conn, list(new_nodes.values()))
+            # 先清掉这些岗位已有的 requires 边，再整体重建。
+            #
+            # 必须这么做的原因：edge id 是 (src, rel, dst)，而 dst 是**具体等级节点**，
+            # 同一技能的 L2 与 L3 是两个不同节点 → id 不同 → upsert 不会覆盖。
+            # 重跑 apply（改了归并规则、档位判定变化）时旧边会原样留下，于是同一岗位
+            # 同一技能出现多档（.NET Core开发 同时挂 L2 和 L3）。
+            # 后果：列表页按 skill_key 聚合算 7 项，详情页按边算 10 项，两处对不上；
+            # 而且「高档天生覆盖低档」，多档本身就是无意义的。
+            occ_ids = [r["id"] for r in data["items"]]
+            if occ_ids:
+                qs = ",".join("?" * len(occ_ids))
+                rep["stale_requires_removed"] = conn.execute(
+                    f"DELETE FROM edges WHERE rel_type='requires' AND src_id IN ({qs})",
+                    occ_ids,
+                ).rowcount
             rep["edges_upserted"] = upsert_edges(conn, edges)
             for attrs_json, nid in patches:
                 conn.execute("UPDATE nodes SET attrs=? WHERE id=?", (attrs_json, nid))
@@ -508,6 +532,37 @@ def stage_apply(*, l1: str, dry_run: bool) -> dict:
     finally:
         conn.close()
     return rep
+
+
+def _load_external_occupations(*, exclude: set[str]) -> dict[str, dict]:
+    """本批次之外、库里已有的 BOSS 岗位，按岗位名索引。
+
+    只取 `attrs.level` 有值的 —— 没有职级就过不了「严格递进」那道校验，
+    拿进来也是白拿，反而让重名匹配变松。
+    """
+    out: dict[str, dict] = {}
+    conn = connect()
+    try:
+        for r in conn.execute(
+            "SELECT id, name, attrs FROM nodes "
+            "WHERE type='occupation' AND source_system='BOSS'"
+        ).fetchall():
+            name = r["name"]
+            if not name or name in exclude or name in out:
+                continue
+            try:
+                a = json.loads(r["attrs"] or "{}")
+            except Exception:
+                continue
+            try:
+                lv = int(a.get("level"))
+            except (TypeError, ValueError):
+                continue
+            out[name] = {"id": r["id"], "name": name, "job_level": lv,
+                         "job_family": a.get("job_family"), "l2": a.get("boss_l2")}
+    finally:
+        conn.close()
+    return out
 
 
 # ────────────────────────── stage: advance ──────────────────────────
@@ -525,6 +580,12 @@ def stage_advance(*, l1: str, dry_run: bool, batch: int, sleep: float) -> dict:
     by_name = {r["name"]: r for r in items}
     fetched_at = utc_now_iso()
 
+    # 跨门类的上游岗位：LLM 会提出「Java → 项目总监」这类路径，而「项目总监」
+    # 可能落在别的 BOSS 门类下，不在本次 raw 里。只按本批次匹配的话，跨门类晋升
+    # 永远建不起来 —— 而「转管理」恰恰是最常见的一类向上路径。
+    # 所以批次外的名字回库里查一次，查得到就认。
+    ext = _load_external_occupations(exclude=set(by_name))
+
     paths, failed = [], []
     for i in range(0, len(items), batch):
         chunk = items[i : i + batch]
@@ -534,9 +595,10 @@ def stage_advance(*, l1: str, dry_run: bool, batch: int, sleep: float) -> dict:
         msg = [("system", "你是职业发展路径专家，只输出 JSON。"),
                ("user", PROMPT_ADVANCE.format(jobs=listing))]
         try:
-            # max_tokens 要够大：一批 40 个岗位可产出几十条含 reason 的路径，
-            # 给 2000 时 117 个岗位一次全塞会被截断，JSON 解析失败静默返回 0 条
-            raw = invoke_fast(msg, max_tokens=6000)
+            # max_tokens 要够大：提示词改成「逐岗位枚举 2-4 条」后产出量翻了几倍，
+            # 一批 40 个岗位就能出 100+ 条含 reason 的路径。给小了会被截断，
+            # JSON 解析失败**静默返回 0 条**（这也是为什么 batch 默认降到 40）。
+            raw = invoke_fast(msg, max_tokens=10000)
             got = parse_json(raw) or {}
             if not got.get("paths"):
                 # 整体解析失败多半是尾部被截断，按对象级抢救
@@ -556,10 +618,17 @@ def stage_advance(*, l1: str, dry_run: bool, batch: int, sleep: float) -> dict:
 
     edges, dropped = [], []
     seen = set()
+    ext_used = 0
     for p in paths:
-        a, b = by_name.get(str(p.get("from") or "").strip()), by_name.get(str(p.get("to") or "").strip())
+        fn, tn = str(p.get("from") or "").strip(), str(p.get("to") or "").strip()
+        a = by_name.get(fn)
+        # 起点必须是本门类的岗位（否则跑每个门类都会重复产出同一批边）；
+        # 终点允许是库里任何 BOSS 岗位，这样才接得上跨门类的管理序列
+        b = by_name.get(tn) or ext.get(tn)
+        if b is not None and tn not in by_name:
+            ext_used += 1
         if not a or not b or a["id"] == b["id"]:
-            dropped.append({"path": p, "why": "岗位名不在本批次"})
+            dropped.append({"path": p, "why": "岗位名不在本批次，且库里也没有"})
             continue
         if a["job_level"] >= b["job_level"]:
             dropped.append({"path": p, "why": f"职级未递进 L{a['job_level']}→L{b['job_level']}"})
@@ -586,6 +655,7 @@ def stage_advance(*, l1: str, dry_run: bool, batch: int, sleep: float) -> dict:
 
     rep = {"stage": "advance", "l1": l1, "dry_run": dry_run,
            "llm_paths_proposed": len(paths), "edges_valid": len(edges),
+           "cross_l1_targets": ext_used, "external_pool": len(ext),
            "dropped": len(dropped), "dropped_sample": dropped[:6],
            "llm_failed": failed,
            "sample": [e["evidence"] for e in edges[:8]]}
@@ -606,7 +676,8 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--sleep", type=float, default=0.2)
-    ap.add_argument("--batch", type=int, default=80, help="merge/advance 的分批大小")
+    ap.add_argument("--batch", type=int, default=40,
+                    help="merge/advance 的分批大小。advance 逐岗位枚举，批次大了会超 max_tokens")
     ap.add_argument("--no-resume", action="store_true", help="collect 不续跑，从头来")
     args = ap.parse_args()
 

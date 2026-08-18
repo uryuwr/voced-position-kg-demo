@@ -333,7 +333,7 @@
                   <td>${esc(s.skill_key || s.name)} ${s.is_core ? '<span class="tag core">核心</span>' : ""}</td>
                   <td>L${s.required_level ?? "-"}</td>
                   <td>${s.weight_pct != null ? s.weight_pct + "%" : "-"}</td>
-                  <td class="muted">${esc(s.category || "未分类")}</td>
+                  <td class="muted">${esc(s.category_name || s.category || "待归类")}</td>
                   <td class="my-lv" data-sk="${esc(s.skill_key || s.name)}">–</td>
                 </tr>`;
               }).join("")}
@@ -731,7 +731,11 @@
     }
 
     function renderGoalCard(d) {
-      const o = d.occupation || {}, nl = d.next_level;
+      // advances_to 是 1:N —— next_levels 是全部向上方向，next_level 只是其中第一条
+      // （后端保留它做兼容）。这里主推第一条，其余列在下面，完整多跳链路在岗位详情页。
+      const o = d.occupation || {};
+      const nls = d.next_levels || (d.next_level ? [d.next_level] : []);
+      const nl = nls[0] || null;
       const goals = d.goals || [];
       const others = goals.filter((g) => g.status !== "active");
       $("goalCard").innerHTML = `
@@ -767,8 +771,12 @@
           <div class="card" style="margin:0;background:#0b1220">
             ${nl ? `
               <div class="row"><span class="tag">↗ 下一级成长目标</span>
-                <span class="tag">${esc(nl.level_label || "")}</span></div>
+                <span class="tag">${esc(nl.level_label || "")}</span>
+                ${nls.length > 1 ? `<span class="muted" style="font-size:12px">共 ${nls.length} 个方向</span>` : ""}</div>
               <h4 style="margin:8px 0">${esc(nl.name)} ›</h4>
+              ${nls.length > 1 ? `<div class="muted" style="font-size:12px;margin:-4px 0 8px">
+                还可以走：${nls.slice(1).map((n) => esc(n.name) + (n.level_label ? "（" + esc(n.level_label) + "）" : "")).join("、")}
+                　<a href="#" id="lnkAllPaths" style="color:#60a5fa">看完整晋升链路 ›</a></div>` : ""}
               <div class="muted" style="font-size:12px">进阶解锁需具备的关键核心技能：</div>
               <div style="margin-top:6px">
                 ${(nl.unlock_skills || []).length
@@ -783,6 +791,12 @@
           </div>
         </div>`;
       $("btnDiag").onclick = () => { location.href = "/assessment"; };
+      // 完整多跳链路在岗位详情页的「岗位晋升链路」卡片里，这里只是入口
+      const lap = $("lnkAllPaths");
+      if (lap) lap.onclick = (ev) => {
+        ev.preventDefault();
+        openDetail({ id: o.id, name: o.name, level: o.level, desc: o.description });
+      };
       // 两个按钮互斥出现（锁定过 → 更换；没锁过 → 锁定），各自判存在再挂事件
       const sw = $("btnSwitchGoal");
       if (sw) sw.onclick = () => {

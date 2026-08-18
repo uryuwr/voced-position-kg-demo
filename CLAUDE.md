@@ -58,11 +58,19 @@ pipelines/  旧路径 shim，勿写新逻辑
 
 **中间件顺序**（`api/main.py`）—— Starlette 中「后 add = 更靠外」。CORS 必须最后 add 包在鉴权外层，否则预检 OPTIONS 被 401、且 401 响应缺 CORS 头，浏览器只报跨域看不到真实原因。`CORS_ORIGINS=*` 时用 `allow_origin_regex` 而非 `allow_origins=["*"]`（后者与 `allow_credentials` 冲突）。
 
-**技能等级**：一技能一档——一个技能在库里是 L1–L5 五个 `skill_level` 节点，读路径按 `attrs.skill_key`（`SKILL_KEY_SQL`）聚合成逻辑 bundle。「要求哪一档」由**边指向哪个等级节点**表达，改档 = 删旧边建新边。产品档 1(了解)–5(专家)，`attrs.level` 是唯一真源，读路径不做任何刻度换算。档位名称/基准分/行为锚**只能**从 `kg/pg_store/skill_level_meta.py` 或 `GET /v1/student/meta/skill-levels` 读，禁止在业务代码或前端硬编码。
+**技能等级**：一技能一档——一个技能在库里是 L1–L5 五个 `skill_level` 节点，读路径按 `attrs.skill_key`（`SKILL_KEY_SQL`）聚合成逻辑 bundle。「要求哪一档」由**边指向哪个等级节点**表达，改档 = **删旧边**建新边。产品档 1(了解)–5(专家)，`attrs.level` 是唯一真源，读路径不做任何刻度换算。档位名称/基准分/行为锚**只能**从 `kg/pg_store/skill_level_meta.py` 或 `GET /v1/student/meta/skill-levels` 读，禁止在业务代码或前端硬编码。
+
+**一个岗位对一个技能只能有一条 `requires` 边**——高档天生覆盖低档，同时要求 L2 和 L3 没有业务含义。这里的陷阱是 edge id 由 `(src, rel, dst)` 决定而 dst 是**具体等级节点**，L2 与 L3 是两个 id，upsert 覆盖不了：重跑采集只会把旧边留在库里，不报错，只是列表页按 `skill_key` 算 7 项、详情页按边算 10 项，同一岗位两个数字。三层都要站住：写路径（`link_boss_skill_chain.stage_apply` 重建前先删该岗位所有 `requires`）、读路径（`skill_aggregate._dedupe_requires_by_skill`，直连改库绕得过写路径）、闸门（`scripts/fix_duplicate_requires.py --dry-run`，有重复 exit 1，铺量批跑完和重灌后各跑一次）。
 
 **国标刻度归一只有一份，在 `kg/level_scale.py`，且必须发生在入库期**——采集端建节点（`crawlers/cn/ingest_skill_standards.py`）与灌库（`pg_store/migrate.py`）都调 `normalize_skill_level_node`，别在第三处另写映射表。刻度方向是**反的**：国标 L1=一级/高级技师=最高 → 产品档 5，L5 → 1；搞反了不报错、不崩，只把高级技师判成入门。`scripts/verify_backfill.py` 里那份期望表是**故意重复**的独立校验，别去 import `level_scale` 把它「去重」掉，否则等于自己比自己。
 
 > 2026-08-14 手工回填 8919 个节点（可评分岗位 117 → 608），08-18 有人重灌了一次库，`migrate.py` 的 `attrs = EXCLUDED.attrs` 把源里的旧形态原样盖回去，数字**逐位退回**，全程零报错。现在归一挂在灌库必经之路上，重灌会自愈——回归闸门是 `scripts/verify_reload_keeps_levels.py`（临时库跑一次 `migrate --clear`，验证产品档还在），改动这条链路后必须跑它。**灌完库跑一次 `scripts/verify_backfill.py after` 逐档核对方向。**
+
+**「能学」= 点开当场就能学**——免登录、免报名、无开课周期。判定只有一处：`config.learnable_course()`（SQL 过滤）与它导出的 `ENROLL_SOURCES`（`skill_aggregate` 判 `kind` 直接 import，别另抄）。资源分四类：`real` 可直学 / `enroll` 要报名或按学期开课 / `catalog` 课标目录条目 / `landing` 检索入口，**只有 real 能算进「有课程」的统计**。这里连着栽了两次，形状一样：先是教育部课标目录冒充课程（15960 条），后是中国大学MOOC 顶着「真课」标签挂在 67 个岗位上、学员点进去是报名墙（129 门）——两批都已 `archived`，用 `scripts/archive_courses.py` 增删（带 `--restore`）。`crawlers/cn/harvest_mooc_courses.py` 与 `harvest_xuetangx_courses.py` 已停用，`scripts/run_full_chain.py` 要 `--with-courses` 才跑课程步骤。
+
+**`advances_to` 是 1:N**——一个岗位有多个向上方向（本方向纵深 / 转管理 / 跨方向转型），2026-08-18 由 1:1 改过来。改之前本体写 1:1、采集端提示词却写「可以有多条向上路径」，读路径按本体 `LIMIT 1`，于是 Java 库里有「全栈/技术经理/架构师」三条边，页面只显示一条。多跳完整链路读 `kg/pg_store/progression.py`（防环+深度上限），单跳读 `goal_overview._next_levels`。**置信度排序不能裸写 `ORDER BY e.confidence`**：那是文本列，升序恰好把最不可信的 `ai_inferred` 排在最前（`derived`/`official` 在后），要用显式 CASE 给序。
+
+**技能分类存 code，不存名字**——`kg_node.category` 存 `TECH`/`OPERATE` 这类 code，展示名连 `kg_skill_category` 表取（读路径统一走 `skill_taxonomy.name_of()`，出参里叫 `category_name`）。真源是 `kg/pg_store/skill_taxonomy.py`，启动时幂等 upsert 进表（只 upsert 不 delete，管理台自建的分类不会被抹）。11 个实类 + 兜底 `UNSORTED`（待归类），刻意做粗；改名只动表，不动 12000 条技能。管理台查字典用 `GET /v1/kg/skill-categories?q=`。改之前库里并存两套中文口径（国标「操作与加工」11 种 + LLM「技术工程」9 种），且 LLM 那 3135 个**只写了 `attrs.category`、列是空的**，读路径查列，页面上全显示「未分类」。新增分类来源时把中文别名加进 `aliases`，`to_code()` 认不出的一律落兜底，不猜。
 
 **边模型**：岗位 `requires` 技能（带 weight，Σ≈1）；专业 `covers` 技能（无权重、不归一）。本体见 `schemas/graph_schema.yaml`；发布门禁规则 BR-01~BR-08 在 `kg/pg_store/publish_rules.py`。
 

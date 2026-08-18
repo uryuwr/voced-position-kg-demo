@@ -49,6 +49,25 @@ def ensure_biz_schema() -> None:
                 """,
                 (code, name, desc, points, cat),
             )
+        # 技能分类字典：真源在 skill_taxonomy.py，这里幂等灌进表供连表取名。
+        # 只 upsert 不 delete —— 管理台自建的分类不该被下次启动抹掉。
+        from backend.kg.pg_store.skill_taxonomy import all_categories
+
+        for c in all_categories():
+            conn.execute(
+                """
+                INSERT INTO kg_skill_category
+                       (code, name, description, sort_order, is_fallback)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (code) DO UPDATE SET
+                  name = EXCLUDED.name,
+                  description = EXCLUDED.description,
+                  sort_order = EXCLUDED.sort_order,
+                  is_fallback = EXCLUDED.is_fallback,
+                  updated_at = NOW()
+                """,
+                (c["code"], c["name"], c["description"], c["sort_order"], c["is_fallback"]),
+            )
         conn.commit()
 
 
@@ -61,30 +80,49 @@ def skill_level_meta() -> list[dict[str, Any]]:
     return _meta()
 
 
-def skill_categories() -> list[dict[str, Any]]:
-    """技能大类字典。
+def skill_categories(*, q: str | None = None, with_counts: bool = True) -> list[dict[str, Any]]:
+    """技能分类字典，**以 `kg_skill_category` 表为准**。
 
-    取自国家职业技能标准的「职业功能」维度（见 skill_taxonomy.CATEGORY_ORDER），
-    并与库内 kg_node.category 实际存量对齐——此前这里写死的是「运营策略/数据能力/
-    内容创作…」6 类互联网口径，与库里的分类对不上，导致诊断雷达图的轴是空的。
+    `kg_node.category` 存 code，这里连表取 name —— 改分类名不用动一行技能数据。
+    统计按 **逻辑技能**（`attrs.skill_key` 去重）算，不是按节点：一个技能在库里是
+    L1–L5 五个节点，按节点数会把每个分类的规模虚报五倍。
+
+    历史坑：这里曾写死「运营策略/数据能力/内容创作…」6 类互联网口径，与库里的
+    国标分类对不上，诊断雷达图的轴全是空的。所以字典与存量必须同源。
     """
-    from backend.kg.pg_store.skill_taxonomy import CATEGORY_ORDER
+    sql = """
+        SELECT c.code, c.name, c.description, c.sort_order, c.is_fallback,
+               COALESCE(s.n_cnt, 0)::int AS skill_count
+        FROM kg_skill_category c
+        LEFT JOIN (
+            -- 别名必须叫 n：SKILL_KEY_SQL 里写死了 n.attrs / n.name
+            SELECT n.category, count(DISTINCT ({skill_key})) AS n_cnt
+            FROM kg_node n
+            WHERE n.type = 'skill_level' AND COALESCE(n.status,'published') = 'published'
+            GROUP BY n.category
+        ) s ON s.category = c.code
+        WHERE COALESCE(c.status,'published') = 'published'
+        {flt}
+        ORDER BY c.sort_order, c.code
+    """
+    from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
+    params: list[Any] = []
+    flt = ""
+    if q:
+        # 管理台检索：名字或 code 命中即可
+        flt = "AND (c.name ILIKE %s OR c.code ILIKE %s OR c.description ILIKE %s)"
+        params += [f"%{q}%"] * 3
     with connect() as conn:
-        rows = conn.execute(
-            "SELECT category, count(*) n FROM kg_node "
-            "WHERE type='skill_level' AND category IS NOT NULL "
-            "AND COALESCE(status,'published')='published' GROUP BY 1"
-        ).fetchall()
-    counts = {r["category"]: int(r["n"]) for r in rows}
-    out = [
-        {"id": f"C{i + 1}", "name": name, "skill_count": counts.get(name, 0)}
-        for i, name in enumerate(CATEGORY_ORDER)
-    ]
-    # 库里出现但不在标准序里的分类，兜底追加，避免字典漏项
-    for name, n in sorted(counts.items(), key=lambda x: -x[1]):
-        if name not in CATEGORY_ORDER:
-            out.append({"id": f"CX{len(out)}", "name": name, "skill_count": n})
+        rows = conn.execute(sql.format(skill_key=SKILL_KEY_SQL, flt=flt), params).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        if not with_counts:
+            d.pop("skill_count", None)
+        # id 保留给旧前端；code 才是主键
+        d["id"] = d["code"]
+        out.append(d)
     return out
 
 

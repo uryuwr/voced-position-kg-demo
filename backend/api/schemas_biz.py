@@ -118,6 +118,14 @@ class SkillOut(BaseModel):
     desc: str | None = Field(None, description="简介")
     required_level: int | None = Field(None, description="岗位要求档 L1–L5（int）")
     weight: float | None = Field(None, description="岗位要求权重")
+    # 这两个字段以前**根本没声明**，后端聚合好了、Pydantic 序列化时直接丢掉，
+    # 于是技能表格的「类别」列一直是「未分类」—— 数据在库里，只是没进契约。
+    category: str | None = Field(
+        None, description="技能大类 **code**（TECH / OPERATE …），字典见 `GET /v1/kg/skill-categories`"
+    )
+    category_name: str | None = Field(
+        None, description="技能大类展示名，由 code 连字典表取得，**不入库**；前端展示用这个"
+    )
     source_url: str | None = Field(None, description="来源链接")
     attrs: dict[str, Any] | None = Field(None, description="自由属性（无数据库约束的 JSON 列，键随数据来源而异）")
     edge: EdgeBrief | None = Field(
@@ -216,8 +224,26 @@ class SkillLevelMeta(BaseModel):
 
 
 class SkillCategory(BaseModel):
-    id: str = Field(..., description="节点 id")
-    name: str = Field(..., description="名称")
+    """技能分类字典项。**`code` 是真源**，`kg_node.category` 存的就是它。
+
+    展示一律用 `name`（从 `kg_skill_category` 表取），前端不要按 code 硬编码文案 ——
+    改名只动那张表，不动 12062 条技能数据。
+
+    ⚠ 这个模型曾只声明 id/name，`skill_count` 等字段被 Pydantic **静默丢弃**，
+    管理台拿不到数量。加字段时记得同步这里。
+    """
+
+    code: str = Field(..., description="分类 code，如 TECH / OPERATE；写入 kg_node.category")
+    id: str = Field(..., description="等同 code，保留给旧前端")
+    name: str = Field(..., description="展示名")
+    description: str = Field("", description="这一类涵盖什么，管理台分类时的判断依据")
+    sort_order: int = Field(999, description="展示顺序，也是学习推进顺序")
+    is_fallback: bool = Field(
+        False, description="是否兜底类（待归类）。新技能认不出时落这里，代表数据缺口"
+    )
+    skill_count: int = Field(
+        0, ge=0, description="该类下的**逻辑技能**数（按 skill_key 去重，不是节点数）"
+    )
 
 
 class ResumeDiagBody(BaseModel):

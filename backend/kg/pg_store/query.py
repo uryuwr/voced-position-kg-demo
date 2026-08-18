@@ -104,9 +104,14 @@ def _node_dict(row: dict[str, Any]) -> dict[str, Any]:
     }
     if row.get("status") is not None:
         out["status"] = row.get("status")
-    # 技能大类 / 岗位层级：前台卡片与胜任力图谱要用，需透传到读路径
+    # 技能大类 / 岗位层级：前台卡片与胜任力图谱要用，需透传到读路径。
+    # category 存的是 **code**，展示名从字典表取 —— 前端不要自己映射，
+    # 也不要指望 code 好看（改名只动 kg_skill_category 一张表）。
     if row.get("category") is not None:
+        from backend.kg.pg_store.skill_taxonomy import name_of
+
         out["category"] = row.get("category")
+        out["category_name"] = name_of(row.get("category"))
     if row.get("level") is not None:
         out["level"] = row.get("level")
     # 创建时间：管理台列表按它倒序，也要能显示「创建于」
@@ -1640,8 +1645,10 @@ def _lcp_len(a: str, b: str) -> int:
 def _derive_progressions(occs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """派生岗位晋升链 advances_to（confidence=derived）。
 
-    规则：同岗位族内按 level 分层，仅相邻层之间连边；每个下层岗位按名称最长
-    公共前缀选唯一上层目标（schema 约定 advances_to 为 1:1 有向），避免 N×M 交叉。
+    规则：同岗位族内按 level 分层，仅相邻层之间连边；每个下层岗位取名称最长公共
+    前缀**最长的那一档**上层岗位，可以有并列多个（`advances_to` 自 2026-08-18
+    起是 1:N）。取「并列最长」而不是「全连」，是为了避免 N×M 交叉 —— 同一层十几个
+    岗位互相全连会把图糊死，而前缀长度相同意味着同样贴近，没有理由只留一个。
 
     局限：完全依赖 occupation.level 的真实性。当前库内岗位来自「职业分类大典」，
     该数据源不含职级维度（97.9% 的岗位 level 相同），因此产出会非常少；
@@ -1663,19 +1670,21 @@ def _derive_progressions(occs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for lo, hi in zip(levels, levels[1:]):
             for src in by_lv[lo]:
                 sname = str(src.get("name") or "")
-                dst = max(by_lv[hi], key=lambda d: _lcp_len(sname, str(d.get("name") or "")))
-                out.append(
-                    {
-                        "from": src["id"],
-                        "to": dst["id"],
-                        "from_name": src.get("name"),
-                        "to_name": dst.get("name"),
-                        "from_level": lo,
-                        "to_level": hi,
-                        "rel_type": "advances_to",
-                        "confidence": "derived",
-                    }
-                )
+                scored = [(_lcp_len(sname, str(d.get("name") or "")), d) for d in by_lv[hi]]
+                best = max(s for s, _ in scored)
+                for _s, dst in (x for x in scored if x[0] == best):
+                    out.append(
+                        {
+                            "from": src["id"],
+                            "to": dst["id"],
+                            "from_name": src.get("name"),
+                            "to_name": dst.get("name"),
+                            "from_level": lo,
+                            "to_level": hi,
+                            "rel_type": "advances_to",
+                            "confidence": "derived",
+                        }
+                    )
     return out
 
 

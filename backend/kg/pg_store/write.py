@@ -294,6 +294,9 @@ def create_node(
         # 负责人默认取创建人（原型「负责人」列），可在编辑页改
         "owner": body.get("owner") or user_id,
         "owner_name": body.get("owner_name") or user_name,
+        # 技能大类。这一列以前不在 INSERT 里 —— 上层把 category 放进 body 也白搭，
+        # 静默丢掉，新建的技能一律「待归类」。
+        "category": body.get("category"),
     }
     with connect() as conn:
         conn.execute(
@@ -301,12 +304,12 @@ def create_node(
             INSERT INTO kg_node (
               id, region, type, name, name_en, name_zh, aliases, description, attrs,
               source_system, source_id, source_url, license, fetched_at, confidence,
-              status, updated_by, updated_by_name, owner, owner_name
+              status, updated_by, updated_by_name, owner, owner_name, category
             ) VALUES (
               %(id)s, %(region)s, %(type)s, %(name)s, %(name_en)s, %(name_zh)s, %(aliases)s,
               %(description)s, %(attrs)s, %(source_system)s, %(source_id)s, %(source_url)s,
               %(license)s, %(fetched_at)s, %(confidence)s, %(status)s, %(updated_by)s,
-              %(updated_by_name)s, %(owner)s, %(owner_name)s
+              %(updated_by_name)s, %(owner)s, %(owner_name)s, %(category)s
             )
             ON CONFLICT (id) DO UPDATE SET
               name = EXCLUDED.name,
@@ -319,7 +322,10 @@ def create_node(
               confidence = EXCLUDED.confidence,
               status = EXCLUDED.status,
               updated_by = EXCLUDED.updated_by,
-              updated_by_name = EXCLUDED.updated_by_name
+              updated_by_name = EXCLUDED.updated_by_name,
+              -- 只在传了值时覆盖：重复提交/其它 type 的节点不带 category，
+              -- 无条件赋值会把已有分类抹成 NULL
+              category = COALESCE(EXCLUDED.category, kg_node.category)
             """,
             row,
         )

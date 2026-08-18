@@ -154,7 +154,17 @@ class KgNode(BaseModel):
     )
     category: str | None = Field(
         None,
-        description="skill_level 技能大类（国标职业功能维度：安全与环保/作业准备/…）",
+        description=(
+            "skill_level 技能大类的 **code**（TECH / OPERATE / SAFETY …），"
+            "字典见 `GET /v1/kg/skill-categories`。展示请用 `category_name`"
+        ),
+    )
+    category_name: str | None = Field(
+        None,
+        description=(
+            "技能大类展示名，由 code 连 `kg_skill_category` 表取得，**不入库**。"
+            "前端不要按 code 自己映射中文 —— 改名只动那张表"
+        ),
     )
     # 管理列表 scope=manage：有待审变更时附带（库内 status 仍为 published/disabled，前台不受影响）
     pending_change_id: int | None = Field(
@@ -499,7 +509,8 @@ class SkillBundleBrief(BaseModel):
     skill_key: str | None = Field(None, description="技能聚合主键")
     skill_name: str | None = Field(None, description="技能名（去等级后缀）")
     region: str | None = Field(None, description="地区，如 CN")
-    category: str | None = Field(None, description="技能大类")
+    category: str | None = Field(None, description="技能大类 code，见 /v1/kg/skill-categories")
+    category_name: str | None = Field(None, description="技能大类展示名（由 code 派生，不入库）")
     available_levels: list[int] = Field(
         default_factory=list, description="已配齐的档位 1–5"
     )
@@ -546,6 +557,19 @@ class ChangePayload(BaseModel):
     weight: float | None = Field(None, description="边权重")
 
 
+class DeleteResult(BaseModel):
+    """物理删除实际影响的条数。
+
+    节点删除会连带删掉它两端的边（不级联删其它节点），所以两个计数都要给：
+    运营点一次「删除岗位」，需要知道顺带带走了多少条关联边。
+    """
+
+    node_id: str | None = Field(None, description="被删的节点 id；删边时为 null")
+    edge_id: str | None = Field(None, description="被删的边 id；删节点时为 null")
+    nodes_deleted: int = Field(0, ge=0, description="删掉的节点数（0 表示目标本就不存在）")
+    edges_deleted: int = Field(0, ge=0, description="连带删掉的关联边数")
+
+
 class AppliedResult(BaseModel):
     """变更实际落库的结果。
 
@@ -565,7 +589,15 @@ class AppliedResult(BaseModel):
     linked_edges: list[KgEdge] | None = Field(None, description="自动建出的边")
     skill_bundle: bool | None = Field(None, description="true=走的是技能 bundle 写入路径")
     skill_key: str | None = Field(None, description="技能聚合主键")
-    levels: list[dict[str, Any]] | None = Field(None, description="各档明细")
+    levels: list[str] | None = Field(
+        None,
+        description=(
+            "本次建出的档位码，如 `[\"L1\",\"L3\"]`。"
+            "**曾误声明成 `list[dict]`** —— 写入其实成功了，但响应按模型校验时失败，"
+            "接口回 400，管理台显示「新建失败」而库里已经有了，人就会重复提交。"
+            "各档明细在 `nodes` / `bundle` 里"
+        ),
+    )
     bundle: SkillBundleBrief | None = Field(None, description="聚合后的技能 bundle")
     status: str | None = Field(
         None, description="落库后的状态；draft 表示门禁未过，停在草稿"
@@ -573,7 +605,18 @@ class AppliedResult(BaseModel):
     gate: dict[str, Any] | None = Field(
         None, description="发布门禁结果（同 PublishValidateOut）；仅未通过时出现"
     )
-    deleted: bool | None = Field(None, description="删除类变更的结果")
+    deleted: bool | None = Field(
+        None,
+        description=(
+            "删除类变更是否已执行。**恒为布尔**——删除的条数看 `delete_result`。\n\n"
+            "这里曾经在物理删节点时被塞进一个 dict（`{node_id, nodes_deleted, "
+            "edges_deleted}`），而驳回那条路给的是 `true`，同一字段两种形状，"
+            "响应模型校验直接把整个删除接口打成 500。"
+        ),
+    )
+    delete_result: "DeleteResult | None" = Field(
+        None, description="删除实际影响的条数；仅物理删除时出现"
+    )
 
 
 class ProposalOut(BaseModel):
@@ -981,7 +1024,12 @@ class SkillNodeBrief(BaseModel):
 class SkillCategoryGroup(BaseModel):
     """技能大类分区。按职业功能推进顺序排，不按技能数量——否则展示顺序会和箭头方向矛盾。"""
 
-    key: str = Field(..., description="技能大类名")
+    key: str = Field(
+        ..., description="技能大类 **code**（TECH / OPERATE …），字典见 `GET /v1/kg/skill-categories`"
+    )
+    name: str = Field(
+        "", description="技能大类展示名。分区标题用这个，别拿 key 显示给人看"
+    )
     rank: int = Field(..., description="推进顺序序号，越小越靠前")
     skills: list[SkillNodeBrief] = Field(default_factory=list, description="该区技能")
 
@@ -1066,7 +1114,8 @@ class SharedSkill(BaseModel):
 
     skill_key: str | None = Field(None, description="技能聚合主键")
     name: str | None = Field(None, description="技能名")
-    category: str | None = Field(None, description="技能大类")
+    category: str | None = Field(None, description="技能大类 code，见 /v1/kg/skill-categories")
+    category_name: str | None = Field(None, description="技能大类展示名（由 code 派生，不入库）")
     occupation_count: int | None = Field(
         None, ge=0, description="有多少个对口岗位要求它"
     )
@@ -1214,7 +1263,8 @@ class NodeDetailOut(BaseModel):
     type: str | None = Field(None, description="节点类型")
     name: str | None = Field(None, description="名称")
     skill_key: str | None = Field(None, description="技能聚合主键（技能详情）")
-    category: str | None = Field(None, description="技能大类")
+    category: str | None = Field(None, description="技能大类 code，见 /v1/kg/skill-categories")
+    category_name: str | None = Field(None, description="技能大类展示名（由 code 派生，不入库）")
     levels: list[dict[str, Any]] | None = Field(
         None, description="L1–L5 档位栅格，缺档的位置为空"
     )

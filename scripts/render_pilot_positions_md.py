@@ -1,8 +1,9 @@
 """生成「已打磨岗位清单」章节，追加/更新到 docs/热门岗位TOP100与方法论.md。
 
 给验收用：明确列出**在页面上搜哪些词能看到完整五段链路**，并逐岗位标出
-行业/专业/技能/晋升/课程各段的实际条数，以及课程资源的真实来源构成
-（真实 MOOC 课程 vs 检索落地页），避免"有课程"这个字眼掩盖资源质量差异。
+行业/专业/技能/晋升/课程各段的实际条数。课程只计**点开当场能学**的
+（免登录、免报名、无开课周期），避免"有课程"这个字眼掩盖资源质量差异 ——
+这里连续掩盖过两次：先是课标目录冒充课程，后是 MOOC 的报名墙冒充可学。
 
 用法::
 
@@ -47,21 +48,23 @@ adv AS (SELECT src_id oid, count(*)::int n FROM kg_edge
 sk AS (SELECT src_id oid, dst_id sid FROM kg_edge
        WHERE rel_type='requires' AND COALESCE(status,'published')='published'),
 skn AS (SELECT oid, count(*)::int n FROM sk GROUP BY 1),
--- 课程按性质分：真实可学资源（慕课/学堂在线/官方文档）vs 其它（检索入口、课标目录）
+-- 课程按性质分：点开当场能学 vs 其它（需报名、检索入口、课标目录）。
+-- ⚠ 必须带 c.status 过滤：下架的资源若照样计数，清单会报出页面上根本看不到的课
+--   （2026-08-18 下架 MOOC 与检索入口时踩到，清单显示 6 门、页面显示 0 门）。
 crs AS (
   SELECT sk.oid,
          count(*) FILTER (WHERE c.source_system = ANY(%(real_src)s))::int  AS real_n,
-         count(*) FILTER (WHERE c.source_system <> ALL(%(real_src)s))::int AS landing_n
+         count(*) FILTER (WHERE c.source_system <> ALL(%(real_src)s))::int AS other_n
   FROM sk
   JOIN kg_edge te ON te.src_id = sk.sid AND te.rel_type='taught_by'
                  AND COALESCE(te.status,'published')='published'
-  JOIN kg_node c  ON c.id = te.dst_id
+  JOIN kg_node c  ON c.id = te.dst_id AND COALESCE(c.status,'published')='published'
   GROUP BY 1
 )
 SELECT o.name, o.l2, o.family, o.lv,
        COALESCE(ind.n,0) ind_n, COALESCE(maj.n,0) maj_n,
        COALESCE(skn.n,0) sk_n, COALESCE(adv.n,0) adv_n,
-       COALESCE(crs.real_n,0) crs_real, COALESCE(crs.landing_n,0) crs_landing
+       COALESCE(crs.real_n,0) crs_real, COALESCE(crs.other_n,0) crs_other
 FROM occ o
 LEFT JOIN ind ON ind.oid=o.id
 LEFT JOIN maj ON maj.oid=o.id
@@ -78,7 +81,9 @@ def build(l1: str = "技术") -> str:
         rows = cur.fetchall()
 
     tot = len(rows)
-    full = sum(1 for r in rows if r["ind_n"] and r["maj_n"] and r["sk_n"] and r["crs_real"] + r["crs_landing"])
+    # 「五段齐全」的课程段只认可直接学的资源。曾把检索入口也算进来，
+    # 于是 109/117 齐全，实际能学的只有 65 —— 数字好看但验收时对不上。
+    full = sum(1 for r in rows if r["ind_n"] and r["maj_n"] and r["sk_n"] and r["crs_real"])
     real_course = sum(1 for r in rows if r["crs_real"])
     with_adv = sum(1 for r in rows if r["adv_n"])
 
@@ -90,25 +95,27 @@ def build(l1: str = "技术") -> str:
         f"下面 {tot} 个岗位（BOSS 一级门类「{l1}」）已完成**五段链路**打磨。",
         "**验收方式**：打开 `/student` 或 `/capability`，直接搜「岗位」列的词。",
         "",
-        f"- 五段齐全（行业+专业+技能+课程）：**{full}/{tot}**",
-        f"- 有真实可学资源（慕课 / 学堂在线 / 官方文档）：**{real_course}/{tot}**",
+        f"- 五段齐全（行业+专业+技能+可学课程）：**{full}/{tot}**",
+        f"- 有可直接学的资源：**{real_course}/{tot}**",
         f"- 有晋升链：**{with_adv}/{tot}**（跨族路径，平行技术方向不算晋升）",
         "",
         "列含义：**行业** `belongs_to` ｜ **专业** `prepares_for` ｜ **技能** `requires`（权重 Σ=1）",
-        "｜ **晋升** `advances_to` ｜ **课程** `taught_by`，其中「真课」= 可直接学习的资源（中国大学MOOC / 学堂在线课程，带选课人数；技术栈官方文档），",
-        "「检索」= 慕课检索入口（课程库无覆盖时的兜底，**不等于真实课程**）。",
+        "｜ **晋升** `advances_to` ｜ **可直学** `taught_by` 指向**免登录、免报名、无开课周期**的资源。",
         "",
-        "| 岗位（搜这个） | 方向 | 职级 | 岗位族 | 行业 | 专业 | 技能 | 晋升 | 真课 | 检索 |",
-        "|---|---|:--:|---|:--:|:--:|:--:|:--:|:--:|:--:|",
+        "> 2026-08-18 收紧了课程口径：中国大学MOOC / 学堂在线要登录报名、按学期开课，",
+        "> 往期课程点进去只剩介绍页；慕课检索入口点开是搜索结果页。两类共 1487 个节点已下架，",
+        "> 所以本表「可直学」列的数字比上一版小很多 —— 少的那些本来就学不了。",
+        "",
+        "| 岗位（搜这个） | 方向 | 职级 | 岗位族 | 行业 | 专业 | 技能 | 晋升 | 可直学 |",
+        "|---|---|:--:|---|:--:|:--:|:--:|:--:|:--:|",
     ]
     for r in rows:
         lv = f"L{r['lv']}" if r["lv"] else "—"
         lines.append(
-            "| {name} | {l2} | {lv} | {fam} | {i} | {m} | {s} | {a} | {cr} | {cl} |".format(
+            "| {name} | {l2} | {lv} | {fam} | {i} | {m} | {s} | {a} | {cr} |".format(
                 name=r["name"], l2=r["l2"] or "—", lv=lv, fam=r["family"] or "—",
                 i=r["ind_n"] or "—", m=r["maj_n"] or "—", s=r["sk_n"] or "—",
-                a=r["adv_n"] or "—",
-                cr=r["crs_real"] or "—", cl=r["crs_landing"] or "—",
+                a=r["adv_n"] or "—", cr=r["crs_real"] or "—",
             )
         )
     lines += ["", MARK_END, ""]

@@ -445,6 +445,14 @@ class SkillBundleBody(BaseModel):
         default_factory=list,
         description="兼容：无权重时的岗位 id 列表",
     )
+    category: str | None = Field(
+        None,
+        description=(
+            "技能大类 **code**（TECH / OPERATE …），候选见 `GET /v1/kg/skill-categories`。"
+            "也接受中文名或别名，服务端会归一；认不出的落兜底 `UNSORTED`（待归类），"
+            "不会硬塞进某一类。留空同样落兜底"
+        ),
+    )
     description: str | None = Field(None, description="描述")
     source_url: str | None = Field(None, description="来源链接")
     confidence: str | None = Field("manual_seed", description="置信度")

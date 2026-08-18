@@ -49,7 +49,11 @@ _DEFAULT_DURATION = 45
 # 若产品要「首次全 false，仅换代结转」，把这里改 False 即可，其余逻辑不动。
 CARRY_OVER_COMPLETED_ON_FIRST_IMPORT = True
 
-UNCATEGORIZED = "未分类"
+# 分类 code 的兜底值。展示名从字典表取（category_name_of），别在这里写中文 ——
+# 这里曾是 "未分类" 字面量，而 skill.category 存的是 code，
+# 学习计划的阶段名就会显示成 "TECH"、"OPERATE" 给学员看。
+from backend.kg.pg_store.skill_taxonomy import FALLBACK_CODE as UNCATEGORIZED
+from backend.kg.pg_store.skill_taxonomy import name_of as category_name_of
 
 
 def external_path_id_for(region: str, session_id: int) -> str:
@@ -270,7 +274,8 @@ def build_payload(
     phase_models = [
         Phase(
             external_phase_id=f"stage-{i}",
-            phase_name=(cat or UNCATEGORIZED)[:256],
+            # 阶段名给学员看，用中文展示名而不是分类 code
+            phase_name=category_name_of(cat)[:256],
             phase_weight=w,
             tasks=tasks,
         )

@@ -16,6 +16,7 @@ from backend.kg.pg_store.skill_aggregate import (
     get_skill_bundle,
     skill_key_from_node,
 )
+from backend.kg.pg_store.skill_taxonomy import to_code
 from backend.kg.pg_store.write import create_edge, create_node, patch_node
 
 from backend.kg.pg_store.skill_level_meta import (
@@ -202,6 +203,11 @@ def build_level_node_body(
     if ld:
         attrs["level_descriptions"] = ld
 
+    # 技能大类落 code。列与 attrs 都写：列供读路径与索引用，
+    # attrs 供采集库/灌库链路用（SQLite 的 nodes 表没有 category 列）。
+    cat = to_code(base.get("category"))
+    attrs["category"] = cat
+
     return {
         "id": nid,
         "type": "skill_level",
@@ -209,6 +215,7 @@ def build_level_node_body(
         "name": name,
         "name_zh": name,
         "description": desc,
+        "category": cat,
         "attrs": attrs,
         "source_system": base.get("source_system") or "MANUAL",
         "source_url": base.get("source_url") or "manual://admin-skill-bundle",
@@ -284,6 +291,7 @@ def apply_skill_bundle_create(
         "source_url": payload.get("source_url") or "manual://admin-skill-bundle",
         "confidence": payload.get("confidence") or "manual_seed",
         "attrs": payload.get("attrs") if isinstance(payload.get("attrs"), dict) else {},
+        "category": payload.get("category"),
         "_all_level_descriptions": all_ld,
         "node_ids": payload.get("node_ids"),
     }
@@ -441,6 +449,10 @@ def prepare_submit_payload(body: dict[str, Any]) -> dict[str, Any]:
         "levels": levels,
         "occupation_links": occ_links,
         "occupation_ids": [x["occupation_id"] for x in occ_links],
+        # 分类一律归一成 code 再进队列。管理台传 code、脚本可能传中文名、
+        # 外部调用可能什么都不传 —— 三条路都收敛到同一套 code，认不出的落兜底，
+        # 不猜也不硬塞（`to_code` 是唯一的映射处）。
+        "category": to_code(body.get("category")),
         "source_system": body.get("source_system") or "MANUAL",
         "source_url": body.get("source_url"),
         "confidence": body.get("confidence") or "manual_seed",
