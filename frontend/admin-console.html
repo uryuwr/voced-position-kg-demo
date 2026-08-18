@@ -465,9 +465,12 @@
       const progs = d.progressions || [];
       const progHtml = progs.length
         ? `<div class="cap-root"><b>晋升链</b> <span class="muted">（${progs.length} 条 · 由岗位层级派生）</span>
-             <div style="margin-top:6px">${progs.map((p) =>
-               `<div class="muted">L${p.from_level} ${esc(p.from_name)} → L${p.to_level} ${esc(p.to_name)}</div>`
-             ).join("")}</div>
+             <div style="margin-top:6px">${progs.map((p) => {
+               // 用服务端派生的 level_code；自己拼 'L'+level 在 level 为空时会出 "Lundefined"
+               const tag = (c, n) => (c ? `${c}${n ? "·" + n : ""} ` : "");
+               return `<div class="muted">${tag(p.from_level_code, p.from_level_name)}${esc(p.from_name)}`
+                 + ` → ${tag(p.to_level_code, p.to_level_name)}${esc(p.to_name)}</div>`;
+             }).join("")}</div>
            </div>`
         : `<div class="cap-root"><b>晋升链</b>
              <div class="muted">暂无。当前岗位来自「职业分类大典」，该数据源不含职级维度，

@@ -911,6 +911,17 @@ class ProgressionLink(BaseModel):
     to: str = Field(..., description="高阶岗位 id")
     from_name: str | None = Field(None, description="低阶岗位名")
     to_name: str | None = Field(None, description="高阶岗位名")
+    # 这四个字段以前漏在模型外：query 层产出了，FastAPI 按响应模型序列化时直接丢掉，
+    # 前端拿到 undefined 后拼成 "Lundefined 全栈工程师"。加字段是修复的一半，
+    # 另一半是 query 改读 attrs.level（见 occupation_level_meta 的双写说明）。
+    from_level: int | None = Field(None, ge=1, le=5, description="低阶岗位职级 1–5，来自 attrs.level")
+    to_level: int | None = Field(None, ge=1, le=5, description="高阶岗位职级 1–5，来自 attrs.level")
+    from_level_code: str | None = Field(
+        None, description="低阶职级码（L1–L5），由 level 派生**不入库**；前端直接用，不要自己拼 'L'+level"
+    )
+    to_level_code: str | None = Field(None, description="高阶职级码（L1–L5），同上")
+    from_level_name: str | None = Field(None, description="低阶职级名（入门/专员/资深/经理/总监）")
+    to_level_name: str | None = Field(None, description="高阶职级名，同上")
     rel_type: str = Field("advances_to", description="固定 advances_to")
     confidence: str | None = Field(None, description="置信度")
     evidence: str | None = Field(None, description="建边依据")

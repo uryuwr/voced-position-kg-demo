@@ -100,9 +100,12 @@
       const progs = d.progressions || [];
       h += '<div class="card"><b>晋升链</b> ';
       if (progs.length) {
+        // 用服务端派生的 level_code，不要自己拼 'L'+level：level 为空时会显示 "Lundefined"
+        var lvTag = function(code, name){ return code ? (code + (name ? '·' + name : '') + ' ') : ''; };
         h += '<span class="muted">（' + progs.length + ' 条 · 由岗位层级派生）</span><div style="margin-top:6px">'
-           + progs.map(function(p){ return '<div class="prog">L' + p.from_level + ' ' + esc(p.from_name)
-               + ' → L' + p.to_level + ' ' + esc(p.to_name) + '</div>'; }).join("") + '</div>';
+           + progs.map(function(p){ return '<div class="prog">'
+               + lvTag(p.from_level_code, p.from_level_name) + esc(p.from_name)
+               + ' → ' + lvTag(p.to_level_code, p.to_level_name) + esc(p.to_name) + '</div>'; }).join("") + '</div>';
       } else {
         h += '<div class="muted">暂无。当前岗位来自「职业分类大典」，该数据源不含职级维度，待企业职级表 / 招聘级别数据接入后自动生效。</div>';
       }

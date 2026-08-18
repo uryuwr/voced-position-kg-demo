@@ -15,12 +15,15 @@ from backend.kg.pg_store.client import connect, use_conn
 from backend.kg.pg_store.config import (
     ARCHIVED_STATUS,
     DEFAULT_REGION,
+    attrs_level_int,
     edge_not_archived,
     edge_published,
     node_not_archived,
     node_published,
 )
 from backend.kg.pg_store.migrate import stats as pg_stats
+from backend.kg.pg_store.occupation_level_meta import level_code as occ_level_code
+from backend.kg.pg_store.occupation_level_meta import level_name as occ_level_name
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
 _LEVEL_SHORT = {
@@ -1767,18 +1770,24 @@ def capability_by_major(
             for r in conn.execute(
                 """
                 SELECT e.src_id, e.dst_id, e.confidence, e.evidence,
-                       s.name AS from_name, s.level AS from_level,
-                       d.name AS to_name,   d.level AS to_level
+                       s.name AS from_name,
+                       COALESCE(s.level, {lvl_s}) AS from_level,
+                       d.name AS to_name,
+                       COALESCE(d.level, {lvl_d}) AS to_level
                 FROM kg_edge e
                 JOIN kg_node s ON s.id = e.src_id
                 JOIN kg_node d ON d.id = e.dst_id
                 WHERE e.rel_type = 'advances_to'
                   AND COALESCE(e.status,'published') = 'published'
                   AND (e.src_id = ANY(%s) OR e.dst_id = ANY(%s))
-                ORDER BY s.level NULLS LAST, s.name
-                """,
+                ORDER BY COALESCE(s.level, {lvl_s}) NULLS LAST, s.name
+                """.format(lvl_s=attrs_level_int("s"), lvl_d=attrs_level_int("d")),
                 (occ_ids, occ_ids),
             ).fetchall():
+                # level 只认 attrs.level（唯一真源）+ 兼容历史 level 列；
+                # code/name 一律派生，**不入库**（见 occupation_level_meta 的说明）。
+                # 少了这两个派生字段，前端只能自己拼 'L'+level，level 为空时
+                # 就显示成 "Lundefined"，这个 bug 真出现过。
                 progressions.append(
                     {
                         "from": r["src_id"],
@@ -1787,6 +1796,10 @@ def capability_by_major(
                         "to_name": r["to_name"],
                         "from_level": r["from_level"],
                         "to_level": r["to_level"],
+                        "from_level_code": occ_level_code(r["from_level"]),
+                        "to_level_code": occ_level_code(r["to_level"]),
+                        "from_level_name": occ_level_name(r["from_level"]),
+                        "to_level_name": occ_level_name(r["to_level"]),
                         "rel_type": "advances_to",
                         "confidence": r["confidence"],
                         "evidence": r["evidence"],
