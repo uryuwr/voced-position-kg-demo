@@ -1,0 +1,13 @@
+{
+  "stage": "apply",
+  "l1": "生产制造",
+  "dry_run": false,
+  "occupations": 100,
+  "requires_edges": 685,
+  "new_skill_nodes": 2580,
+  "new_logical_skills": 516,
+  "reused_existing_skill_levels": 169,
+  "nodes_upserted": 2580,
+  "edges_upserted": 685,
+  "occupations_patched": 100
+}

@@ -1,0 +1,9 @@
+{
+  "stage": "collect",
+  "l1": "人力/财务/行政",
+  "occupations": 41,
+  "collected": 41,
+  "llm_failed": [],
+  "distinct_skill_names": 241,
+  "raw_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_raw_人力_财务_行政.json"
+}

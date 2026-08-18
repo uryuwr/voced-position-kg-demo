@@ -1,0 +1,25 @@
+{
+  "stage": "fetch",
+  "l1": "产品",
+  "skills": 78,
+  "with_course": 113,
+  "no_course": -35,
+  "min_learners": 3000,
+  "failed": [],
+  "empty_sample": [
+    "业务流程梳理",
+    "产品原型设计",
+    "产品团队搭建",
+    "产品战略规划",
+    "产品数据分析",
+    "产品数据复盘",
+    "产品生命周期管理",
+    "供应链协同",
+    "剧情关卡设计",
+    "化妆品品类规划",
+    "原型工具使用",
+    "可用性测试"
+  ],
+  "out": "D:\\workspace\\职业教育知识图谱\\data\\staging\\mooc_courses.json",
+  "sample": {}
+}

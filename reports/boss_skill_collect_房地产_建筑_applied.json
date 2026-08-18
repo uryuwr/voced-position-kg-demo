@@ -1,0 +1,9 @@
+{
+  "stage": "collect",
+  "l1": "房地产/建筑",
+  "occupations": 39,
+  "collected": 39,
+  "llm_failed": [],
+  "distinct_skill_names": 235,
+  "raw_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_raw_房地产_建筑.json"
+}

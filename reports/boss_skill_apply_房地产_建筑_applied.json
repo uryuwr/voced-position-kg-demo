@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "房地产/建筑",
+  "dry_run": false,
+  "occupations": 39,
+  "requires_edges": 266,
+  "new_skill_nodes": 940,
+  "new_logical_skills": 188,
+  "reused_existing_skill_levels": 78,
+  "nodes_upserted": 940,
+  "stale_requires_removed": 0,
+  "edges_upserted": 266,
+  "occupations_patched": 39
+}

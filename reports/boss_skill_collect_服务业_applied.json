@@ -1,0 +1,9 @@
+{
+  "stage": "collect",
+  "l1": "服务业",
+  "occupations": 79,
+  "collected": 79,
+  "llm_failed": [],
+  "distinct_skill_names": 470,
+  "raw_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_raw_服务业.json"
+}

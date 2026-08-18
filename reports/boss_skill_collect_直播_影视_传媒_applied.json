@@ -1,0 +1,9 @@
+{
+  "stage": "collect",
+  "l1": "直播/影视/传媒",
+  "occupations": 34,
+  "collected": 34,
+  "llm_failed": [],
+  "distinct_skill_names": 206,
+  "raw_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_raw_直播_影视_传媒.json"
+}

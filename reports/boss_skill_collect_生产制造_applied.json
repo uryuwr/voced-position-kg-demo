@@ -1,0 +1,9 @@
+{
+  "stage": "collect",
+  "l1": "生产制造",
+  "occupations": 100,
+  "collected": 100,
+  "llm_failed": [],
+  "distinct_skill_names": 595,
+  "raw_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_raw_生产制造.json"
+}

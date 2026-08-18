@@ -92,3 +92,11 @@ docs/.lark_api_doc
 
 # Claude Code 本地个人配置（飞书通知 hook 等），不进仓库
 .claude/settings.local.json
+
+# 后台跑批 / 起服务的 stdout（.classify.log、.server_8088.log、.full_chain2.log 等）
+/.*.log
+/.logs/
+
+# SQLite 备份：现有 data/graph/*.sqlite-* 匹配不到 `.sqlite.bak-split` 这种命名
+# （要求 .sqlite 后紧跟连字符），而它有 163M，误提交一次就永远留在历史里
+data/graph/*.sqlite.bak*

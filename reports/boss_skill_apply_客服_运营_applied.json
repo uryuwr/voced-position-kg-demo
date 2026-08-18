@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "客服/运营",
+  "dry_run": false,
+  "occupations": 39,
+  "requires_edges": 267,
+  "new_skill_nodes": 785,
+  "new_logical_skills": 157,
+  "reused_existing_skill_levels": 110,
+  "nodes_upserted": 785,
+  "stale_requires_removed": 0,
+  "edges_upserted": 267,
+  "occupations_patched": 39
+}

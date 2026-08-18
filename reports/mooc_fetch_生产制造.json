@@ -1,0 +1,25 @@
+{
+  "stage": "fetch",
+  "l1": "生产制造",
+  "skills": 531,
+  "with_course": 165,
+  "no_course": 366,
+  "min_learners": 3000,
+  "failed": [],
+  "empty_sample": [
+    "2D工程图绘制",
+    "3D结构建模",
+    "8D问题解决法",
+    "APQP质量策划",
+    "AutoSAR配置",
+    "BOM物料管理",
+    "CAD/CAE模流分析",
+    "CAN总线设计",
+    "CFD流体仿真",
+    "CNC机床操作",
+    "DFMEA分析",
+    "EHS体系搭建"
+  ],
+  "out": "D:\\workspace\\职业教育知识图谱\\data\\staging\\mooc_courses.json",
+  "sample": {}
+}
