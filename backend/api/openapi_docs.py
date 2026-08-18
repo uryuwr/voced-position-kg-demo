@@ -133,12 +133,13 @@ OPENAPI_TAGS = [
         "name": "前台 · 学习路径",
         "description": (
             "**原型页：岗位自适应学习路径 (P4)**　·　可见状态：仅 published\n\n"
+            "阶段任务树由本服务按诊断结果编排，**推送到学习空间服务承载**——"
+            "本服务不保存路径副本，学习进度的真源在对方。因此这里没有"
+            "「读路径」「完成任务」这类接口，它们在学习空间。\n\n"
             "| 原型功能 | 接口 / 字段 |\n| --- | --- |\n"
-            "| 生成自适应路径（避开已精通、优先攻关缺口） | `POST /learn/path/generate` |\n"
-            "| 阶段任务树（第一/二/三阶段 + 阶段权重） | `GET /learn/path` → `stages[]` |\n"
-            "| 任务项：关联技能 / 建议耗时 / 完成态 | `stages[].steps[]` |\n"
-            "| 路径总体进度（完成权重/总权重） | `progress.weighted_pct` |\n"
-            "| 完成任务 | `POST /learn/steps/{id}/complete` |\n"
+            "| 生成自适应路径（短板优先、按技能大类分阶段） | `POST /goal/learning-plan` |\n"
+            "| 阶段数 / 任务数回执 | → `phases_count` · `tasks_count` |\n"
+            "| 已生成过哪些计划 | `GET /goal/learning-plans` |\n"
             "| 学习资源 | `GET /learn/resources` |"
         ),
     },
@@ -275,7 +276,7 @@ API_GUIDE_HTML = """<!DOCTYPE html>
     <tr><th>原型模块</th><th>接口前缀 / 示例</th></tr>
     <tr><td>探索</td><td><code>/v1/student/professions</code> · <code>/positions</code> · <code>/goal</code> · <code>/industries</code></td></tr>
     <tr><td>AI 诊断</td><td><code>POST /v1/student/diagnosis/resume</code> · chat sessions · <code>GET .../report</code></td></tr>
-    <tr><td>学习中心</td><td><code>/v1/student/learn/path</code> · generate · steps complete · resources</td></tr>
+    <tr><td>学习中心</td><td><code>/v1/student/goal/learning-plan</code> · learning-plans · <code>/learn/resources</code></td></tr>
     <tr><td>我的</td><td><code>GET /v1/student/me</code> · badges · skills</td></tr>
   </table>
 

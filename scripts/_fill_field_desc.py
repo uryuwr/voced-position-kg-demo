@@ -77,7 +77,7 @@ DESC = {
     "kg_nodes": "图节点总数",
     "kg_edges": "图边总数",
     "diagnosis_sessions": "诊断会话数",
-    "learning_paths": "学习路径数",
+    "learning_plans_pushed": "已推送的学习计划数",
     "pending_proposals": "待审提案数",
     "major": "关联专业数",
     "occupation": "关联岗位数",

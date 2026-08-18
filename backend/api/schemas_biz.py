@@ -293,92 +293,6 @@ class DiagnosisReportOut(BaseModel):
     summary: str | None = Field(None, description="一句话结论")
 
 
-class PathGenerateBody(BaseModel):
-    occupation_id: str | None = Field(
-        None, description="岗位 id；不传则用当前 goal"
-    )
-
-
-class LearningStepOut(BaseModel):
-    id: int = Field(..., description="节点 id")
-    path_id: int = Field(..., description="学习路径 id")
-    seq: int = Field(..., description="序号")
-    kind: str = Field(..., description="任务类型")
-    skill_id: str | None = Field(None, description="技能 id")
-    skill_name: str | None = Field(None, description="技能名")
-    resource_id: str | None = Field(None, description="资源 id")
-    resource_title: str | None = Field(None, description="资源标题")
-    title: str = Field(..., description="标题")
-    status: str = Field(..., description="状态")
-    completed_at: str | None = Field(None, description="完成时间 ISO8601")
-
-
-class LearningPathHead(BaseModel):
-    """学习路径主体（对应 biz_learning_path 一行）。"""
-
-    id: int = Field(..., description="路径 id")
-    user_id: str = Field(..., description="UC 用户 id")
-    user_name: str | None = Field(None, description="用户名")
-    occupation_id: str | None = Field(None, description="目标岗位 id")
-    occupation_name: str | None = Field(None, description="目标岗位名")
-    status: str = Field(..., description="active=进行中；archived=已归档")
-    source: str = Field(..., description="来源：diagnosis=按诊断生成；manual=手工建")
-    created_at: str | None = Field(None, description="创建时间 ISO8601")
-
-
-class LearningTaskOut(LearningStepOut):
-    """一条学习任务：在 LearningStepOut 之上补齐分组与配速字段。"""
-
-    stage: int | None = Field(None, description="所属阶段序号 1..n")
-    stage_title: str | None = Field(None, description="阶段标题")
-    category: str | None = Field(None, description="技能大类，阶段按它分组")
-    weight: float | None = Field(None, description="该任务对应技能的权重")
-    duration_min: int | None = Field(None, description="建议耗时（分钟）")
-    required_level: int | None = Field(None, ge=1, le=5, description="目标档位 1–5")
-
-
-class LearningStageOut(BaseModel):
-    """一个学习阶段（原型「第一/二/三阶段」）。
-
-    按技能大类分组，阶段顺序沿用国标职业功能的推进顺序（先作业准备、后维护检修）。
-    """
-
-    stage: int = Field(..., description="阶段序号 1..n")
-    title: str = Field(..., description="阶段标题")
-    steps: list[LearningTaskOut] = Field(default_factory=list, description="该阶段的任务")
-    stage_weight_pct: int = Field(0, description="该阶段占总权重的百分比")
-    completed: int = Field(0, ge=0, description="已完成任务数")
-    total: int = Field(0, ge=0, description="任务总数")
-    duration_min: int = Field(0, description="该阶段建议总耗时（分钟）")
-
-
-class LearningProgressOut(BaseModel):
-    """学习进度。
-
-    条数进度与权重进度是两回事：补一门权重 0.3 的核心技能，条数上只是 1/20，
-    权重上却是 30%。原型顶部那个百分比用的是 `weighted_pct`。
-    """
-
-    completed: int = Field(0, ge=0, description="已完成任务数")
-    total: int = Field(0, ge=0, description="任务总数")
-    ratio: float = Field(0.0, description="按任务条数的完成率 0–1")
-    weighted_pct: int = Field(
-        0, description="**按权重计的总进度百分比**，原型顶部展示的就是它"
-    )
-    duration_min_total: int = Field(0, description="建议总耗时（分钟）")
-
-
-class LearningPathOut(BaseModel):
-    """自适应学习路径：主体 + 扁平任务 + 阶段树 + 进度。"""
-
-    path: LearningPathHead = Field(..., description="路径主体")
-    steps: list[LearningTaskOut] = Field(..., description="全部任务（扁平，按 seq 排）")
-    stages: list[LearningStageOut] | None = Field(
-        None, description="阶段任务树；未分组时为 null"
-    )
-    progress: LearningProgressOut | None = Field(None, description="进度")
-
-
 class ResourceItem(BaseModel):
     id: str = Field(..., description="节点 id")
     title: str | None = Field(None, description="标题")
@@ -442,7 +356,6 @@ class MeOut(BaseModel):
     points: int = Field(0, description="成长值/积分")
     badges: list[UserBadgeOut] = Field(default_factory=list, description="已解锁成就")
     skills: list[UserSkillOut] = Field(default_factory=list, description="技能画像")
-    active_path_id: int | None = Field(None, description="进行中的学习路径 id")
 
 
 class BadgeDefOut(BaseModel):
@@ -459,5 +372,7 @@ class AdminDashboardOut(BaseModel):
     nodes_by_type: dict[str, int] = Field(default_factory=dict, description="各类型节点数，键为节点类型")
     users_with_goal: int = Field(0, description="已锁定学习目标的用户数")
     diagnosis_sessions: int = Field(0, description="诊断会话数")
-    learning_paths: int = Field(0, description="学习路径数")
+    learning_plans_pushed: int = Field(
+        0, description="已成功推送到学习空间的学习计划数（路径本体不在本服务）"
+    )
     pending_proposals: int = Field(0, description="待审提案数")

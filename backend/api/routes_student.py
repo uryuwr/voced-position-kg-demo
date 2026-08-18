@@ -633,6 +633,9 @@ def student_create_learning_plan(
         external_path_id=path_id, payload_sha256=digest, push_status="ok",
         superseded_plan_id=res.get("superseded_plan_id"),
     )
+    # 「路径启程」成就：原来挂在本地 generate_path 上，路径下线后触发点移到这里。
+    # 只在推成功后给——推失败还发成就，学员点进去是空的。
+    biz.unlock_achievement(user.user_id, user.user_name, "first_path")
     return {
         "plan_id": res["plan_id"],
         "created": res["created"],

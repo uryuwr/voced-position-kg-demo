@@ -48,12 +48,16 @@ def main():
                 },
             )
             print("resume diag", st, (r.get("report") or {}).get("match_score") if isinstance(r, dict) else r)
-            st, p = req("POST", "/v1/student/learn/path/generate", {"occupation_id": oid})
-            print("path", st, (p.get("progress") if isinstance(p, dict) else p))
-            if isinstance(p, dict) and p.get("steps"):
-                sid = p["steps"][0]["id"]
-                st, p2 = req("POST", f"/v1/student/learn/steps/{sid}/complete", {})
-                print("complete step", st, p2.get("progress") if isinstance(p2, dict) else p2)
+            # 学习计划：需要 session_id，从上面这次简历诊断拿
+            sess_id = (r.get("session_id") if isinstance(r, dict) else None)
+            if sess_id:
+                st, p = req(
+                    "POST", "/v1/student/goal/learning-plan", {"session_id": sess_id}
+                )
+                # 502 = 学习空间未配置/不可用，冒烟环境常态，不当失败
+                print("learning-plan", st,
+                      {k: p.get(k) for k in ("plan_id", "created", "phases_count", "tasks_count")}
+                      if st == 200 and isinstance(p, dict) else p)
     st, me = req("GET", "/v1/student/me")
     print("me", st, me.get("points") if isinstance(me, dict) else me, "badges", len(me.get("badges") or []) if isinstance(me, dict) else None)
     st, dash = req("GET", "/v1/admin/dashboard/summary")

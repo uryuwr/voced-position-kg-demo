@@ -136,32 +136,11 @@ CREATE TABLE IF NOT EXISTS biz_chat_message (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 学习路径
-CREATE TABLE IF NOT EXISTS biz_learning_path (
-  id BIGSERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  user_name TEXT NOT NULL DEFAULT '',
-  occupation_id TEXT,
-  occupation_name TEXT,
-  status TEXT NOT NULL DEFAULT 'active',
-  source TEXT NOT NULL DEFAULT 'diagnosis',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_biz_path_user ON biz_learning_path(user_id);
-
-CREATE TABLE IF NOT EXISTS biz_learning_step (
-  id BIGSERIAL PRIMARY KEY,
-  path_id BIGINT NOT NULL REFERENCES biz_learning_path(id) ON DELETE CASCADE,
-  seq INT NOT NULL,
-  kind TEXT NOT NULL DEFAULT 'skill',
-  skill_id TEXT,
-  skill_name TEXT,
-  resource_id TEXT,
-  resource_title TEXT,
-  title TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
-  completed_at TIMESTAMPTZ
-);
+-- 学习路径两张表（biz_learning_path / biz_learning_step）已于 2026-08-18 下线：
+-- 路径改由 e-ai-spaces 承载，本服务不再存副本（见 docs/实现方案-接入真实学习计划服务.md）。
+-- **DROP 不写在这里**：这份 DDL 每次启动都跑，且预生产 PG 与 bcs-ai-agent 共用，
+-- 把 DROP TABLE 放进幂等启动路径风险过高。代码引用已清空，两张表现在是无人读写的
+-- 孤表，观察一个周期后人工执行：DROP TABLE biz_learning_step, biz_learning_path;
 
 -- 成就
 CREATE TABLE IF NOT EXISTS biz_achievement_def (
@@ -211,20 +190,28 @@ CREATE TABLE IF NOT EXISTS biz_event (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 学习路径「阶段任务树」扩展（前台原型 4.8/4.9/4.10）
+-- 学习计划推送记录扩展。
 -- CREATE TABLE IF NOT EXISTS 不会给既有表补列，故显式 ALTER。
-ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS stage INT;              -- 阶段序号 1..N
-ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS stage_title TEXT;       -- 阶段名（取技能大类）
-ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS category TEXT;          -- 技能大类
-ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS weight DOUBLE PRECISION;-- 任务权重（国标技能权重）
-ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS duration_min INT;       -- 建议耗时（分钟，按目标等级估算）
-ALTER TABLE biz_learning_step ADD COLUMN IF NOT EXISTS required_level INT;     -- 目标等级
+ALTER TABLE biz_user_learning_plan ADD COLUMN IF NOT EXISTS external_path_id TEXT;    -- 幂等键，见 learningplan/builder.py
+ALTER TABLE biz_user_learning_plan ADD COLUMN IF NOT EXISTS payload_sha256 TEXT;      -- 推送快照指纹，409 排查用
+ALTER TABLE biz_user_learning_plan ADD COLUMN IF NOT EXISTS push_status TEXT;         -- pending | ok | failed
+ALTER TABLE biz_user_learning_plan ADD COLUMN IF NOT EXISTS superseded_plan_id TEXT;  -- 对方归档的旧计划
+ALTER TABLE biz_user_learning_plan ADD COLUMN IF NOT EXISTS last_error TEXT;          -- 失败原因，支持重推
+ALTER TABLE biz_user_learning_plan ADD COLUMN IF NOT EXISTS pushed_at TIMESTAMPTZ;
+-- 幂等键唯一。推失败的记录 plan_id 为空串，靠这个索引仍能定位到同一条重推。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_biz_ulp_user_extpath
+  ON biz_user_learning_plan(user_id, external_path_id)
+  WHERE external_path_id IS NOT NULL;
 """
 
+# 这是 upsert 种子：删掉列表项**不会**清掉库里已有的定义行与用户已解锁记录。
+# `first_step` / `streak_3` 依赖「学员完成了某个步骤」这个事件，而进度真源已移到
+# e-ai-spaces，本服务收不到完成事件，两个成就再也不会被颁发。留着就是学员成就墙上
+# 永不点亮的孤儿条目，所以从种子里摘掉，并在下线两张表时一并人工清理：
+#   DELETE FROM biz_user_achievement WHERE achievement_code IN ('first_step','streak_3');
+#   DELETE FROM biz_achievement_def  WHERE code IN ('first_step','streak_3');
 ACHIEVEMENT_SEEDS = [
     ("first_goal", "锁定目标", "首次设定学习目标岗位", 20, "goal"),
     ("first_diag", "初诊完成", "完成一次能力诊断", 30, "diag"),
     ("first_path", "路径启程", "生成专属学习路径", 20, "learn"),
-    ("first_step", "学完一步", "完成学习路径中的一个步骤", 15, "learn"),
-    ("streak_3", "连续学习", "累计完成 3 个学习步骤", 40, "learn"),
 ]

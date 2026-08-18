@@ -191,11 +191,20 @@ if DB_POOL_MIN_SIZE > DB_POOL_MAX_SIZE:
 BTS_ENDPOINT = os.getenv("BTS_ENDPOINT", "")          # 取 token 的服务，如 https://ucbts.101.com
 BTS_ACCOUNT = os.getenv("BTS_ACCOUNT", "")            # 服务账号
 BTS_PASSWORD = os.getenv("BTS_PASSWORD", "")          # 服务账号密钥
-BTS_API_ENDPOINT = os.getenv("BTS_API_ENDPOINT", "")  # 被调用的外部接口基址
+# 学习计划服务（e-ai-spaces）基址。SDP 配置中心下发的键名是 E_AI_SPACE，
+# 而本服务历史上叫 BTS_API_ENDPOINT——两个名字指同一个东西，保持单一 base：
+# 显式配了 BTS_API_ENDPOINT 就用它，否则回落 E_AI_SPACE。
+#
+# 注意对接文档里的环境地址表在预生产**对不上**：文档写的
+# e-ai-spaces.beta.ndaeweb.com 回 404，SDP 配的 e-ai-frontend.beta.ndaeweb.com
+# 才是真的（两者同解析到一个网关，靠 Host 分流，ping 通不代表接口在）。以 SDP 为准。
+E_AI_SPACE = os.getenv("E_AI_SPACE", "").rstrip("/")
+BTS_API_ENDPOINT = (os.getenv("BTS_API_ENDPOINT", "") or E_AI_SPACE).rstrip("/")
 BTS_SDP_APP_ID = os.getenv("BTS_SDP_APP_ID", "") or os.getenv("SDP_APP_ID", "")
 BTS_REQUEST_TIMEOUT = int(os.getenv("BTS_REQUEST_TIMEOUT", "30"))
-# 外部学习计划服务的路径（相对 BTS_API_ENDPOINT）；留空则学习计划走本地 mock
-LEARNING_PLAN_PATH = os.getenv("LEARNING_PLAN_PATH", "")
+# 学习计划导入接口路径（相对 BTS_API_ENDPOINT）。留空即未配置，接口直接报 502——
+# 这里**没有本地兜底**：学习计划是业务主数据，不是 LLM 那种可降级的增强能力。
+LEARNING_PLAN_PATH = os.getenv("LEARNING_PLAN_PATH", "") or "/v1/internal/job-plans/import"
 # 用户画像服务（五维记忆），走 BTS 鉴权；留空则匹配度只用测评画像。
 # 键名只认下划线：连字符写法（openq-ai-manager）过不了 SDP 配置中心——它的扁平化
 # 只做 upper() 不转连字符，会下发成 OPENQ-AI-MANAGER，而 Linux 环境变量名大小写

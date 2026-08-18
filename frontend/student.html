@@ -120,7 +120,7 @@
       <div id="goalCard"><div class="empty">加载中…</div></div>
       <!-- 胜任力能力报告与技能缺口分析 -->
       <div id="compBox"></div>
-      <!-- 自适应学习计划：等后续提供的 API，当前为前端占位数据 -->
+      <!-- 自适应学习计划：服务端编排后推送到学习空间，本页只触发与回显 -->
       <div id="planBox"></div>
     </section>
   </main>
@@ -633,7 +633,7 @@
         }
         renderGoalCard(d);
         renderCompetency(d);
-        renderPlanMock(d);
+        renderPlan(d);
         // 顶部插一个返回列表的入口
         const back = document.createElement("div");
         back.className = "bar";
@@ -759,59 +759,56 @@
       $("btnReDiag").onclick = () => { location.href = "/assessment"; };
     }
 
-    /* 自适应学习计划：服务端 API 后续提供，这里先用测评短板拼占位数据，
-       只为把「短板 → 学习任务」的信息流走通，不落库、不调接口。 */
-    async function genLearningPlan(d) {
-      const rep = d.assessment || {};
+    /* 学习计划：服务端按诊断结果编排后推送到学习空间，本页只负责触发与回显。
+       原先这里有一份 renderPlanMock() —— 用测评短板在前端拼假的三阶段任务树。
+       服务端接通后必须删掉：两处各编一套阶段划分，学员看到的和实际推过去的对不上。 */
+    async function genLearningPlan(d, btn) {
+      const sid = (d.assessment || {}).session_id;
+      if (!sid) { toast("请先完成一次诊断"); return; }
+      const old = btn && btn.textContent;
+      if (btn) { btn.disabled = true; btn.textContent = "生成中…"; }
       try {
         const r = await api("/v1/student/goal/learning-plan", {
           method: "POST",
-          body: {
-            occupation_id: d.occupation.id,
-            session_id: rep.session_id || null,
-            gap_skills: (rep.gaps || []).slice(0, 8).map((x) => x.skill_key),
-          },
+          body: { session_id: sid },
         });
-        toast("已生成学习计划 " + (r.plan_id || "").slice(0, 8) + "…");
+        toast(r.created
+          ? `已生成学习计划：${r.phases_count} 个阶段 / ${r.tasks_count} 个任务`
+          : "该次诊断已生成过计划，为你打开原有的");
         loadPathDetail(d.occupation.id);
-      } catch (e) { toast("生成失败：" + (e.message || e)); }
+      } catch (e) {
+        // 降级没了，错误必须分类给文案：能重试的和要找人的不是一回事
+        const s = e.status || 0;
+        toast(
+          s === 400 ? "这次诊断没有可用结果，请重新诊断后再试"
+          : s === 404 ? "找不到该诊断记录"
+          : s === 409 ? "岗位数据在生成期间发生变化，请联系管理员核对"
+          : s === 502 ? "学习空间服务暂时不可用，请稍后重试"
+          : "生成失败：" + (e.message || e)
+        );
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = old; }
+      }
     }
 
-    function renderPlanMock(d) {
-      const rep = d.assessment || {};
-      const gaps = (rep.gaps || []).slice(0, 4);
-      const seed = gaps.length ? gaps : ((d.next_level || {}).unlock_skills || []).slice(0, 3)
-        .map((s) => ({ skill_key: s.skill_key, measured_level: 0, required_level: s.required_level }));
-      const stages = [
-        { t: "基础夯实", d: "补齐概念与规范，能在指导下完成常规任务", pct: 0 },
-        { t: "实战演练", d: "独立完成典型任务并处理常见异常", pct: 0 },
-        { t: "进阶攻坚", d: "优化方法、沉淀标准，具备指导他人的能力", pct: 0 },
-      ];
+    function renderPlan(d) {
+      const sid = (d.assessment || {}).session_id;
       const planId = d.learning_plan_id || "";
       $("planBox").innerHTML = `
         <div class="card">
           <div class="row"><b>🚀 自适应学习计划</b>
             ${planId ? `<span class="tag" style="color:#34d399;border-color:#10b981">已生成</span>` : ""}
-            <button class="act" id="btnGenPlan">基于短板生成学习计划</button>
-            <span class="tag" style="background:#3b2f0b;color:#f59e0b">前端占位数据</span>
-            <span class="muted">学习计划服务端接口待接入，当前按测评短板生成示意</span></div>
-          ${seed.length ? stages.map((g, i) => `
-            <div class="stage">
-              <div class="row"><b>第 ${i + 1} 阶段 · ${g.t}</b>
-                <span class="tag">${g.pct}%</span>
-                <span class="muted">${g.d}</span></div>
-              ${seed.map((s) => `
-                <div class="step">
-                  <span class="t">${esc(s.skill_key)} · ${g.t}任务</span>
-                  <span class="muted">目标 L${s.required_level || "?"}
-                    ${s.measured_level ? `（当前 L${s.measured_level}）` : ""} · 预计 45 分钟</span>
-                  <button class="ghost" disabled>待接入</button>
-                </div>`).join("")}
-            </div>`).join("")
-            : '<div class="empty">先完成一次 AI 测评，系统会依据短板生成学习计划</div>'}
+            <button class="act" id="btnGenPlan" ${sid ? "" : "disabled"}>
+              ${planId ? "重新生成" : "基于短板生成学习计划"}</button>
+            <span class="muted">${sid
+              ? "按诊断短板编排阶段任务，生成后在学习空间查看与推进"
+              : "先完成一次 AI 诊断，系统才能依据短板编排计划"}</span></div>
+          ${planId ? `<div class="step"><span class="t">计划 ID</span>
+              <span class="muted">${esc(planId)}</span></div>` : ""}
+          <div class="empty">阶段任务与学习进度在学习空间服务，本页不再重复展示</div>
         </div>`;
       const b = $("btnGenPlan");
-      if (b) b.onclick = () => genLearningPlan(d);
+      if (b) b.onclick = () => genLearningPlan(d, b);
     }
 
     /* ── 启动 ─────────────────────────────── */

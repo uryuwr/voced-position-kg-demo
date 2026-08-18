@@ -1,6 +1,6 @@
 # 职业教育知识图谱 API
 
-版本 0.6.3　·　75 个端点（另有 21 个内部接口未收录）
+版本 0.6.3　·　73 个端点（另有 21 个内部接口未收录）
 
 > 本文由 `scripts/openapi_to_md.py` 从 `/openapi.json` 生成，**不要手工编辑**。
 > 契约的唯一真源是代码里的 Pydantic 模型与路由注解；改代码后重新生成即可。
@@ -30,9 +30,9 @@
 
 ## 目录
 
-- 前台 · 岗位探索与详情（19）
+- 前台 · 岗位探索与详情（20）
 - 前台 · AI 诊断（11）
-- 前台 · 学习路径（4）
+- 前台 · 学习路径（1）
 - 前台 · 我的（3）
 - 管理台 · 运营看板（2）
 - 管理台 · 审核发布（5）
@@ -106,15 +106,17 @@
 
 ### `POST` /v1/student/goal/learning-plan
 
-**基于短板生成自适应学习计划（当前为 mock）**
+**基于诊断短板生成学习计划并推送到学习空间**
 
 对应报告页「基于短板一键生成个人自适应学习计划」。
 
-**学习计划由外部服务生成**，本接口只负责调用它并把返回的 `plan_id`（uuid 字符串）与「学员 × 岗位」绑定入库（`biz_user_learning_plan`），同时写进该次诊断报告的 `learning_plan_id`，两处都能查。
+本服务按诊断结果编排出**阶段任务树**（技能按短板优先排序、按技能大类分阶段、有课程边的挂上可学资源），推送给学习空间服务，返回它的 `plan_id`。
 
-**调用方式**：配置了 BTS（`BTS_ENDPOINT`/`BTS_ACCOUNT`/`BTS_PASSWORD`）与 `LEARNING_PLAN_PATH` 时，走 **BTS 服务间鉴权**请求外部学习计划服务，取其返回的 `plan_id`，`source=bts`；
+**计划内容与学习进度都不在本服务**：这里只保存一行关联记录，同时把 `plan_id` 写进该次诊断报告的 `learning_plan_id`，两处都能查到。
 
-未配置或外部服务报错时**降级**为本地生成 uuid、`source=mock`，并在 `upstream` 里带回原因——外部服务不可用不该挡住学员。
+**幂等**：一次诊断对应一条路径。同一个 `session_id` 重复调用不会产生新计划，返回 `created=false` 与原有 `plan_id`；重新测评会产生新会话，推送时自动带上换代关系，旧计划被归档并在 `superseded_plan_id` 里返回。
+
+**没有本地兜底**：学习空间不可用时返回 502，不会发一个假的 `plan_id`——假 id 会让学员点进去看到空白页。前端需要按错误码给文案，并允许稍后重试（记录已存为 `push_status=failed`，重试不会产生重复计划）。
 
 **请求体**：`LearningPlanBody`
 
@@ -226,6 +228,30 @@
 
 ---
 
+### `GET` /v1/student/positions/courses
+
+**岗位相关课程（按技能分组）**
+
+沿 occupation -requires-> skill_level -taught_by-> course 聚合课程资源。
+
+**与岗位详情接口相互独立**：详情接口不返回课程，本接口专供「岗位相关课程」卡片。
+
+`kind` 区分资源性质：`real` = 平台真实课程（带 `learner_count` 可判热度）；`landing` = 检索入口（课程库无覆盖时的兜底，点开是搜索页而非课程）。前端务必分开展示，否则「有 N 门课」会掩盖资源质量差异。
+
+**课标目录条目默认不返回**（`include_catalog=false`）：那批 MOE_CN 课程的链接全指向教育部「专业教学标准」大类列表页，与具体技能无关，对学员没有意义。`catalog_count` 仍会给出数量、`catalog_hidden` 标记是否被隐藏，便于观察数据缺口。要看课标体系（管理台/专业维度）传 `include_catalog=true`。
+
+**请求参数**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | query | string | 是 | 岗位节点 id |
+| `limit_per_skill` | query | integer |  | 每个技能最多返回几门课（≥1，≤20，默认 `5`） |
+| `include_catalog` | query | boolean |  | 是否返回课标目录条目。默认 false —— 它们点开是专业教学标准目录页，不是课程（默认 `False`） |
+
+**响应**：`PositionCoursesOut`
+
+---
+
 ### `GET` /v1/student/positions/match
 
 **岗位匹配度（岗位详情页用）**
@@ -238,6 +264,10 @@
 | 2 | `assessment` | 测评沉淀的实测技能画像（biz_user_skill）现算 | 否 |
 | 3 | `memory` | 五维记忆经图谱召回 + 模型定级推断 | **是**（约 5–10s） |
 | 4 | `none` | 无任何证据 | 否 |
+
+级联之前还有一道判定：该岗位**一项技能都没配要求档**时直接返回 `source=no_baseline`、`match_score=null` —— 没有基准就算不出达标率，此时显示的是数据缺口而不是学员水平。
+
+级联之后还有一道**服务端降级**：岗位缺要求档的技能权重占比**超过 30%**（阈值是服务端常量 `PARTIAL_BASELINE_PCT`，不要在前端各定一份）时，`source` 与 `score_status` 都改成 `partial_baseline`，`match_score` 仍照给 —— 已配置的那部分是真实依据，但只依据 18% 的权重算出的 50% 会被学员读成「我匹配一半」，必须由服务端明确标成「仅供参考」。证据强度这时看 `estimated` / `diagnosis` / `profile` 三个字段。
 
 做过诊断就直接用报告里的数——它由学员实际作答算出，比任何实时推断都准，也省掉一次模型调用。因此**列表页不再展示匹配度**（避免整页触发模型），只在进入岗位详情时按需计算。
 
@@ -550,28 +580,6 @@ skill_key 或 bundle:{region}:{key}；返回 levels / level_descriptions / count
 
 ## 前台 · 学习路径
 
-### `GET` /v1/student/learn/path
-
-**当前学习路径**
-
-对齐 vLearnPath / vLearnCenter 路径进度。
-
-**响应**：`LearningPathOut`
-
----
-
-### `POST` /v1/student/learn/path/generate
-
-**按目标/诊断生成学习路径**
-
-缺口技能优先；无 goal 时 body.occupation_id 必填。
-
-**请求体**：`PathGenerateBody`
-
-**响应**：`LearningPathOut`
-
----
-
 ### `GET` /v1/student/learn/resources
 
 **学习资源列表**
@@ -588,22 +596,6 @@ skill_key 或 bundle:{region}:{key}；返回 levels / level_descriptions / count
 | `page_size` | query | integer |  | ≥1，≤100，默认 `20` |
 
 **响应**：`ResourceListOut`
-
----
-
-### `POST` /v1/student/learn/steps/{step_id}/complete
-
-**完成学习步骤**
-
-对齐「已标记学完」。
-
-**请求参数**
-
-| 参数 | 位置 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| `step_id` | path | integer | 是 |  |
-
-**响应**：`LearningPathOut`
 
 ---
 
@@ -1352,7 +1344,7 @@ industry 节点 + parent_of 边（父→子）。
 
 ## 数据模型
 
-共 142 个模型，按名称排序。端点处的类型链接都指向这里。
+共 139 个模型，按名称排序。端点处的类型链接都指向这里。
 
 ### AdminDashboardOut
 
@@ -1363,7 +1355,7 @@ industry 节点 + parent_of 边（父→子）。
 | `nodes_by_type` | map<string, integer> |  | 各类型节点数，键为节点类型 |
 | `users_with_goal` | integer |  | 已锁定学习目标的用户数（默认 `0`） |
 | `diagnosis_sessions` | integer |  | 诊断会话数（默认 `0`） |
-| `learning_paths` | integer |  | 学习路径数（默认 `0`） |
+| `learning_plans_pushed` | integer |  | 已成功推送到学习空间的学习计划数（路径本体不在本服务）（默认 `0`） |
 | `pending_proposals` | integer |  | 待审提案数（默认 `0`） |
 
 ### AiGatewayOut
@@ -1448,21 +1440,52 @@ industry 节点 + parent_of 边（父→子）。
 
 > 综合能力报告。
 >
-> 匹配度**只按实测到的技能算**：一次测评覆盖 6–10 项核心技能，若把没考到的
-> 技能按 0 分计入，分数会被稀释成一个既不反映能力、也无法改善的数字。
-> 覆盖率 `coverage` 就是这个分数的置信度说明，两者必须一起看。
+> 两个匹配度，分母不同，**不要混用也不要相互换算**：
+>
+> - `match_score`：分母是岗位**可评分**技能的全部权重，未测到的按 0 分计入。答「这个
+>   岗位你整体准备好了多少」，与岗位探索列表（`match_with_profile`）同源，可跨岗位横向
+>   比较、可用于列表排序。覆盖率 `coverage` 是它的置信度说明。
+> - `tested_match_score`：分母只有**实测**技能权重。答「你考过的部分掌握得怎样」，
+>   只适合在报告详情页单点看；不同覆盖率之间不可比。
+>
+> 「可评分」= 岗位给了 1–5 的要求档。要求档缺失或越界的技能没有基准、算不出达标率，
+> **分子分母都不计**（`items[].scorable=false`，汇总在 `no_baseline`）。一项都没有
+> 可评分技能时 `match_score` 为 **null**、`score_status="no_baseline"` ——
+> 前端必须显示「该岗位尚未配置能力要求，无法评分」，**不要显示 0%**：
+> 0% 会被读成「完全不匹配」，而真相是数据缺口。库内 80% 的岗位目前是这个状态。
+>
+> 前端接入须知（2026-08 破坏性变更）
+> ---------------------------------
+> **`match_score` 已由必填 number 改为可空**（`float | None`）。以前可以假定一定有值，
+> 现在不行了，`?? 0` / `|| 0` 这类兜底会把「没有评分依据」渲染成「完全不匹配」。
+>
+> - `null` ≠ `0`。`0` 是**算出来的结论**：有基准、有权重、也测过，只是一项都没达标。
+>   `null` 是**算不出来**：岗位没配能力要求（`score_status="no_baseline"`）。
+>   学员看到 0% 会理解成「我完全不行」，看到 null 该理解成「这里还没有依据」——
+>   两种情绪完全不同，混淆一次就是产品事故。
+> - 建议展示：`null` 时保留分数的位置与字号，改成虚线框 + 「? %」占位
+>   （见 `frontend/student.html` 的 `.score.unknown`），旁边给
+>   `score_status` 对应的说明文案；不要塌成一行普通文字，否则看不出这里本来有分数。
+> - `score_status="partial_baseline"` 时**有分数但只能当参考**：数字照显示，
+>   必须同时展示「仅供参考」与 `no_baseline_weight`，也不要拿它跨岗位排序。
+> - 一句话结论直接用 `summary`：它已经按 `score_status` 分支写好了措辞，
+>   不会出现「匹配度 None%」。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `channel` | string |  | 产生渠道：assessment / resume / chat / profile |
 | `target_occupation_id` | string |  | 目标岗位节点 id |
 | `target_occupation_name` | string |  | 目标岗位名 |
-| `match_score` | number | 是 | 综合能力匹配度 0–100，仅按实测技能计 |
-| `coverage` | number | 是 | 本次测评覆盖的岗位技能权重百分比 0–100，是 match_score 的置信度 |
+| `match_score` | number |  | 综合能力匹配度 0–100。分母是岗位**可评分**技能的全部权重（未测项按 0 分计入、缺要求档的项完全不计入），与岗位探索列表口径一致，可横向比较与排序。  **可空字段（2026-08 起）**：为 null 表示算不出来（岗位一项要求档都没配），原因见 score_status。**为 null 时不要显示 0%，也不要 `?? 0` 兜底** —— 0% 是「测过但一项都没达标」的结论，null 是「没有评分依据」，学员会把前者读成「我完全不行」。建议改用虚线框 +「? %」占位并给出说明文案。 |
+| `score_status` | `ok` \| `partial_baseline` \| `no_skills` \| `no_baseline` \| `no_weight` \| `no_evidence` |  | match_score 为什么是这个值，决定前端显示数字、显示数字+提示、还是只显示文案。取值顺序与服务端词表 `config.SCORE_STATUSES` 同源：  \| 取值 \| 含义 \| match_score \| 建议展示 \| \| --- \| --- \| --- \| --- \| \| `ok` \| 有基准、有权重、也测到了，分数可用 \| 数字 \| 正常显示分数，可横向比较与排序 \| \| `partial_baseline` \| 配了一部分：缺要求档的权重**超过 30%**，分数只依据已配置的那部分算出 \| 数字 \| 分数照显示，**同时**标「仅供参考 · 该岗位 {no_baseline_weight}% 的能力要求待完善」；不要用于跨岗位排序 \| \| `no_skills` \| 该岗位尚未配置技能构成，无从算起 \| 0（无意义） \| 「该岗位技能构成待完善」，不显示 0% \| \| `no_baseline` \| 有技能构成但**一项要求档都没配** \| **null** \| 「? %」占位 + 「该岗位能力标准待完善，暂时无法评分」；**别引导学员去做诊断**，做了也算不出来 \| \| `no_weight` \| 可评分技能的权重全为 0（脏数据），算不出加权分 \| 0（无意义） \| 同 no_skills，按「暂无法评分」处理 \| \| `no_evidence` \| 有基准也有权重，但本次一项都没测到 \| 0（无意义） \| 「未评估」+ 引导做测评；不要显示 0% \|  口径与 `PositionMatchOut.source` 的 no_overlap / none 一致：不用 0% 冒充结论。阈值 30% 是服务端常量（`config.PARTIAL_BASELINE_PCT`），前端不要自己再定一份。历史报告（新增此字段之前生成）缺该键，按 ok 处理（默认 `ok`） |
+| `tested_match_score` | number |  | 仅按**实测**技能权重为分母的匹配度 0–100，即「考过的部分掌握得怎样」。与 match_score 不同刻度，不可跨岗位比较；本次未测到任何技能时为 0，一项可评分技能都没有时为 null（理由同 match_score）。历史报告（新增此字段之前生成）为 null |
+| `coverage` | number | 是 | 本次测评覆盖的**可评分**技能权重百分比 0–100（分母不含缺要求档的项），是 match_score 的置信度。它只表达「缺证据」，「缺基准」看 no_baseline_weight |
+| `no_baseline_weight` | number |  | 因缺要求档而**无法评分**的技能权重，占岗位**全部**技能权重的百分比 0–100。100 表示整个岗位没配能力要求（此时 match_score 为 null）。**超过 30% 时服务端会把 score_status 降级成 partial_baseline**，前端不必自己比阈值，但展示「仅供参考」时可以把这个数字带出来（如「该岗位 82.4% 的能力要求待完善」）。权重全为 0 的脏数据岗位退回按项数占比计算。与 coverage 是两种不同的缺失：coverage 缺的是证据，这里缺的是基准（默认 `0.0`） |
 | `radar` | `RadarOut` | 是 | 双系列雷达图数据 |
-| `strengths` | `ReportItem`[] |  | 优势项（已达标），按超出幅度降序 |
-| `gaps` | `ReportItem`[] |  | 短板项（未达标），按 urgency 降序 |
+| `strengths` | `ReportItem`[] |  | 优势项（已测到且已达标），按超出幅度降序 |
+| `gaps` | `ReportItem`[] |  | 短板项（已测到但未达标），按 urgency 降序 |
 | `untested` | `ReportItem`[] |  | 本次未覆盖的技能，按权重降序；不下能力结论 |
+| `no_baseline` | `ReportItem`[] |  | **无法评分**的技能（岗位要求档缺失或越界），按权重降序。既不在 strengths 也不在 gaps —— 没有基准谈不上达标或差距。与 `untested` 是**两个正交视角**、会重叠：一项技能可以既没测到（untested）又没有基准（no_baseline）。该数据缺口需要运营在管理台补要求档，不是学员的问题 |
 | `items` | `ReportItem`[] |  | 全部技能明细（含未测） |
 | `counts` | `ReportCounts` | 是 | 分项计数 |
 | `summary` | string |  | 一句话结论 |
@@ -1746,6 +1769,23 @@ industry 节点 + parent_of 边（父→子）。
 | `level` | integer |  | 要求等级 1–5（对应 L1–L5）。留空取该技能最高档；该技能未配齐此档时返回 400 并列出可用档位 |
 | `weight` | number |  | 权重 0–1，**仅岗位生效**；专业技能不带权重（不参与归一化） |
 
+### CourseResourceOut
+
+> 一门课程资源。`kind` 决定前端怎么展示，别把两类混在一起计数。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 课程节点 id |
+| `name` | string | 是 | 课程名 |
+| `url` | string |  | 课程/检索页地址，可直接点开 |
+| `search_url` | string |  | 仅 `kind=catalog` 有值：按课程名生成的慕课检索地址。课标条目自身的 `url` 是教育部专业教学标准的**大类目录页**（与技能无关），真要展示时请用这个而不是 `url` |
+| `platform` | string |  | 来源系统，如 ICOURSE163 / XUETANGX |
+| `platform_label` | string |  | 平台中文名，直接展示用 |
+| `kind` | `real` \| `catalog` \| `landing` | 是 | 资源性质，决定前端怎么展示，**只有 real 是真正可学的**：  - `real`：平台真实课程页，点开能学，带 `learner_count` - `catalog`：教育部课标里的课目条目（`role=curriculum_catalog`），点开是专业培养方案目录，**没有课程内容** - `landing`：检索入口，点开是搜索结果页  判定以课程节点的 `attrs.role` 为准，不是按 source_system —— 曾把 MOE_CN 当成真课，结果学员点开是课标目录页。 |
+| `learner_count` | integer |  | 学习/选课人数，质量信号；landing 类无此值 |
+| `school` | string |  | 开课院校/机构 |
+| `img_url` | string |  | 封面图 |
+
 ### DiagnosedBrief
 
 > 某岗位的历史诊断摘要。
@@ -1983,10 +2023,10 @@ industry 节点 + parent_of 边（父→子）。
 | `occupation` | `GoalOccupationOut` |  | 目标岗位详情 |
 | `major` | `RefOut` |  | 关联专业 |
 | `industry` | `RefOut` |  | 所属行业 |
-| `match_score` | number |  | 该岗位最近一次诊断的匹配度 0–100；没测过为 null，前端显示「去测评」 |
+| `match_score` | number |  | 该岗位最近一次诊断的匹配度 0–100，取自 `assessment.match_score`。**null 有两种成因，引导文案不同**：没测过 → 引导「去测评」；测过但岗位没配能力要求档（`assessment.score_status="no_baseline"`）→ 只能提示「该岗位标准待完善」，再引导测评也算不出分。两种都不要显示 0% |
 | `assessment` | `AssessmentReportOut` |  | 最近一次的完整测评报告；没测过为 null |
 | `next_level` | `NextLevelOut` |  | 晋升路径的下一档岗位；无 advances_to 边时为 null |
-| `learning_plan_id` | string |  | 学习计划 id（uuid 字符串）；尚未生成或外部接口未接通时为空串（默认 ``） |
+| `learning_plan_id` | string |  | 学习计划 id（学习空间服务的主键）；尚未生成时为空串（默认 ``） |
 | `learning_plan_created_at` | string |  | 学习计划生成时间 ISO8601 |
 
 ### GoalPutBody
@@ -2215,129 +2255,53 @@ industry 节点 + parent_of 边（父→子）。
 | `position_name` | string |  | 岗位名 |
 | `position` | `PositionOut` |  | 岗位详情 |
 
-### LearningPathHead
-
-> 学习路径主体（对应 biz_learning_path 一行）。
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `id` | integer | 是 | 路径 id |
-| `user_id` | string | 是 | UC 用户 id |
-| `user_name` | string |  | 用户名 |
-| `occupation_id` | string |  | 目标岗位 id |
-| `occupation_name` | string |  | 目标岗位名 |
-| `status` | string | 是 | active=进行中；archived=已归档 |
-| `source` | string | 是 | 来源：diagnosis=按诊断生成；manual=手工建 |
-| `created_at` | string |  | 创建时间 ISO8601 |
-
-### LearningPathOut
-
-> 自适应学习路径：主体 + 扁平任务 + 阶段树 + 进度。
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `path` | `LearningPathHead` | 是 | 路径主体 |
-| `steps` | `LearningTaskOut`[] | 是 | 全部任务（扁平，按 seq 排） |
-| `stages` | `Learning`StageOut``[] |  | 阶段任务树；未分组时为 null |
-| `progress` | `Learning`ProgressOut`` |  | 进度 |
-
 ### LearningPlanBody
 
+> 生成学习计划。
+>
+> 只需要一个 `session_id`：岗位从该会话取，短板由服务端从诊断报告读——
+> 不信客户端传的短板列表，那会让「学员看到的计划」和「诊断结论」对不上。
+
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `occupation_id` | string |  | 留空取当前活跃目标 |
-| `session_id` | integer |  | 基于哪次诊断生成 |
-| `gap_skills` | string[] |  | 生成依据的短板技能 |
+| `session_id` | integer | 是 | 据以生成的诊断会话 id（必填）。学习计划必须基于一次真实诊断：没有诊断结果就没有短板数据，生成出来是一条空路径。  取值来自测评/简历/对话诊断完成后返回的 `session_id`。（≥1.0） |
+| `recommend_resources` | boolean |  | 是否为每个技能挂载可学课程（图谱里有 taught_by/related_to 边时）（默认 `True`） |
 
 ### LearningPlanCreatedOut
 
 > 生成学习计划的回执。
 >
-> 外部服务不可用时不拖住学员：降级为 mock 并把上游原因原样带出去，
-> 前端可据 `source` 与 `upstream_error` 提示「计划为本地兜底」。
+> **没有本地兜底**：推不上去就返回错误码，不再像旧版那样发个假 plan_id。
+> 学习计划是业务主数据，给假 id 会让学员点进去看到空白页。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `id` | integer | 是 | 本地记录 id |
-| `user_id` | string | 是 | UC 用户 id |
-| `occupation_id` | string | 是 | 目标岗位 id |
-| `plan_id` | string | 是 | 学习计划 id（uuid 字符串），外部计划服务的主键 |
-| `session_id` | integer |  | 据以生成的诊断会话 id |
-| `gap_skills` | string[] |  | 短板技能列表 |
-| `source` | `bts` \| `mock` \| `api` | 是 | bts=外部计划服务生成；mock=服务不可用时的本地兜底 |
-| `created_at` | string |  | 创建时间 ISO8601 |
-| `upstream_error` | string |  | 外部计划服务的失败原因；成功或未调用时为 null |
-| `upstream_status` | integer |  | 外部服务 HTTP 状态码 |
+| `plan_id` | string | 是 | 学习空间返回的计划 id |
+| `created` | boolean | 是 | true=本次新建；false=幂等命中（同一次诊断重复调用，对方返回已存在的计划，无副作用） |
+| `superseded_plan_id` | string |  | 本次换代时被归档的旧计划 id；首次生成为 null |
+| `occupation_id` | string | 是 | 目标岗位 id（取自该诊断会话） |
+| `session_id` | integer | 是 | 据以生成的诊断会话 id |
+| `phases_count` | integer | 是 | 阶段数（≥1.0） |
+| `tasks_count` | integer | 是 | 任务总数（≥1.0） |
+| `pushed_at` | string |  | 推送时间 ISO8601 |
 
 ### LearningPlanItem
 
-> 一条学习计划记录（对应 biz_user_learning_plan 一行）。
+> 一条学习计划推送记录（对应 `biz_user_learning_plan` 一行）。
+>
+> 计划内容不在本服务——本地只留关联与推送状态，进度真源在学习空间服务。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `id` | integer | 是 | 本地记录 id |
 | `user_id` | string | 是 | UC 用户 id |
 | `occupation_id` | string | 是 | 目标岗位 id |
-| `plan_id` | string | 是 | 学习计划 id（uuid 字符串），外部计划服务的主键 |
+| `plan_id` | string | 是 | 学习空间返回的计划 id；推送失败时为空串 |
 | `session_id` | integer |  | 据以生成的诊断会话 id |
-| `gap_skills` | string[] |  | 短板技能列表 |
-| `source` | `bts` \| `mock` \| `api` | 是 | bts=外部计划服务生成；mock=服务不可用时的本地兜底 |
+| `push_status` | `ok` \| `failed` |  | ok=已成功推送；failed=推送失败，`last_error` 里是原因，可重推 |
+| `last_error` | string |  | 最近一次推送失败的原因；成功时为 null |
+| `pushed_at` | string |  | 最近一次推送时间 ISO8601 |
 | `created_at` | string |  | 创建时间 ISO8601 |
-
-### LearningProgressOut
-
-> 学习进度。
->
-> 条数进度与权重进度是两回事：补一门权重 0.3 的核心技能，条数上只是 1/20，
-> 权重上却是 30%。原型顶部那个百分比用的是 `weighted_pct`。
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `completed` | integer |  | 已完成任务数（≥0.0，默认 `0`） |
-| `total` | integer |  | 任务总数（≥0.0，默认 `0`） |
-| `ratio` | number |  | 按任务条数的完成率 0–1（默认 `0.0`） |
-| `weighted_pct` | integer |  | **按权重计的总进度百分比**，原型顶部展示的就是它（默认 `0`） |
-| `duration_min_total` | integer |  | 建议总耗时（分钟）（默认 `0`） |
-
-### LearningStageOut
-
-> 一个学习阶段（原型「第一/二/三阶段」）。
->
-> 按技能大类分组，阶段顺序沿用国标职业功能的推进顺序（先作业准备、后维护检修）。
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `stage` | integer | 是 | 阶段序号 1..n |
-| `title` | string | 是 | 阶段标题 |
-| `steps` | `LearningTaskOut`[] |  | 该阶段的任务 |
-| `stage_weight_pct` | integer |  | 该阶段占总权重的百分比（默认 `0`） |
-| `completed` | integer |  | 已完成任务数（≥0.0，默认 `0`） |
-| `total` | integer |  | 任务总数（≥0.0，默认 `0`） |
-| `duration_min` | integer |  | 该阶段建议总耗时（分钟）（默认 `0`） |
-
-### LearningTaskOut
-
-> 一条学习任务：在 LearningStepOut 之上补齐分组与配速字段。
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `id` | integer | 是 | 节点 id |
-| `path_id` | integer | 是 | 学习路径 id |
-| `seq` | integer | 是 | 序号 |
-| `kind` | string | 是 | 任务类型 |
-| `skill_id` | string |  | 技能 id |
-| `skill_name` | string |  | 技能名 |
-| `resource_id` | string |  | 资源 id |
-| `resource_title` | string |  | 资源标题 |
-| `title` | string | 是 | 标题 |
-| `status` | string | 是 | 状态 |
-| `completed_at` | string |  | 完成时间 ISO8601 |
-| `stage` | integer |  | 所属阶段序号 1..n |
-| `stage_title` | string |  | 阶段标题 |
-| `category` | string |  | 技能大类，阶段按它分组 |
-| `weight` | number |  | 该任务对应技能的权重 |
-| `duration_min` | integer |  | 建议耗时（分钟） |
-| `required_level` | integer |  | 目标档位 1–5 |
 
 ### MajorOccupationMatrix
 
@@ -2360,12 +2324,13 @@ industry 节点 + parent_of 边（父→子）。
 | `skill_key` | string | 是 | 技能聚合主键 |
 | `skill_name` | string |  | 技能展示名 |
 | `category` | string |  | 技能大类 |
-| `required_level` | integer |  | 岗位要求档 1–5 |
+| `required_level` | integer |  | 岗位要求档 1–5；**0 表示该技能没有指定要求档**（边没指向带产品档的等级节点，或档位是越界脏值），此时 `scorable=false`、该项不计入匹配度 |
 | `user_level` | integer |  | 学员已有档 1–5；**0 表示该技能无任何证据**（不是「水平为零」），null 同义 |
 | `weight` | number | 是 | 该技能在岗位中的权重，Σ≈1 |
 | `is_core` | boolean |  | 是否核心技能 |
-| `ratio` | number | 是 | 达成比 = 已有/要求，封顶 1.0 |
-| `ok` | boolean | 是 | 是否达标 |
+| `ratio` | number | 是 | 达成比 = 已有/要求，封顶 1.0。`scorable=false` 时这里是「有证据即 1.0」的展示值，**不参与匹配度计算** |
+| `ok` | boolean | 是 | 是否达标（已有 ≥ 要求）；无要求档时恒为 false |
+| `scorable` | boolean |  | 该项能否评分。false = 岗位要求档缺失或越界（无基准），分子分母都不计入 match_score，也不进 strengths / gaps；汇总在 `no_baseline` 里（默认 `True`） |
 | `matched_by` | string |  | 命中方式：exact=技能名精确匹配；fuzzy=模糊匹配；none=无证据 |
 
 ### MatchRadarOut
@@ -2402,7 +2367,6 @@ industry 节点 + parent_of 边（父→子）。
 | `points` | integer |  | 成长值/积分（默认 `0`） |
 | `badges` | `UserBadgeOut`[] |  | 已解锁成就 |
 | `skills` | `User`SkillOut``[] |  | 技能画像 |
-| `active_path_id` | integer |  | 进行中的学习路径 id |
 
 ### NextLevelOut
 
@@ -2565,11 +2529,35 @@ industry 节点 + parent_of 边（父→子）。
 | `score` | integer |  | 推断得分（默认 `0`） |
 | `source` | string |  | 来源：resume / chat / llm / rule |
 
-### PathGenerateBody
+### PositionCourseSkillGroup
+
+> 按技能分组的课程。技能顺序按岗位 requires 权重倒序。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `occupation_id` | string |  | 岗位 id；不传则用当前 goal |
+| `skill_key` | string | 是 | 逻辑技能名 |
+| `required_level` | integer |  | 该岗位要求的档位 1–5，来自 attrs.level |
+| `weight` | number |  | 该技能在岗位能力结构中的权重，**小数**（同岗位 Σ≈1） |
+| `category` | string |  | 技能大类 |
+| `courses` | `CourseResourceOut`[] |  | 课程列表 |
+
+### PositionCoursesOut
+
+> 岗位相关课程（GET /v1/student/positions/courses）。
+>
+> 独立于岗位详情与技能构成接口：详情接口不含课程，避免为了加卡片改动既有契约。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `occupation` | `OccupationBrief` | 是 | 岗位摘要 |
+| `by_skill` | `PositionCourseSkillGroup`[] | 是 | 按技能分组的课程 |
+| `skill_count` | integer | 是 | 有课程的技能数（≥0.0） |
+| `course_count` | integer | 是 | 课程总数（real + catalog + landing）（≥0.0） |
+| `real_course_count` | integer | 是 | 真实课程数，**看这个判断资源是否可用**（≥0.0） |
+| `catalog_count` | integer |  | 课标目录条目数（点开是培养方案，不是课程）（≥0.0，默认 `0`） |
+| `catalog_hidden` | boolean |  | 课标条目是否被隐藏（默认 true 且 catalog_count>0 时）。用于提示「这里还有数据缺口」（默认 `False`） |
+| `landing_count` | integer | 是 | 检索入口数（≥0.0） |
+| `note` | string |  | 口径说明 |
 
 ### PositionDetailOut
 
@@ -2592,30 +2580,58 @@ industry 节点 + parent_of 边（父→子）。
 
 > 岗位匹配度。
 >
-> `source` 是四级级联的结果，**决定这个分数可不可信**，前端必须据此区分展示：
+> `source` 回答的是「展示这个分数时最该先提醒学员什么」，前端必须据此区分展示。
+> 前三档是证据强度（级联命中即返回），后四档是「这个数不能当结论」的原因。
+> 每档的建议展示文案与 `frontend/student.html` 的 `MATCH_SOURCE_LABEL` 保持一致：
 >
-> - `diagnosis` —— 该岗位做过完整测评，直接读报告分，最准
-> - `assessment` —— 用其他场测评实测到的档位推算（技能有重叠时）
-> - `memory` —— 用五维记忆画像推断，最弱，`estimated=true`
-> - `no_overlap` —— 岗位技能与已有证据零交集，`match_score` 为 null
-> - `none` —— 该岗位尚未配置技能构成，无从算起
+> - `diagnosis` —— 该岗位做过完整测评，分数直接取自报告，最准。有分数；
+>   配文「实测 · 你诊断过这个岗位」
+> - `assessment` —— 用**其他场**测评实测到的档位现算（技能有重叠），`estimated=true`。
+>   有分数；配文「推算 · 用你在其他岗位测出的技能比对」
+> - `memory` —— 用五维记忆画像推断，证据最弱，`estimated=true`。有分数；
+>   配文「预估 · 由你的能力画像推断」
+> - `partial_baseline` —— 该岗位**缺要求档的技能权重超过 30%**，分数只依据已配置的
+>   那部分算出。**分数照给**（那部分是真实依据，丢掉更亏）；配文「参考 · 该岗位
+>   {no_baseline_weight}% 的能力要求待完善，分数仅供参考」，且不要拿它跨岗位排序
+> - `no_overlap` —— 岗位技能与已有证据零交集。`match_score` 为 **null**；
+>   配文「该岗位要求的技能你还没测过」+ 引导做一次 AI 诊断
+> - `no_baseline` —— **该岗位一项技能都没配要求档**，没有基准就算不出达标率。
+>   `match_score` 为 **null**；配文「该岗位能力标准待完善，暂时无法评分」。
+>   这是数据缺口（库内 80% 的岗位目前如此）、不是学员的问题：文案别说
+>   「你的画像没覆盖」，**也别引导去做诊断**——学员做了照样算不出来，
+>   缺的是运营配置，等岗位标准补齐即可
+> - `none` —— 该岗位尚未配置技能构成，或该学员无任何证据。`match_score` 为 **null**；
+>   配文「尚无评估依据」+ 引导做一次 AI 诊断
 >
-> `match_score` 为 null 时不要显示 0%：那是「没有证据」，不是「完全不匹配」。
+> 前端接入须知
+> ------------
+> - **`match_score` 可空**。`null` ≠ `0`：0 是「测过但一项都没达标」的结论，
+>   null 是「没有评分依据」。`?? 0` 会把后者渲染成前者，学员读成「完全不匹配」。
+>   建议 null 时保留分数的位置与字号，用虚线框 +「? %」占位（`.score.unknown`），
+>   旁边给上面列出的对应说明文案。
+> - `partial_baseline` / `no_baseline` 的阈值与判定**全在服务端**
+>   （`config.PARTIAL_BASELINE_PCT` = 30%）：前端不要自己拿 `no_baseline_weight`
+>   比阈值，每个页面各定一次迟早不一致。
+> - `partial_baseline` 时证据强度并没有丢：`estimated`（实测 or 推断）、
+>   `diagnosis`（测过没测过）、`profile` 都还在，需要时可以叠加显示。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `occupation` | `OccupationBrief` | 是 | 岗位摘要 |
-| `match_score` | number |  | 匹配度 0–100；无证据时为 null，前端应显示「未评估」而非 0% |
-| `source` | `diagnosis` \| `assessment` \| `memory` \| `no_overlap` \| `none` | 是 | 分数来源，决定可信度；见模型说明 |
-| `estimated` | boolean |  | 是否为推断值（memory 来源为 true），UI 上应与实测分区分（默认 `False`） |
-| `reason` | string |  | 无法计算时的原因说明 |
+| `match_score` | number |  | 匹配度 0–100。**可空**：无证据（no_overlap / none）或无基准（no_baseline）时为 null。**为 null 时不要显示 0%、也不要 `?? 0` 兜底** —— 0% 是「测过但一项都没达标」的结论，null 是「没有评分依据」，学员会把前者读成「我完全不行」。建议用虚线框 +「? %」占位，并展示 source 对应的说明文案 |
+| `source` | `diagnosis` \| `assessment` \| `memory` \| `partial_baseline` \| `no_overlap` \| `no_baseline` \| `none` | 是 | 展示这个分数时最该先提醒什么；每个取值的含义与建议文案见模型说明 |
+| `score_status` | string |  | 算分结果的机器可读原因，取值与 `AssessmentReportOut.score_status` 同一套（含含义与建议文案的表格见那边）：ok / partial_baseline / no_skills / no_baseline / no_weight / no_evidence。`source` 描述的是「这个数最该配什么提示」，这里描述的是「为什么算得出/算不出」；两者共用同一个 30% 阈值，不会一个说 partial 一个说 ok。**刻意不声明成枚举**：历史数据与降级分支可能带来词表外的值，响应模型不该为此整页 500 |
+| `estimated` | boolean |  | 是否为推断值：`assessment` / `memory` 来源为 true（拿已有画像现算），`diagnosis` 为 false（该岗位实测）。UI 上应与实测分区分；`source=partial_baseline` 盖住了证据强度时，它是「实测还是推断」的唯一依据（默认 `False`） |
+| `reason` | string |  | 无法计算、或分数只能当参考时的原因说明（可直接展示给学员）。`source=partial_baseline` 时这里会写明缺了多少权重的要求档 |
 | `skill_total` | integer |  | 岗位技能总数 |
 | `matched_count` | integer |  | 已达标技能数 |
 | `covered_count` | integer |  | 有证据覆盖的技能数；为 0 时 match_score 无意义 |
-| `coverage` | number |  | 证据覆盖的权重百分比 0–100 |
+| `coverage` | number |  | 证据覆盖的权重百分比 0–100；分母是**可评分**技能权重（不含缺要求档的项） |
+| `no_baseline_weight` | number |  | 因缺要求档而无法评分的技能权重占岗位**全部**技能权重的百分比 0–100；100 表示整个岗位没配能力要求。**超过 30% 时服务端已把 source 与 score_status 降级成 partial_baseline**，前端不必自己比阈值，但展示「仅供参考」时可以把这个数字带出来。与 coverage 是两种不同的缺失 |
 | `items` | `MatchItem`[] |  | 全部技能明细 |
-| `strengths` | `MatchItem`[] |  | 已达标项 |
-| `gaps` | `MatchItem`[] |  | 未达标项，按权重降序 |
+| `strengths` | `MatchItem`[] |  | 已达标项（仅可评分项） |
+| `gaps` | `MatchItem`[] |  | 未达标项（仅可评分项），按权重降序 |
+| `no_baseline` | `MatchItem`[] |  | 无法评分的技能（岗位要求档缺失或越界），按权重降序；既不在 strengths 也不在 gaps。需要运营补要求档 |
 | `radar` | `Match`RadarOut`` |  | 单系列雷达图（按技能大类聚合的达成率）；无数据时为空对象 |
 | `diagnosis` | `DiagnosedBrief` |  | 该岗位的历史诊断摘要；没测过为 null |
 
@@ -2743,6 +2759,12 @@ industry 节点 + parent_of 边（父→子）。
 | `to` | string | 是 | 高阶岗位 id |
 | `from_name` | string |  | 低阶岗位名 |
 | `to_name` | string |  | 高阶岗位名 |
+| `from_level` | integer |  | 低阶岗位职级 1–5，来自 attrs.level |
+| `to_level` | integer |  | 高阶岗位职级 1–5，来自 attrs.level |
+| `from_level_code` | string |  | 低阶职级码（L1–L5），由 level 派生**不入库**；前端直接用，不要自己拼 'L'+level |
+| `to_level_code` | string |  | 高阶职级码（L1–L5），同上 |
+| `from_level_name` | string |  | 低阶职级名（入门/专员/资深/经理/总监） |
+| `to_level_name` | string |  | 高阶职级名，同上 |
 | `rel_type` | string |  | 固定 advances_to（默认 `advances_to`） |
 | `confidence` | string |  | 置信度 |
 | `evidence` | string |  | 建边依据 |
@@ -2814,14 +2836,18 @@ industry 节点 + parent_of 边（父→子）。
 ### ReportCounts
 
 > 报告的分项计数。
+>
+> `tested + untested == skill_total` 恒成立；但 `strength + gap` 只数**测到且有基准**
+> 的项，缺要求档的项两边都不进（数量见 `no_baseline` 列表长度），所以
+> `strength + gap + untested` 可能小于 `skill_total`。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `skill_total` | integer | 是 | 岗位技能总数（≥0.0） |
 | `tested` | integer | 是 | 本次实测到的技能数（≥0.0） |
 | `untested` | integer | 是 | 未覆盖的技能数（≥0.0） |
-| `strength` | integer | 是 | 达标项数（≥0.0） |
-| `gap` | integer | 是 | 未达标项数（≥0.0） |
+| `strength` | integer | 是 | 达标项数（仅可评分项）（≥0.0） |
+| `gap` | integer | 是 | 未达标项数（仅可评分项）（≥0.0） |
 
 ### ReportItem
 
@@ -2837,9 +2863,10 @@ industry 节点 + parent_of 边（父→子）。
 | `measured_label` | string |  | 实测档文案 |
 | `weight` | number | 是 | 该技能在岗位中的权重，Σ≈1 |
 | `weight_pct` | integer |  | 权重百分比（四舍五入），便于直接展示 |
-| `ratio` | number | 是 | 达成比 = 实测/要求，封顶 1.0 |
-| `ok` | boolean | 是 | 是否达标（实测 ≥ 要求） |
-| `tested` | boolean | 是 | 本次是否实际考到。false 时 measured_* 为 null，不参与匹配度计算 |
+| `ratio` | number | 是 | 达成比 = 实测/要求，封顶 1.0。`scorable=false`（岗位没给要求档）时这里是「有实测即 1.0」的展示值，**不参与匹配度计算**，不要拿它当达标结论 |
+| `ok` | boolean | 是 | 是否达标（实测 ≥ 要求）；无要求档时恒为 false |
+| `scorable` | boolean |  | 该项能否评分。false = 岗位对这个技能的要求档缺失或越界（无基准），**分子分母都不计入 match_score**，也不进 strengths / gaps —— 没有基准既谈不上达标、也谈不上差距。这类项汇总在 `no_baseline` 里。历史报告（新增此字段之前生成）缺该键，按 true 处理（默认 `True`） |
+| `tested` | boolean | 是 | 本次是否实际考到。false 时 measured_* 为 null、ratio 为 0，仍按 0 分计入 match_score（只有 tested_match_score 把它排除在分母外） |
 | `source` | string |  | 档位来源：choice / llm / rule |
 | `evidence_score` | number |  | 证据充分度 0–1 |
 | `capped` | boolean |  | 是否因证据不足被压档 |
