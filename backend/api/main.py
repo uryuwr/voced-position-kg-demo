@@ -483,7 +483,7 @@ def _node_detail_core(
         if (n.get("status") or "published") != "published":
             raise HTTPException(status_code=404, detail="node not found")
     if include_counts:
-        attach_counts_by_type([n], node_type=n.get("type"))
+        attach_counts_by_type([n], node_type=n.get("type"), scope=scope)
     if include_links or _is_manage_scope(scope):
         attach_link_ids(n)
     return n
@@ -1190,7 +1190,9 @@ def api_list_nodes(
         scope=scope,
     )
     if include_counts and data.get("items"):
-        attach_counts_by_type(data["items"], node_type=type)
+        # scope 要跟着列表口径走：管理台列表放行 draft/disabled，
+        # 计数却按 published 算的话，列表里的技能数会比详情页少
+        attach_counts_by_type(data["items"], node_type=type, scope=scope)
     return NodeListResponse.model_validate(data)
 
 

@@ -249,7 +249,10 @@ def _occupation_detail(conn, oid: str) -> dict[str, Any]:
 
     from backend.kg.pg_store.skill_prereq import prereq_map
 
-    bundles = occupation_skill_bundles(oid, limit=200)
+    # 管理台口径：draft / disabled 也要能看到并编辑，只挡 archived。
+    # 与 skill_composition.get_composition、counts_for_occupations 必须同口径，
+    # 否则同一岗位在列表、详情、技能构成三处显示三个技能数。
+    bundles = occupation_skill_bundles(oid, limit=200, scope="manage")
     pmap = prereq_map(conn, [b.get("skill_key") for b in bundles])
 
     skills = []

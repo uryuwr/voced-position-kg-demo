@@ -19,10 +19,14 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import connect
-from backend.kg.pg_store.config import attrs_level_int, edge_published
+from backend.kg.pg_store.config import attrs_level_int, edge_published, node_not_archived
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
 _EP = edge_published("e")
+# 管理台口径：draft / disabled 要能看到并编辑，只挡 archived。
+# 这里原先**什么都没过滤** —— 边指向已归档技能时，技能构成页照样列出来，
+# 而详情页与列表都不算它，同一岗位就出现两个技能数（3D设计师：构成 1 项、详情 0 项）。
+_NOT_ARCHIVED_N = node_not_archived("n")
 _LEVEL_N = attrs_level_int("n")
 
 # 节点类型 → (关系, 该类型是否带权重)
@@ -235,6 +239,7 @@ def get_composition(node_id: str) -> dict[str, Any]:
                    n.category, n.attrs, n.name AS skill_node_name
             FROM kg_edge e
             JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level'
+                          AND {_NOT_ARCHIVED_N}
             WHERE e.src_id=%s AND e.rel_type=%s AND {_EP}
             ORDER BY e.weight DESC NULLS LAST, 4
             """,

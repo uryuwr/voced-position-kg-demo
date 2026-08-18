@@ -140,6 +140,19 @@ class SkillOut(BaseModel):
     available_levels: list[int] = Field(default_factory=list, description="已配齐的档位 1–5")
     missing_levels: list[int] = Field(default_factory=list, description="尚缺的档位 1–5")
     counts: RelationCounts | None = Field(None, description="关联计数")
+    # 和 category 一样，这两个字段后端一直在算，只是没进契约 → 被静默丢弃，
+    # 管理台列表既显示不了状态徽标，也没法按创建时间给用户看。
+    status: str | None = Field(
+        None,
+        description=(
+            "逻辑技能的聚合状态：各档一致时取该值，不一致为 `mixed`"
+            "（如 L1–L3 已发布、L4 还是草稿）。取值 published / draft / disabled / mixed"
+        ),
+    )
+    created_at: str | None = Field(
+        None,
+        description="创建时间 ISO8601，取各档 `created_at` 的最大值；列表默认按它倒序",
+    )
 
 
 class ProfessionListOut(PageMeta):

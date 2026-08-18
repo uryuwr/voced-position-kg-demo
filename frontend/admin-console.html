@@ -1032,6 +1032,8 @@
               ${st === "published"
                 ? `<button class="btn" type="button" data-dis-skill="${esc(n.skill_key || n.name || "")}">停用</button>`
                 : `<button class="btn ok" type="button" data-en-skill="${esc(n.skill_key || n.name || "")}">发布</button>`}
+              <button class="btn danger" type="button" data-del-skill="${esc(n.skill_key || n.name || "")}"
+                      data-del-occ="${(n.counts || {}).occupation || 0}" title="软删：L1–L5 与关联边一起归档，可恢复">删除</button>
             </td>
           </tr>`;
         }
@@ -1276,6 +1278,25 @@
             });
             stayAndReload(actMsg("已发布（须过 BR 门禁）", "已提交发布审核"));
           } catch (e) { toast(e.message, true); }
+        };
+      });
+      main.querySelectorAll("[data-del-skill]").forEach((b) => {
+        b.onclick = async () => {
+          const key = b.dataset.delSkill;
+          const occ = Number(b.dataset.delOcc || 0);
+          // 影响面写进确认框：软删可恢复，但挂着岗位的技能删掉后那些岗位会少一项能力要求
+          const warn = occ > 0
+            ? `
+
+该技能还挂在 ${occ} 个岗位的技能构成里，删除后这些岗位会少一项要求。`
+            : "";
+          if (!confirm(`确定删除技能「${key}」？
+
+L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn}`)) return;
+          try {
+            const r = await api.apiFetch("/v1/admin/skills/" + encodeURIComponent(key), { method: "DELETE" });
+            stayAndReload(`已删除「${key}」：归档 ${r.archived_nodes} 个档位、${r.archived_edges} 条边`);
+          } catch (e) { toast(e.message || e, true); }
         };
       });
       main.querySelectorAll("[data-dis-skill]").forEach((b) => {

@@ -773,6 +773,50 @@ def put_skill_composition(
         raise HTTPException(400, str(e)) from e
 
 
+class SkillDeletedOut(BaseModel):
+    """删除逻辑技能的结果。"""
+
+    deleted: bool = Field(..., description="恒为 true；失败走 4xx")
+    skill_key: str = Field(..., description="被删的逻辑技能名")
+    archived_nodes: int = Field(0, ge=0, description="归档的档位节点数（L1–L5 里实际存在的）")
+    archived_edges: int = Field(0, ge=0, description="一并归档的关联边数")
+    occupations_affected: int = Field(
+        0, ge=0, description="删除前还挂着这个技能的岗位数，供前端提示影响面"
+    )
+
+
+@router.delete(
+    "/skills/{skill_key:path}",
+    tags=["管理台 · 技能多档"],
+    summary="删除逻辑技能（软删，L1–L5 一起）",
+    description=(
+        "把该 `skill_key` 的**全部档位节点与关联边**标为 `archived`。"
+        "是**软删**：`archived` 是逻辑删除，任何读接口都不返回，但记录还在。"
+        "物理删会连岗位的 `requires` 边一起带走，误删找不回来。 "
+        "边一定跟着节点一起归档 —— 只归档节点的话，`edge_published()` 过滤不掉那些边，"
+        "图查询会画出指向不可见节点的断头箭头，管理台按边计数也会比详情页多。 "
+        "**不阻止删除还在被岗位引用的技能**：响应里给 `occupations_affected`，"
+        "由前端提示影响面，删不删是运营的判断。"
+    ),
+    response_model=SkillDeletedOut,
+)
+def admin_delete_skill_bundle(
+    skill_key: str,
+    region: str = Query("CN", description="地区"),
+    user: AuthUser = Depends(require_auth_user),
+) -> SkillDeletedOut:
+    from backend.kg.pg_store.skill_write import archive_skill_bundle
+
+    try:
+        return SkillDeletedOut.model_validate(
+            archive_skill_bundle(
+                skill_key, region=region, user_id=user.user_id, user_name=user.user_name
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+
+
 @router.delete(
     "/composition",
     tags=["管理台 · 数据列表"],

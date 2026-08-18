@@ -373,14 +373,19 @@ def list_skill_bundles(
         total_pages = max(1, math.ceil(total / page_size)) if total else 0
         offset = (page - 1) * page_size
 
+        # 排序：最近建/改的技能排最前。逻辑技能是多个档位节点聚合出来的，
+        # 取各档 created_at 的 max —— 补档也算「动过」，比 min 更贴「最近在维护什么」。
+        # 原先是 `ORDER BY 1`（技能名字母序），新建的技能会散落在几百页中间找不到。
+        # NULLS LAST：历史数据 created_at 可能为空，不该压在最新的前面。
         page_sql = f"""
         SELECT {key_expr} AS skill_key,
                count(*) AS level_count,
+               max(n.created_at) AS created_at,
                array_agg(n.id ORDER BY {li_expr} NULLS LAST) AS node_ids
         {base_from}
         {filters}
         GROUP BY 1
-        ORDER BY 1
+        ORDER BY max(n.created_at) DESC NULLS LAST, 1
         LIMIT %s OFFSET %s
         """
         page_rows = conn.execute(
@@ -390,12 +395,15 @@ def list_skill_bundles(
         all_ids: list[str] = []
         key_order: list[str] = []
         key_to_ids: dict[str, list[str]] = {}
+        created_by_key: dict[str, Any] = {}
         for r in page_rows:
             sk = r["skill_key"]
             key_order.append(sk)
             ids = list(r["node_ids"] or [])
             key_to_ids[sk] = ids
             all_ids.extend(ids)
+            ca = r.get("created_at")
+            created_by_key[sk] = ca.isoformat() if hasattr(ca, "isoformat") else ca
 
         nodes_by_id: dict[str, dict[str, Any]] = {}
         if all_ids:
@@ -427,14 +435,15 @@ def list_skill_bundles(
         items = []
         for sk in key_order:
             nodes = [nodes_by_id[i] for i in key_to_ids[sk] if i in nodes_by_id]
-            items.append(
-                assemble_bundle(
-                    sk,
-                    nodes,
-                    region=reg,
-                    occupation_count=occ_counts.get(sk, 0),
-                )
+            b = assemble_bundle(
+                sk,
+                nodes,
+                region=reg,
+                occupation_count=occ_counts.get(sk, 0),
             )
+            # 列表按它倒序，前端也要能显示「创建于」
+            b["created_at"] = created_by_key.get(sk)
+            items.append(b)
 
     return {
         "items": items,
@@ -518,20 +527,30 @@ def get_skill_bundle(
 
 
 def occupation_skill_bundles(
-    occupation_id: str, *, limit: int = 100
+    occupation_id: str, *, limit: int = 100, scope: str = "public"
 ) -> list[dict[str, Any]]:
-    """岗位 requires → 逻辑技能 bundle 列表（权重取自边）。"""
+    """岗位 requires → 逻辑技能 bundle 列表（权重取自边）。
+
+    `scope="manage"` 时按管理台口径放行 draft / disabled 技能（仍挡 archived）。
+    默认 public 只给 published。
+
+    **口径必须跟着调用方走**：管理台的岗位详情、技能构成、列表计数如果各用各的，
+    同一个岗位就会显示出三个技能数 —— 库里现在正好有 64 个 draft、5 个 disabled、
+    30 个 archived 技能，够把这三个数字全岔开。
+    """
+    from backend.kg.pg_store.config import node_not_archived, node_published
     from backend.kg.pg_store.query import _node_dict
 
+    vis = node_not_archived("s") if scope == "manage" else node_published("s")
     with connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT s.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence, e.evidence
             FROM kg_edge e
             JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level'
             WHERE e.src_id = %s AND e.rel_type = 'requires'
               AND COALESCE(e.status, 'published') = 'published'
-              AND COALESCE(s.status, 'published') = 'published'
+              AND {vis}
             ORDER BY e.weight DESC NULLS LAST, s.name
             LIMIT %s
             """,

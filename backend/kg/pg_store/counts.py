@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import use_conn
-from backend.kg.pg_store.config import edge_published
+from backend.kg.pg_store.config import node_not_archived, edge_published
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
 # 关联计数不能把归档/草稿边算进去，否则前端显示的关联数虚高
@@ -144,9 +144,14 @@ def counts_for_majors(
 
 
 def counts_for_occupations(
-    ids: list[str], *, conn: object | None = None
+    ids: list[str], *, conn: object | None = None, scope: str = "public"
 ) -> dict[str, dict[str, int]]:
-    """occupation: skill(distinct key), major(逆 prepares_for), industry 数。"""
+    """occupation: skill(distinct key), major(逆 prepares_for), industry 数。
+
+    `scope="manage"` 放行 draft / disabled 技能（仍挡 archived）。列表这个数字
+    要和详情页、技能构成页对得上 —— 三处口径不同就是「同一岗位三个技能数」。
+    """
+    skill_vis = node_not_archived("n") if scope == "manage" else _PUB_N
     out = {i: _empty_counts() for i in ids}
     if not ids:
         return out
@@ -155,7 +160,7 @@ def counts_for_occupations(
             f"""
             SELECT e.src_id AS id, count(DISTINCT ({SKILL_KEY_SQL})) AS c
             FROM kg_edge e
-            JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level' AND {_PUB_N}
+            JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level' AND {skill_vis}
             WHERE e.rel_type = 'requires' AND {EP_E}
               AND e.src_id = ANY(%s)
               AND {_PUB_E}
@@ -172,7 +177,7 @@ def counts_for_occupations(
             f"""
             SELECT e.src_id AS id, COALESCE(sum(e.weight), 0) AS w
             FROM kg_edge e
-            JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level' AND {_PUB_N}
+            JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level' AND {skill_vis}
             WHERE e.rel_type = 'requires' AND {EP_E}
               AND e.src_id = ANY(%s)
             GROUP BY e.src_id
@@ -311,6 +316,7 @@ def attach_counts_by_type(
     *,
     node_type: str | None = None,
     conn: object | None = None,
+    scope: str = "public",
 ) -> list[dict[str, Any]]:
     """就地/拷贝附加 counts（及岗位 industries）。"""
     if not nodes:
@@ -324,7 +330,7 @@ def attach_counts_by_type(
     elif ntype == "major":
         cmap = counts_for_majors(ids, conn=conn)
     elif ntype == "occupation":
-        cmap = counts_for_occupations(ids, conn=conn)
+        cmap = counts_for_occupations(ids, conn=conn, scope=scope)
         ind_map = industries_for_occupations(ids, conn=conn)
     else:
         for n in nodes:

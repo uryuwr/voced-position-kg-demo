@@ -459,3 +459,75 @@ def prepare_submit_payload(body: dict[str, Any]) -> dict[str, Any]:
         "attrs": body.get("attrs") if isinstance(body.get("attrs"), dict) else {},
         "description": body.get("description"),
     }
+
+
+def archive_skill_bundle(
+    skill_key: str,
+    *,
+    region: str = "CN",
+    user_id: str = "",
+    user_name: str = "",
+) -> dict[str, Any]:
+    """删除逻辑技能：把该 skill_key 的**全部档位节点与关联边**标为 archived。
+
+    软删而非物理删除，理由与项目其它删除一致：`archived` 是逻辑删除，任何读接口
+    都不返回，但记录还在、可恢复。物理删会带走岗位的 requires 边，误删就找不回来了。
+
+    边必须一起归档 —— 节点 archived 而边还 published 的话，`edge_published()`
+    过滤不掉那些边，图查询会画出指向不可见节点的断头箭头；管理台按边计数也会
+    比详情页多出来（3D设计师就是这么出现「列表 1 项、详情 0 项」的）。
+
+    返回被引用情况，供前端提示「该技能还挂在 N 个岗位上」——**不阻止删除**：
+    要不要删是运营的判断，接口只负责把后果说清楚。
+    """
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT n.id FROM kg_node n
+            WHERE n.type = 'skill_level'
+              AND (%s::text IS NULL OR n.region = %s)
+              AND ({SKILL_KEY_SQL}) = %s
+              AND COALESCE(n.status, 'published') <> 'archived'
+            """,
+            (region, region, skill_key),
+        ).fetchall()
+        node_ids = [r["id"] for r in rows]
+        if not node_ids:
+            raise ValueError(f"技能不存在或已删除: {skill_key}")
+
+        occ_cnt = int(
+            conn.execute(
+                """
+                SELECT count(DISTINCT e.src_id) AS c FROM kg_edge e
+                WHERE e.rel_type = 'requires' AND e.dst_id = ANY(%s)
+                  AND COALESCE(e.status, 'published') = 'published'
+                """,
+                (node_ids,),
+            ).fetchone()["c"]
+            or 0
+        )
+        edge_n = conn.execute(
+            """
+            UPDATE kg_edge SET status = 'archived'
+            WHERE (src_id = ANY(%s) OR dst_id = ANY(%s))
+              AND COALESCE(status, 'published') <> 'archived'
+            """,
+            (node_ids, node_ids),
+        ).rowcount
+        node_n = conn.execute(
+            """
+            UPDATE kg_node
+               SET status = 'archived', updated_by = %s, updated_by_name = %s
+             WHERE id = ANY(%s)
+            """,
+            (user_id or None, user_name or None, node_ids),
+        ).rowcount
+        conn.commit()
+
+    return {
+        "deleted": True,
+        "skill_key": skill_key,
+        "archived_nodes": int(node_n or 0),
+        "archived_edges": int(edge_n or 0),
+        "occupations_affected": occ_cnt,
+    }
