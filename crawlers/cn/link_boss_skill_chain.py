@@ -662,6 +662,17 @@ def stage_advance(*, l1: str, dry_run: bool, batch: int, sleep: float) -> dict:
     if not dry_run and edges:
         conn = connect()
         try:
+            # 重建前先删本门类岗位已有的 advances_to —— 与 stage_apply 对 requires
+            # 的做法一致。不删的话重跑是纯增量：这一轮没再提出的旧路径会永远留着，
+            # 时间一长同一个岗位挂着几轮判定的叠加（库里已经出现过挂 15 条的），
+            # 没人分得清哪条是哪次跑出来的。删的只是**起点在本门类**的边，
+            # 别的门类指过来的不动。
+            src_ids = sorted({e["src_id"] for e in edges} | {r["id"] for r in items})
+            qs = ",".join("?" * len(src_ids))
+            rep["stale_advances_removed"] = conn.execute(
+                f"DELETE FROM edges WHERE rel_type='advances_to' AND src_id IN ({qs})",
+                src_ids,
+            ).rowcount
             rep["edges_upserted"] = upsert_edges(conn, edges)
             conn.commit()
         finally:

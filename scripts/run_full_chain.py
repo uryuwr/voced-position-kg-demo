@@ -8,6 +8,10 @@
     4. skill_chain --stage advance   跨族晋升链
     5. major_course --stage major    专业 prepares_for 岗位
 
+全部门类跑完后收尾一次（见 FINISH_STEPS）：
+    6. migrate                       SQLite → PG，**不灌就等于没跑**
+    7. migrate_skill_category_to_code  把 attrs.category 同步到 category 列
+
 课程资源（6-10 步）默认**不跑**，见 COURSE_STEPS 注释；要跑加 --with-courses。
 
 为什么 course 相关阶段放最后且共享缓存
@@ -53,6 +57,21 @@ CHAIN_STEPS: list[tuple[str, list[str]]] = [
     ("crawlers.cn.link_boss_skill_chain", ["--stage", "apply", "--l1", "{l1}"]),
     ("crawlers.cn.link_boss_skill_chain", ["--stage", "advance", "--l1", "{l1}", "--batch", "40"]),
     ("crawlers.cn.link_boss_major_course", ["--stage", "major", "--l1", "{l1}", "--sleep", "0.2"]),
+]
+
+# 批次收尾：**所有门类跑完后执行一次**，不是每门类都跑。
+#
+# 为什么必须有这一步 —— crawlers 写的是 **SQLite 采集库**，PG 是运行库，两者靠
+# `migrate` 同步。2026-08-18 那批就栽在这里：9 个门类进度全是「5 步 OK」，
+# 采集库里 requires 边 4600+，而 PG 里除了技术和产品全是 0，页面上什么都看不到 ——
+# 每一步都成功，链路却是断的，因为没人把数据灌过去。
+#
+# 第二步同样不能省：`migrate` 只搬 attrs，**不写 kg_node.category 列**，
+# 而读路径查的是列。少了它，新灌进来的技能一律显示「待归类」
+# （上次实测 12642 个）。
+FINISH_STEPS: list[tuple[str, list[str]]] = [
+    ("backend.kg.pg_store.migrate", ["--region", "CN"]),
+    ("scripts.migrate_skill_category_to_code", []),
 ]
 
 # 课程资源：**默认不跑**，要 --with-courses 才加进来。
@@ -118,6 +137,8 @@ def main() -> None:
     ap.add_argument("--skip-done", action="store_true", help="跳过已有 collect 产物的门类")
     ap.add_argument("--with-courses", action="store_true",
                     help="附带跑课程资源采集（默认不跑，原因见 COURSE_STEPS 注释）")
+    ap.add_argument("--no-finish", action="store_true",
+                    help="跳过收尾的灌库与分类同步（只想采集、稍后自己灌时用）")
     ap.add_argument("--timeout", type=int, default=5400, help="单步超时秒")
     args = ap.parse_args()
 
@@ -172,6 +193,24 @@ def main() -> None:
                 break  # 后续步骤依赖前一步产物，跳过本门类剩余步骤
             save(progress)
         save(progress)
+
+    # 收尾：灌库 + 同步分类列。跑到这里说明至少有门类产出了数据，
+    # 即便中间有门类失败也要灌 —— 成功的那些不该陪着一起躺在采集库里。
+    if not args.no_finish:
+        print("=" * 60)
+        print("收尾：SQLite → PG 灌库 + 同步 category 列")
+        print("=" * 60)
+        progress["finish"] = []
+        for mod, a in FINISH_STEPS:
+            t0 = time.time()
+            ok, msg = run_step(mod, a, "", timeout=args.timeout)
+            dur = round(time.time() - t0, 1)
+            progress["finish"].append({"step": mod, "ok": ok, "sec": dur,
+                                       "msg": msg[:300] if not ok else ""})
+            print("   %-46s %s  %.1fs" % (mod, "OK" if ok else "FAIL", dur))
+            if not ok:
+                print("      → %s" % msg[:300])
+            save(progress)
 
     progress["finished_at"] = datetime.now(timezone.utc).isoformat()
     save(progress)

@@ -70,6 +70,8 @@ pipelines/  旧路径 shim，勿写新逻辑
 
 **`advances_to` 是 1:N**——一个岗位有多个向上方向（本方向纵深 / 转管理 / 跨方向转型），2026-08-18 由 1:1 改过来。改之前本体写 1:1、采集端提示词却写「可以有多条向上路径」，读路径按本体 `LIMIT 1`，于是 Java 库里有「全栈/技术经理/架构师」三条边，页面只显示一条。多跳完整链路读 `kg/pg_store/progression.py`（防环+深度上限），单跳读 `goal_overview._next_levels`。**置信度排序不能裸写 `ORDER BY e.confidence`**：那是文本列，升序恰好把最不可信的 `ai_inferred` 排在最前（`derived`/`official` 在后），要用显式 CASE 给序。
 
+**采集跑完必须灌库，否则等于没跑**——`crawlers/` 写的是 SQLite 采集库，PG 才是运行库，两者靠 `python -m backend.kg.pg_store.migrate --region CN` 同步（不带 `--clear` 是增量 upsert）。2026-08-18 那批铺量栽在这：9 个门类进度全是「5 步 OK」、采集库里 4600+ 条 `requires`，而 PG 里除技术与产品全是 0，页面上什么都看不到——每步都成功，链路却是断的。`migrate` 只搬 `attrs`、**不写 `kg_node.category` 列**，而读路径查的是列，所以灌完还要跑 `scripts/migrate_skill_category_to_code.py`（上次少跑一次，12642 个技能显示「待归类」）。这两步已挂进 `scripts/run_full_chain.py` 的 `FINISH_STEPS`，批次末尾自动执行。**另外：铺量跑批期间不要改 `crawlers/` 下的文件**——每步是新起的子进程，改到一半会让后续门类 import 就崩（10 个门类因此整批失败）。
+
 **技能分类存 code，不存名字**——`kg_node.category` 存 `TECH`/`OPERATE` 这类 code，展示名连 `kg_skill_category` 表取（读路径统一走 `skill_taxonomy.name_of()`，出参里叫 `category_name`）。真源是 `kg/pg_store/skill_taxonomy.py`，启动时幂等 upsert 进表（只 upsert 不 delete，管理台自建的分类不会被抹）。11 个实类 + 兜底 `UNSORTED`（待归类），刻意做粗；改名只动表，不动 12000 条技能。管理台查字典用 `GET /v1/kg/skill-categories?q=`。改之前库里并存两套中文口径（国标「操作与加工」11 种 + LLM「技术工程」9 种），且 LLM 那 3135 个**只写了 `attrs.category`、列是空的**，读路径查列，页面上全显示「未分类」。新增分类来源时把中文别名加进 `aliases`，`to_code()` 认不出的一律落兜底，不猜。
 
 **边模型**：岗位 `requires` 技能（带 weight，Σ≈1）；专业 `covers` 技能（无权重、不归一）。本体见 `schemas/graph_schema.yaml`；发布门禁规则 BR-01~BR-08 在 `kg/pg_store/publish_rules.py`。
