@@ -1,0 +1,9 @@
+{
+  "stage": "collect",
+  "l1": "市场/公关/广告",
+  "occupations": 35,
+  "collected": 35,
+  "llm_failed": [],
+  "distinct_skill_names": 201,
+  "raw_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_raw_市场_公关_广告.json"
+}

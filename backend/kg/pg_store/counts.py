@@ -154,9 +154,13 @@ def counts_for_occupations(
 ) -> dict[str, dict[str, int]]:
     """occupation: skill(distinct key), major(逆 prepares_for), industry 数。
 
-    `scope` 决定技能数与权重和的口径，**与 `entity_skill_composition` 同一份谓词**
-    （`skill_aggregate._composition_pred`）。不共用的后果实测过：管理台列表说 7 项、
-    点进构成页 8 项 —— 同一个 scope 下两个数字。
+    `scope="manage"` 放行 draft / disabled 技能（仍挡 archived），**并且认草稿边**。
+    列表这个数字要和详情页、技能构成页对得上 —— 三处口径不同就是「同一岗位三个技能数」。
+
+    谓词不在这里另拼，直接用 `skill_aggregate._composition_pred(scope)` ——
+    与 `entity_skill_composition`（详情页/构成页读的那个）**同一份**。
+    主线原来是 `node_not_archived("n") if manage else _PUB_N`：思路一致，
+    但只管节点、不认草稿边，管理台列表会说 7 项而构成页 8 项。
     """
     out = {i: _empty_counts() for i in ids}
     if not ids:

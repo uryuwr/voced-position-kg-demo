@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "人力/财务/行政",
+  "dry_run": false,
+  "occupations": 41,
+  "requires_edges": 278,
+  "new_skill_nodes": 855,
+  "new_logical_skills": 171,
+  "reused_existing_skill_levels": 107,
+  "nodes_upserted": 855,
+  "stale_requires_removed": 0,
+  "edges_upserted": 278,
+  "occupations_patched": 41
+}

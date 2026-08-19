@@ -1,0 +1,11 @@
+{
+  "stage": "apply",
+  "l1": "产品",
+  "dry_run": false,
+  "skills_with_course": 113,
+  "new_course_nodes": 155,
+  "taught_by_edges": 221,
+  "search_landing_edges_removed": 0,
+  "nodes_upserted": 155,
+  "edges_upserted": 221
+}

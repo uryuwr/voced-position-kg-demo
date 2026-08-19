@@ -32,7 +32,8 @@ class MatchItem(BaseModel):
 
     skill_key: str = Field(..., description="技能聚合主键")
     skill_name: str | None = Field(None, description="技能展示名")
-    category: str | None = Field(None, description="技能大类")
+    category: str | None = Field(None, description="技能大类 code，见 /v1/kg/skill-categories")
+    category_name: str | None = Field(None, description="技能大类展示名（由 code 派生，不入库）")
     required_level: int | None = Field(
         None,
         ge=0,
@@ -233,6 +234,87 @@ class SkillCompositionOut(BaseModel):
     note: str | None = Field(None, description="口径说明")
 
 
+# ── 岗位晋升链路 ──────────────────────────────────────────────
+
+
+class SkillGapOut(BaseModel):
+    """进阶要补的一项技能：目标岗位要求里，当前岗位没有的 / 要求更高的。"""
+
+    skill_key: str = Field(..., description="逻辑技能名")
+    category: str | None = Field(None, description="技能大类 code，见 /v1/kg/skill-categories")
+    category_name: str | None = Field(None, description="技能大类展示名（由 code 派生，不入库）")
+    required_level: int | None = Field(
+        None, ge=1, le=5, description="目标岗位要求的档位 1–5"
+    )
+    required_label: str | None = Field(
+        None, description="档位名称，从 skill_level_meta 读，前端不要硬编码"
+    )
+    current_required_level: int | None = Field(
+        None, ge=1, le=5, description="当前岗位对该技能的要求档；null 表示当前岗位根本不要求"
+    )
+    weight: float | None = Field(
+        None, description="该技能在目标岗位能力结构中的权重，**小数**"
+    )
+
+
+class ProgressionOccBrief(BaseModel):
+    """晋升链路上的一个岗位节点。"""
+
+    id: str = Field(..., description="岗位节点 id")
+    name: str | None = Field(None, description="岗位名")
+    level: int | None = Field(None, description="职级，来自 `attrs.level`（唯一真源）")
+    level_code: str | None = Field(
+        None, description="职级代号，由 level **派生**不入库（双写会不一致）"
+    )
+    level_name: str | None = Field(None, description="职级中文名，同样派生")
+    description: str | None = Field(None, description="岗位描述")
+
+
+class ProgressionHop(BaseModel):
+    """路径上的一跳。"""
+
+    from_: ProgressionOccBrief = Field(..., alias="from", description="起点岗位")
+    to: ProgressionOccBrief = Field(..., description="终点岗位")
+    direction: str = Field(
+        ..., description="方向：本方向纵深 / 技术纵深 / 管理路线 / 跨方向转型 / 向上发展"
+    )
+    confidence: str | None = Field(None, description="置信度，晋升边目前均为 ai_inferred")
+    evidence: str | None = Field(None, description="判定依据（LLM 给出）")
+    unlock_skills: list[SkillGapOut] = Field(
+        default_factory=list, description="进阶要补的技能（最多 6 项，按权重倒序）"
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class ProgressionPath(BaseModel):
+    """一条完整晋升路径，可能多跳。"""
+
+    target: ProgressionOccBrief = Field(..., description="路径终点岗位")
+    direction: str = Field(..., description="首跳的方向，用作 tab 标题的分类")
+    depth: int = Field(..., ge=1, description="跳数")
+    hops: list[ProgressionHop] = Field(..., description="逐跳明细")
+
+
+class PositionProgressionsOut(BaseModel):
+    """岗位晋升链路（GET /v1/student/positions/progressions）。
+
+    独立于岗位详情与技能构成接口，加卡片不动既有契约。
+
+    `advances_to` 是 **1:N**：一个岗位可以有多条向上路径（本方向纵深 / 管理路线 /
+    跨方向转型）。早期本体误定为 1:1，读路径 `LIMIT 1`，于是 Java 有三条向上路径
+    却只显示「全栈工程师」一条。
+    """
+
+    occupation: ProgressionOccBrief = Field(..., description="查询的岗位")
+    paths: list[ProgressionPath] = Field(..., description="全部晋升路径，长链在前")
+    path_count: int = Field(..., ge=0, description="路径条数")
+    truncated: bool = Field(
+        False, description="是否因超出上限被截断（枢纽岗位可展开出上百条）"
+    )
+    note: str | None = Field(None, description="口径说明")
+
+
 # ── 岗位相关课程 ──────────────────────────────────────────────
 
 
@@ -252,16 +334,19 @@ class CourseResourceOut(BaseModel):
     )
     platform: str | None = Field(None, description="来源系统，如 ICOURSE163 / XUETANGX")
     platform_label: str | None = Field(None, description="平台中文名，直接展示用")
-    kind: Literal["real", "catalog", "landing"] = Field(
+    kind: Literal["real", "enroll", "catalog", "landing"] = Field(
         ...,
         description=(
-            "资源性质，决定前端怎么展示，**只有 real 是真正可学的**：\n\n"
-            "- `real`：平台真实课程页，点开能学，带 `learner_count`\n"
+            "资源性质，决定前端怎么展示，**只有 real 是点开当场能学的**：\n\n"
+            "- `real`：免登录、免报名、无开课周期，点开就能学\n"
+            "- `enroll`：是真课程，但**要登录报名**或按学期开课，往期只剩介绍页"
+            "（中国大学MOOC / 学堂在线）\n"
             "- `catalog`：教育部课标里的课目条目（`role=curriculum_catalog`），"
             "点开是专业培养方案目录，**没有课程内容**\n"
             "- `landing`：检索入口，点开是搜索结果页\n\n"
             "判定以课程节点的 `attrs.role` 为准，不是按 source_system —— "
-            "曾把 MOE_CN 当成真课，结果学员点开是课标目录页。"
+            "曾把 MOE_CN 当成真课，学员点开是课标目录页；也曾把 MOOC 归进 real，"
+            "学员点开是报名墙。"
         ),
     )
     learner_count: int | None = Field(
@@ -281,7 +366,8 @@ class PositionCourseSkillGroup(BaseModel):
     weight: float | None = Field(
         None, description="该技能在岗位能力结构中的权重，**小数**（同岗位 Σ≈1）"
     )
-    category: str | None = Field(None, description="技能大类")
+    category: str | None = Field(None, description="技能大类 code，见 /v1/kg/skill-categories")
+    category_name: str | None = Field(None, description="技能大类展示名（由 code 派生，不入库）")
     courses: list[CourseResourceOut] = Field(default_factory=list, description="课程列表")
 
 
@@ -294,8 +380,15 @@ class PositionCoursesOut(BaseModel):
     occupation: OccupationBrief = Field(..., description="岗位摘要")
     by_skill: list[PositionCourseSkillGroup] = Field(..., description="按技能分组的课程")
     skill_count: int = Field(..., ge=0, description="有课程的技能数")
-    course_count: int = Field(..., ge=0, description="课程总数（real + catalog + landing）")
-    real_course_count: int = Field(..., ge=0, description="真实课程数，**看这个判断资源是否可用**")
+    course_count: int = Field(
+        ..., ge=0, description="课程总数（real + enroll + catalog + landing）"
+    )
+    real_course_count: int = Field(
+        ..., ge=0, description="点开当场能学的资源数，**看这个判断资源是否可用**"
+    )
+    enroll_count: int = Field(
+        0, ge=0, description="需报名/有开课周期的课程数（MOOC 类），不计入 real"
+    )
     catalog_count: int = Field(
         0, ge=0, description="课标目录条目数（点开是培养方案，不是课程）"
     )
@@ -333,12 +426,25 @@ class ClearGoalOut(BaseModel):
 
 
 class NextLevelOut(BaseModel):
-    """晋升路径上的下一档岗位。"""
+    """晋升路径上的下一档岗位。
+
+    ⚠ `unlock_skills` 与 `description` 曾漏在这里没声明，后端明明算好了，
+    Pydantic 按模型序列化时**静默丢掉**，前端拿不到就一直显示
+    「下一级岗位暂未配置技能构成」—— 数据在库里、逻辑也对，只是没进契约。
+    """
 
     id: str = Field(..., description="岗位节点 id")
     name: str | None = Field(None, description="岗位名")
     level: int | None = Field(None, description="职级")
     level_label: str | None = Field(None, description="职级文案，如 L3")
+    description: str | None = Field(None, description="岗位职责描述")
+    confidence: str | None = Field(
+        None, description="晋升边置信度：official / derived / ai_inferred"
+    )
+    unlock_skills: list[SkillGapOut] = Field(
+        default_factory=list,
+        description="进阶要补的关键技能（最多 6 项，按目标岗位权重倒序）",
+    )
 
 
 class GoalOverviewOut(BaseModel):
@@ -367,7 +473,19 @@ class GoalOverviewOut(BaseModel):
         None, description="最近一次的完整测评报告；没测过为 null"
     )
     next_level: NextLevelOut | None = Field(
-        None, description="晋升路径的下一档岗位；无 advances_to 边时为 null"
+        None,
+        description=(
+            "**兼容字段**：`next_levels` 的第一条（置信度最高、职级最近）。"
+            "无 advances_to 边时为 null。新前端请读 `next_levels`"
+        ),
+    )
+    next_levels: list[NextLevelOut] = Field(
+        default_factory=list,
+        description=(
+            "全部向上方向。`advances_to` 是 **1:N** —— 一个岗位可以有多条晋升路径"
+            "（本方向纵深 / 管理路线 / 跨方向转型）。要看多跳完整链路用 "
+            "`GET /v1/student/positions/progressions`"
+        ),
     )
     learning_plan_id: str = Field(
         "", description="学习计划 id（学习空间服务的主键）；尚未生成时为空串"

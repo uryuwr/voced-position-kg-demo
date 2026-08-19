@@ -1,0 +1,51 @@
+{
+  "stage": "merge",
+  "l1": "生产制造",
+  "input_names": 595,
+  "canon_skills": 531,
+  "merged_groups": 51,
+  "llm_failed": [],
+  "sample_merges": {
+    "8D问题解决法": [
+      "8D报告编写"
+    ],
+    "APQP质量策划": [
+      "APQP流程管控"
+    ],
+    "AutoCAD Electrical": [
+      "AutoCAD电气绘图"
+    ],
+    "AutoCAD/EPLAN绘图": [
+      "EPLAN绘图"
+    ],
+    "BOM物料管理": [
+      "零件BOM编制"
+    ],
+    "CAE仿真分析": [
+      "底盘CAE仿真",
+      "车身CAE分析"
+    ],
+    "CFD流体仿真": [
+      "CFD工具应用"
+    ],
+    "GD&T形位公差": [
+      "GD&T尺寸标注"
+    ],
+    "ISO体系标准": [
+      "ISO体系搭建"
+    ],
+    "PLC编程调试": [
+      "PLC基础调试",
+      "PLC程序开发"
+    ],
+    "三维建模": [
+      "三维建模出图",
+      "三维建模渲染",
+      "三维建模绘图"
+    ],
+    "产品质量检验": [
+      "产品质量自检"
+    ]
+  },
+  "canon_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_canon_生产制造.json"
+}

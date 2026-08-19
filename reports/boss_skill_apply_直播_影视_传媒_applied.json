@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "直播/影视/传媒",
+  "dry_run": false,
+  "occupations": 34,
+  "requires_edges": 231,
+  "new_skill_nodes": 750,
+  "new_logical_skills": 150,
+  "reused_existing_skill_levels": 81,
+  "nodes_upserted": 750,
+  "stale_requires_removed": 0,
+  "edges_upserted": 231,
+  "occupations_patched": 34
+}

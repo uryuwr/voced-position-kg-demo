@@ -26,26 +26,49 @@ from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.config import attrs_level_int, edge_published, node_published
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 from backend.kg.pg_store.skill_level_meta import label_map
+from backend.kg.pg_store.skill_taxonomy import name_of
 
 _EP = edge_published("e")
 _NP = node_published("n")
 _LEVEL_N = attrs_level_int("n")
 
 
-def _next_level(conn, occupation_id: str) -> dict[str, Any] | None:
-    """沿 advances_to 找下一级岗位。schema 约定 1:1，取置信度最高的一条。"""
-    row = conn.execute(
-        f"""
-        SELECT n.id, n.name, n.level, n.description, e.confidence
-        FROM kg_edge e
-        JOIN kg_node n ON n.id = e.dst_id AND n.type='occupation' AND {_NP}
-        WHERE e.src_id = %s AND e.rel_type = 'advances_to' AND {_EP}
-        ORDER BY e.confidence NULLS LAST
-        LIMIT 1
-        """,
-        (occupation_id,),
-    ).fetchone()
-    return dict(row) if row else None
+# 置信度排序权重。**不能直接 ORDER BY e.confidence** —— 那是文本列，
+# 升序是 ai_inferred < derived < official，取到的恰好是最不可信的那条。
+# 这里显式给序，官方 > 规则推导 > LLM 推断。
+_CONF_RANK = (
+    "CASE e.confidence WHEN 'official' THEN 3 WHEN 'derived' THEN 2 "
+    "WHEN 'ai_inferred' THEN 1 ELSE 0 END"
+)
+
+
+def _next_levels(conn, occupation_id: str, limit: int = 5) -> list[dict[str, Any]]:
+    """沿 advances_to 找下一级岗位，**可能有多条**。
+
+    `advances_to` 是 1:N（2026-08-18 起）：一个岗位有多个向上方向。早期本体定成
+    1:1，这里 `LIMIT 1`，于是 Java 的「全栈 / 技术经理 / 架构师」三条只显示一条。
+
+    排序：置信度高的在前，同置信度按职级由低到高 —— 卡片讲的是「下一级」，
+    最近的一级比最远的更贴题。要看完整多跳路径用 `progression.py`。
+    """
+    return [
+        dict(r)
+        for r in conn.execute(
+            f"""
+            -- level 的真源是 attrs.level，n.level 列只是历史兼容。
+            -- 只读列会让 level_label 变成 null，前端那句 'L'+level 就成了 Lundefined
+            SELECT n.id, n.name, COALESCE(n.level, {_LEVEL_N}) AS level,
+                   n.description, e.confidence
+            FROM kg_edge e
+            JOIN kg_node n ON n.id = e.dst_id AND n.type='occupation' AND {_NP}
+            WHERE e.src_id = %s AND e.rel_type = 'advances_to' AND {_EP}
+            ORDER BY {_CONF_RANK} DESC,
+                     COALESCE(n.level, {_LEVEL_N}) NULLS LAST, n.name
+            LIMIT %s
+            """,
+            (occupation_id, limit),
+        ).fetchall()
+    ]
 
 
 def _skill_keys(conn, occupation_id: str) -> dict[str, dict[str, Any]]:
@@ -257,7 +280,8 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
             (occ_id,),
         ).fetchone()
         cur_skills = _skill_keys(conn, occ_id)
-        nxt = _next_level(conn, occ_id)
+        nxts = _next_levels(conn, occ_id)
+        nxt = nxts[0] if nxts else None
         report = _latest_report(conn, user_id, occ_id)
         # 优先取推送成功的：失败记录的 plan_id 是空串，按时间排它可能压在最上面，
         # 于是明明成功推过的计划在卡片上显示成"未生成"
@@ -267,27 +291,32 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
             "ORDER BY COALESCE(pushed_at, created_at) DESC LIMIT 1",
             (user_id, occ_id),
         ).fetchone()
-        gap_skills: list[dict[str, Any]] = []
-        if nxt:
-            nxt_skills = _skill_keys(conn, nxt["id"])
+        # 每个向上方向各算一份技能缺口
+        gaps_by_id: dict[str, list[dict[str, Any]]] = {}
+        for cand in nxts:
+            g: list[dict[str, Any]] = []
+            cand_skills = _skill_keys(conn, cand["id"])
             # 进阶需具备的关键核心技能 = 下一级要求里，当前岗位没有的 / 要求更高的
             for key, s in sorted(
-                nxt_skills.items(), key=lambda kv: -(float(kv[1].get("weight") or 0))
+                cand_skills.items(), key=lambda kv: -(float(kv[1].get("weight") or 0))
             ):
                 cur = cur_skills.get(key)
                 if cur is None or (s.get("required_level") or 0) > (cur.get("required_level") or 0):
-                    gap_skills.append(
+                    g.append(
                         {
                             "skill_key": key,
                             "category": s.get("category"),
+                            "category_name": name_of(s.get("category")),
                             "required_level": s.get("required_level"),
                             "required_label": labels.get(s.get("required_level") or 0),
                             "current_required_level": (cur or {}).get("required_level"),
                             "weight": float(s.get("weight") or 0),
                         }
                     )
-                if len(gap_skills) >= 6:
+                if len(g) >= 6:
                     break
+            gaps_by_id[cand["id"]] = g
+        gap_skills = gaps_by_id.get((nxt or {}).get("id"), [])
 
     occ_d = dict(occ) if occ else {}
     attrs = occ_d.get("attrs")
@@ -330,6 +359,8 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
         # 匹配度以最近一次针对该岗位的测评为准；没测过则为 None，前端提示先测评
         "match_score": (report or {}).get("match_score"),
         "assessment": report,
+        # 单数字段保留做向后兼容 —— 取 next_levels 的第一条（置信度最高、职级最近）。
+        # 新前端应该读 next_levels：advances_to 是 1:N，一个岗位有多个向上方向。
         "next_level": (
             {
                 "id": nxt["id"],
@@ -342,4 +373,16 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
             if nxt
             else None
         ),
+        "next_levels": [
+            {
+                "id": n["id"],
+                "name": n["name"],
+                "level": n.get("level"),
+                "level_label": f"L{n['level']}" if n.get("level") is not None else None,
+                "description": n.get("description"),
+                "confidence": n.get("confidence"),
+                "unlock_skills": gaps_by_id.get(n["id"], []),
+            }
+            for n in nxts
+        ],
     }

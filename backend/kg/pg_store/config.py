@@ -131,6 +131,11 @@ def online_only_edge(alias: str = "e") -> str:
     a = alias or "kg_edge"
     return f"NOT {a}.is_draft"
 
+# 要登录报名 / 按学期开课的平台 —— 见 learnable_course 说明。
+# 展示层（skill_aggregate 判 kind=enroll）直接 import 这个常量，不要另抄一份：
+# 过滤层与展示层各写一份的话，只同步了一处就会出现「列表里没有、详情里标真课」。
+ENROLL_SOURCES = ("ICOURSE163", "XUETANGX")
+
 
 def learnable_course(alias: str = "n") -> str:
     """【前台】课程节点是否**真的能学** —— 学员端所有资源查询都必须带上这个条件。
@@ -144,8 +149,15 @@ def learnable_course(alias: str = "n") -> str:
     （`major -offers_course-> course`）语境下是对的，不该删。错的是把它当成
     「可学资源」推给学员。
 
-    判定只认 attrs，不认 source_system —— 将来任何来源只要标了 `playable=false`
-    或 `role=curriculum_catalog`，一律不进学员资源列表。
+    「能学」的完整口径是**点开当场就能开始学**：免登录、免报名、无开课周期。
+    2026-08-18 按这条尺子把中国大学MOOC / 学堂在线也划了出去 —— 它们是真课程，
+    但要登录报名，且按学期开课，往期课程结束后非选课用户点进去只剩介绍页。
+    那批节点已 `archived`（`scripts/archive_courses.py`），`node_published()`
+    就挡住了；这里再挡一道，是为了 `--restore` 后语义仍然成立。
+
+    判定优先认 attrs —— 将来任何来源只要标了 `playable=false` 或
+    `role=curriculum_catalog`，一律不进学员资源列表；`enroll_required=true`
+    同理。`_ENROLL_SOURCES` 是给历史数据兜底的，那批节点入库时还没有这个字段。
 
     ⚠ 这是**唯一判定源**。别在各接口里再抄一份 `source_system <> 'MOE_CN'`：
     本轮已经因为「同一判定多处各写一份」出过四次问题（清单脚本只认 ICOURSE163、
@@ -156,9 +168,12 @@ def learnable_course(alias: str = "n") -> str:
         f"(CASE WHEN {a}attrs IS NULL OR btrim({a}attrs) = '' "
         f"THEN NULL ELSE {a}attrs::json END)"
     )
+    enroll_srcs = ", ".join(f"'{s}'" for s in ENROLL_SOURCES)
     return (
         f"COALESCE({attrs_json}->>'role', '') <> 'curriculum_catalog' "
-        f"AND COALESCE({attrs_json}->>'playable', 'true') <> 'false'"
+        f"AND COALESCE({attrs_json}->>'playable', 'true') <> 'false' "
+        f"AND COALESCE({attrs_json}->>'enroll_required', 'false') <> 'true' "
+        f"AND COALESCE({a}source_system, '') NOT IN ({enroll_srcs})"
     )
 
 

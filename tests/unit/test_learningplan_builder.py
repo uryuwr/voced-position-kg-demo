@@ -133,10 +133,34 @@ class Test编排:
         assert sum(len(ph.tasks) for ph in p.phases) == MAX_SKILLS_IN_PATH
 
     def test_按大类分阶段且空阶段被剔除(self):
-        sk = [skill("a", category="作业准备"), skill("b", category="操作与加工")]
+        """分组按**分类 code**，阶段名取字典表展示名。
+
+        断言原来传的是中文名（"作业准备" / "操作与加工"）并期望阶段名照抄。
+        技能分类 code 化之后这条自相矛盾：两个中文名都是同一个 code 的别名
+        （`to_code` 都返回 `OPERATE`），归一后只可能是**一个**阶段，
+        而展示名统一为字典表里的「操作与生产」。所以改成用两个真 code，
+        期望值也从字典表取 —— 分类改名只动 `kg_skill_category` 一张表，
+        测试不该把中文名写死。
+        """
+        from backend.kg.pg_store.skill_taxonomy import name_of
+
+        sk = [skill("a", category="SAFETY"), skill("b", category="OPERATE")]
         p = build(sk)
-        assert [ph.phase_name for ph in p.phases] == ["作业准备", "操作与加工"]
+        # 顺序沿用国标职业功能推进顺序（category_rank）：安全环保 → 操作生产
+        assert [ph.phase_name for ph in p.phases] == [name_of("SAFETY"), name_of("OPERATE")]
         assert all(ph.tasks for ph in p.phases)   # 空阶段会被对方 422
+
+    def test_中文分类名与code混用时归到同一阶段(self):
+        """历史数据里 category 还有中文写法，与 code 混用时必须归到同一个阶段。
+
+        不归一的话会分出两个阶段、展示名却是同一个「操作与生产」，学员看到重复阶段。
+        """
+        sk = [skill("a", category="操作与加工"), skill("b", category="OPERATE")]
+        p = build(sk)
+        from backend.kg.pg_store.skill_taxonomy import name_of
+
+        assert [ph.phase_name for ph in p.phases] == [name_of("OPERATE")]
+        assert sum(len(ph.tasks) for ph in p.phases) == 2
 
     def test_任务_id_在全路径内唯一(self):
         p = build([skill(f"S{i}", category=f"C{i % 3}") for i in range(8)])

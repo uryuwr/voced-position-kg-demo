@@ -1,0 +1,11 @@
+{
+  "stage": "apply",
+  "l1": "生产制造",
+  "dry_run": false,
+  "skills_with_course": 165,
+  "new_course_nodes": 240,
+  "taught_by_edges": 322,
+  "search_landing_edges_removed": 0,
+  "nodes_upserted": 240,
+  "edges_upserted": 322
+}

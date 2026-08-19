@@ -170,6 +170,24 @@ CREATE TABLE IF NOT EXISTS biz_user_points (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 技能分类字典。kg_node.category 存 code，展示时连这张表取 name。
+--
+-- 种子在 kg/pg_store/skill_taxonomy.py，启动时幂等 upsert 进来：代码里留真源便于
+-- review 与版本控制，库里有表便于连表和管理台增删。upsert **不删**库里多出来的行，
+-- 管理台自行新增的分类不会被下次启动抹掉。
+CREATE TABLE IF NOT EXISTS kg_skill_category (
+  code        TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  sort_order  INT  NOT NULL DEFAULT 999,   -- 同时是前端分区顺序与学习推进顺序
+  is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+  status      TEXT NOT NULL DEFAULT 'published',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_kg_skill_category_sort
+  ON kg_skill_category(sort_order, code);
+
 -- 逻辑技能先修（BR-05，skill_key 维度，无环由写入校验）
 CREATE TABLE IF NOT EXISTS kg_skill_prereq (
   skill_key TEXT NOT NULL,

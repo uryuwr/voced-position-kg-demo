@@ -166,16 +166,23 @@ class SkillOut(BaseModel):
     desc: str | None = Field(None, description="简介")
     required_level: int | None = Field(None, description="岗位要求档 L1–L5（int）")
     weight: float | None = Field(None, description="岗位要求权重（0–1 小数）")
+    # 下面四个字段栽在同一个形状上：**后端聚合好了、契约没声明、Pydantic 直接丢掉**。
+    # 症状分别是学员端权重列全是「-」（weight_pct）与类别列全是「未分类」（category_name）。
     weight_pct: int | None = Field(
         None,
         description=(
             "权重百分比，直接展示用（学员端岗位详情的「权重」列读的就是这个）。"
-            "**上游一直在算，只是这里没声明** —— Pydantic 把它丢了，"
-            "于是学员端每一行权重都显示「-」，学员判断不出哪个技能更重要"
+            "上游一直在算，只是这里没声明 —— 学员判断不出哪个技能更重要"
         ),
     )
     is_core: bool | None = Field(
         None, description="核心技能标记（权重 ≥ 30%）；同样是上游已算、这里补声明"
+    )
+    category: str | None = Field(
+        None, description="技能大类 **code**（TECH / OPERATE …），字典见 `GET /v1/kg/skill-categories`"
+    )
+    category_name: str | None = Field(
+        None, description="技能大类展示名，由 code 连字典表取得，**不入库**；前端展示用这个"
     )
     source_url: str | None = Field(None, description="来源链接")
     attrs: dict[str, Any] | None = Field(None, description="自由属性（无数据库约束的 JSON 列，键随数据来源而异）")
@@ -191,6 +198,19 @@ class SkillOut(BaseModel):
     available_levels: list[int] = Field(default_factory=list, description="已配齐的档位 1–5")
     missing_levels: list[int] = Field(default_factory=list, description="尚缺的档位 1–5")
     counts: RelationCounts | None = Field(None, description="关联计数")
+    # 和 category 一样，这两个字段后端一直在算，只是没进契约 → 被静默丢弃，
+    # 管理台列表既显示不了状态徽标，也没法按创建时间给用户看。
+    status: str | None = Field(
+        None,
+        description=(
+            "逻辑技能的聚合状态：各档一致时取该值，不一致为 `mixed`"
+            "（如 L1–L3 已发布、L4 还是草稿）。取值 published / draft / disabled / mixed"
+        ),
+    )
+    created_at: str | None = Field(
+        None,
+        description="创建时间 ISO8601，取各档 `created_at` 的最大值；列表默认按它倒序",
+    )
 
 
 class ProfessionListOut(PageMeta):
@@ -275,8 +295,26 @@ class SkillLevelMeta(BaseModel):
 
 
 class SkillCategory(BaseModel):
-    id: str = Field(..., description="节点 id")
-    name: str = Field(..., description="名称")
+    """技能分类字典项。**`code` 是真源**，`kg_node.category` 存的就是它。
+
+    展示一律用 `name`（从 `kg_skill_category` 表取），前端不要按 code 硬编码文案 ——
+    改名只动那张表，不动 12062 条技能数据。
+
+    ⚠ 这个模型曾只声明 id/name，`skill_count` 等字段被 Pydantic **静默丢弃**，
+    管理台拿不到数量。加字段时记得同步这里。
+    """
+
+    code: str = Field(..., description="分类 code，如 TECH / OPERATE；写入 kg_node.category")
+    id: str = Field(..., description="等同 code，保留给旧前端")
+    name: str = Field(..., description="展示名")
+    description: str = Field("", description="这一类涵盖什么，管理台分类时的判断依据")
+    sort_order: int = Field(999, description="展示顺序，也是学习推进顺序")
+    is_fallback: bool = Field(
+        False, description="是否兜底类（待归类）。新技能认不出时落这里，代表数据缺口"
+    )
+    skill_count: int = Field(
+        0, ge=0, description="该类下的**逻辑技能**数（按 skill_key 去重，不是节点数）"
+    )
 
 
 class ResumeDiagBody(BaseModel):

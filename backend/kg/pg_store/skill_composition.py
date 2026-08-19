@@ -29,6 +29,12 @@ from backend.kg.pg_store.config import (
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
 _EP = edge_published("e")
+# 管理台口径（draft / disabled 要能看到并编辑，只挡 archived）**不在这里定义**：
+# 主线 0a6842a 在本文件加过 `_NOT_ARCHIVED_N = node_not_archived("n")` 来修
+# 「边指向已归档技能，构成页照样列出、详情页不算 → 同一岗位两个技能数」，
+# 合并后那条 SQL 已换成 `skill_aggregate.composition_rows(scope="manage")`，
+# 它的谓词 `_composition_pred('manage')` = `node_not_archived + prefer_draft`，
+# 完整覆盖了主线那个意图（还多了草稿优先），所以那个常量成了死代码，删掉。
 _LEVEL_N = attrs_level_int("n")
 # 管理台口径（`<> 'archived'`）对草稿行同样成立 —— 每处都要跟 prefer_draft 去重，
 # 否则技能下拉、档位明细、构成列表里同一条数据出现两次（方案 §6.2）。

@@ -1,0 +1,1958 @@
+{
+ "CN:occupation:MOHRSS_CN:4-14-03-04": [
+  {
+   "name": "验光与处方分析",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "镜片加工与装配",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "质量检验与调校",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "培训与管理",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-25-01-13": [
+  {
+   "name": "作业准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "基板下料加工",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "线路图形制作",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "电镀蚀刻作业",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "成品检验包装",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "设备维护保养",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-05-01-06": [
+  {
+   "name": "缝前准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "绒线编织",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "拼布缝制",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "图案搭配",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "质量检验",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "成品整理",
+   "weight_pct": 5.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:1-02-02-00": [
+  {
+   "name": "政策制定与执行",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "行政事务管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "团队建设与管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "公共关系协调",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "应急事件处置",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "廉政风险防控",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-25-02-03": [
+  {
+   "name": "作业准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "设备操作与调试",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "工艺参数管控",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "质量检验与判定",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全与6S管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-13-01-05": [
+  {
+   "name": "内容创作",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "平台运营",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "用户运营",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "数据分析",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "活动策划",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "商务合作",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-09-08-03": [
+  {
+   "name": "作业准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "生活垃圾收集转运",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "生活垃圾焚烧处理操作",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "生活垃圾填埋处理操作",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全与环保管控",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:3-03-01-02": [
+  {
+   "name": "事务管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "文书拟写与处理",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "仲裁程序管控",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "庭审辅助保障",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "档案归集管理",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "当事人沟通协调",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-23-03-03": [
+  {
+   "name": "作业准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "零件选配与检测",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "发动机装配",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "发动机检查",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "发动机故障分析与排除",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "工艺文件编制与执行",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-08-05-08": [
+  {
+   "name": "试验准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "试验操作",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "试验结果处理",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "质量管控",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-30-02-06": [
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "故障诊断与维修",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "试验操作",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "试验结果处理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全作业管控",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "计量校准",
+   "weight_pct": 5.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-08-05": [
+  {
+   "name": "试验方案设计",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "试验操作",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "试验结果处理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "试验风险管控",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "试验数据分析",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "试验报告编制",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-20-04-00": [
+  {
+   "name": "作业准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "电梯机械部件装配",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "控制柜装配调试",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "电梯整机调试",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "自动扶梯和自动人行道装配调试",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "质量检验与故障排查",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-19-01-03": [
+  {
+   "name": "铸造加工",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "零件切削加工",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "锁具表面处理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "锁具装配",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "质量检验",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:3-01-02-02": [
+  {
+   "name": "文书拟写与处理",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "事务管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "会议组织与服务",
+   "weight_pct": 18.0
+  },
+  {
+   "name": "信息收集与整理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "商务活动协助",
+   "weight_pct": 12.0
+  },
+  {
+   "name": "档案管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-29-02-17": [
+  {
+   "name": "车辆设备检修",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "轨道线路维护",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "城市轨道交通行车值班员",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "城市轨道交通站务员",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "机电系统维保",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全隐患排查",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-08-08-18": [
+  {
+   "name": "灯具创意设计",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "产品设计表达",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "产品设计实施",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "灯具材料应用",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "灯具光学设计",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "设计验证优化",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-08-08-01": [
+  {
+   "name": "项目设计",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "花材选配",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "现场实施",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "养护管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "效果评估",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-31-03-06": [
+  {
+   "name": "试验准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "试验操作",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "试验结果处理",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "安全防护",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-05-04-02": [
+  {
+   "name": "生产准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "生产制作",
+   "weight_pct": 35.0
+  },
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "质量检验",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "工艺调整",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全操作",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-09-03-15": [
+  {
+   "name": "作业准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "制作产品",
+   "weight_pct": 35.0
+  },
+  {
+   "name": "检验产品",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "工艺优化",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-13-02": [
+  {
+   "name": "快件收寄",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "快件派送",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "客户服务",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "快件分拣",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "设备操作维护",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-09-01-02": [
+  {
+   "name": "场地和支泵准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "泵送操作",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "混凝土修补",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "质量检测",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "设备维保",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-19-04": [
+  {
+   "name": "场地和支泵准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "泵送操作",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "设备维保",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "质量检验",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "安全管控",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "技术交底",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-15-06": [
+  {
+   "name": "雷达应答器作业",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "AIS航标作业",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "无线电指向标作业",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "航标设备巡检",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "故障排查与维修",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-15-02-05": [
+  {
+   "name": "工前准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "卷材配料与混炼",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "卷材成型加工",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "防水施工",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "成品检查与修补",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-15-07": [
+  {
+   "name": "视觉航标布设",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "雷达应答器作业",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "AIS航标作业",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "无线电指向标作业",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "航标巡检维护",
+   "weight_pct": 12.0
+  },
+  {
+   "name": "航标故障排查",
+   "weight_pct": 8.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-02-01": [
+  {
+   "name": "准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "测量",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "数据处理",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "成果检查与验收",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "技术总结与归档",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-15-02-02": [
+  {
+   "name": "场地和支泵准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "泵送操作",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "制品成型控制",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "质量检验",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "设备维保",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "成品码放转运",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-15-01-02": [
+  {
+   "name": "场地和支泵准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "泵送操作",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "制品成型作业",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "质量检验",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "设备维保",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "成品码放转运",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-15-01-06": [
+  {
+   "name": "场地和支泵准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "泵送操作",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "设备维保",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "质量检测",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全管控",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "物料调配",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-36-01": [
+  {
+   "name": "制浆准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "制浆控制",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "制浆设备维护保养",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "造纸工艺调控",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "质量检测分析",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-03-02-00": [
+  {
+   "name": "作物栽培指导",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "病虫害监测预报",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "施药准备与指导",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "施药操作与指导",
+   "weight_pct": 18.0
+  },
+  {
+   "name": "用药记录与评估",
+   "weight_pct": 12.0
+  },
+  {
+   "name": "农技推广培训",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-29-02": [
+  {
+   "name": "计量检定/校准",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "方法选择与工作准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "数据处理及结果报告",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "计量器具维护",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "计量不确定度评定",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "计量体系运行",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-04-02-01": [
+  {
+   "name": "信息通信网络故障管理",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "信息通信网络性能管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "信息通信网络配置管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "信息通信网络安全管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "信息通信网络资源调度",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "运维文档编制",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-04-02-02": [
+  {
+   "name": "信息通信网络性能管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "信息通信网络故障管理",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "信息通信网络配置管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "线路布放与接续",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全防护管理",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "资源台账维护",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-04-02-03": [
+  {
+   "name": "动力设备运维",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "信息通信网络性能管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "信息通信网络故障管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "信息通信网络配置管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全防护管理",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "资源调度管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-04-02-04": [
+  {
+   "name": "信息通信网络性能管理",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "信息通信网络故障管理",
+   "weight_pct": 22.0
+  },
+  {
+   "name": "信息通信网络配置管理",
+   "weight_pct": 18.0
+  },
+  {
+   "name": "测量仪器仪表使用",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "测量数据处理分析",
+   "weight_pct": 12.0
+  },
+  {
+   "name": "测量作业安全管控",
+   "weight_pct": 8.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-01-01": [
+  {
+   "name": "样品制备选矿试验",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "实验测试岩矿鉴定",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "质量检查",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "仪器设备故障识别及维护保养",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "检测数据处理分析",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "检测方法研发验证",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-31-07-01": [
+  {
+   "name": "机械系统装调",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "电气系统装调",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "系统操作与编程调试",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "设备日常维护保养",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "故障诊断与排除",
+   "weight_pct": 20.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-06-01-04": [
+  {
+   "name": "易货方案策划",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "易货实施",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "易货市场服务",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "货物与服务管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "易货风险管控",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "易货数据分析",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-31-04-00": [
+  {
+   "name": "方法选择与工作准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "称重设备操作",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "计量检定/校准",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "数据处理及结果报告",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "设备维护与保养",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-28-01-13": [
+  {
+   "name": "作业准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "设备运行与调整",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "设备维护",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "参数监测与记录",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "问题分析与处理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "安全防护与应急",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:5-05-03-02": [
+  {
+   "name": "节能方案制定",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "供暖巡检",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "维修维护",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "调试讲解",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "能耗监测分析",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "节能技术推广",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-10-03-01": [
+  {
+   "name": "生产操作",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "故障判断与处理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "设备保养与维护",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "工艺参数调控",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "质量检测分析",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "安全作业管控",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-08-08-19": [
+  {
+   "name": "方案设计",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "技术设计",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "工作图绘制",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "照明效果调试",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "项目技术交底",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "设计成果审核",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-03-01-01": [
+  {
+   "name": "烟叶采收与调制",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "调制设施建设",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "烟叶收购与质量管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "调制设备维护",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "烟叶分级实操",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "安全生产管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-13-04-04": [
+  {
+   "name": "研学课程设计",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "研学活动准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "研学活动实施与保障",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "安全风险防控",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "评价与反馈",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-12-03-01": [
+  {
+   "name": "作业准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "产品故障检测与维修",
+   "weight_pct": 35.0
+  },
+  {
+   "name": "产品安装与调试",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "产品维保与顾客服务",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "质量检验",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "安全操作",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-26-02": [
+  {
+   "name": "监测与预警",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "预防与应急准备",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "现场救援实施",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "伤病员应急救治",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "救援善后",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "救援技术研发",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:3-02-03-08": [
+  {
+   "name": "预防与应急准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "监测与预警",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "现场应急处置",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "伤病员应急救治",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "救援善后",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "应急装备使用",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-05-07-08": [
+  {
+   "name": "膳食调查和评价",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "人体营养状况测定和评价",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "膳食设计和评估",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "营养教育和指导",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "社区营养管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "营养数据处理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-03-02-06": [
+  {
+   "name": "膳食调查和评价",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "人体营养状况测定和评价",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "膳食设计和评估",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "食谱编制与调整",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "社区营养管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "营养指导与宣教",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-28-04": [
+  {
+   "name": "安全风险辨识与管控",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "安全隐患排查",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "安全评价报告编制",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "化工安全管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "事故应急与救援",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "安全法规标准应用",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-28-05": [
+  {
+   "name": "房屋结构检测",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "安全风险辨识与管控",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "安全隐患排查",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "房屋安全等级评定",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "事故应急与救援",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "化工安全管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-05-02-12": [
+  {
+   "name": "膳食调查和评价",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "人体营养状况测定和评价",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "膳食设计和评估",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "社区营养管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "营养咨询与指导",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "营养宣教与培训",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-28-01": [
+  {
+   "name": "安全风险辨识与管控",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "安全隐患排查",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "安防系统设计与安装",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "安防设备调试与维护",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "事故应急与救援",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "化工安全管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-27-06": [
+  {
+   "name": "安全风险辨识与管控",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "安全隐患排查",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "事故应急与救援",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "化工安全管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "环境监测与治理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "职业健康防护管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-28-03": [
+  {
+   "name": "安全风险辨识与管控",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "安全隐患排查",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "安全生产教育培训",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "化工安全管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "事故应急与救援",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "职业健康管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-27-04": [
+  {
+   "name": "辐射监测与评价",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "安全隐患排查",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "安全风险辨识与管控",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "化工安全管理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "事故应急与救援",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "辐射防护管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-26-03": [
+  {
+   "name": "地震地质调查",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "安全风险辨识与管控",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "地震动参数确定",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全隐患排查",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "建设工程抗震评价",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "事故应急与救援",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "化工安全管理",
+   "weight_pct": 5.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-12-04-01": [
+  {
+   "name": "装配前准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "装配",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "检查与调试",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "维修",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "故障诊断",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全与质量检验",
+   "weight_pct": 5.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-10-07": [
+  {
+   "name": "安全风险辨识与管控",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "安全隐患排查",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "化工安全管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "事故应急与救援",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全防护实施",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "安全培训指导",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-07-06": [
+  {
+   "name": "模具结构分析",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "模具设计",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "模具制造",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "模具装配",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "模具试模与维修",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-04-01": [
+  {
+   "name": "操作采输气设备",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "维护保养采输气设备",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "生产资料分析",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全生产",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "采气工艺优化",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "故障排查处理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-02-02": [
+  {
+   "name": "准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "测量",
+   "weight_pct": 30.0
+  },
+  {
+   "name": "数据处理",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "仪器设备维护",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "成果质量检查",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "技术指导",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-29-02-12": [
+  {
+   "name": "施工运输",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "基础施工",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "杆塔施工",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "架线施工",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "线路运维检修",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全质量管控",
+   "weight_pct": 5.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-02-03": [
+  {
+   "name": "影像测图",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "空三加密",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "像片控制测量",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "像片调绘",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "遥感影像处理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "成果质量检查",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:5-04-02-03": [
+  {
+   "name": "作业准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "空气潜水",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "水面照料",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "装备维护保养",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "水下作业",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "应急与事故处理",
+   "weight_pct": 20.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-09-06-04": [
+  {
+   "name": "环境创设",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "生活照料",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "安全与健康管理",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "早期学习支持",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "合作共育",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "行为观察与记录",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-27-01": [
+  {
+   "name": "嗅辨检测准备",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "嗅辨采样",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "嗅辨样品检测",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "嗅辨设备维护与故障处理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "嗅辨安全防护",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "检测数据处理",
+   "weight_pct": 15.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:6-11-09-02": [
+  {
+   "name": "作业准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "装药与填塞",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "起爆网路连接与检查",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "警戒与起爆",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "爆后检查与处理",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "安全防护",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "环境保护和职业健康管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-18-13": [
+  {
+   "name": "作业准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "装药与填塞",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "起爆网路连接与检查",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "警戒与起爆",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "爆后检查与处理",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "安全防护",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "环境保护和职业健康管理",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:4-10-06-02": [
+  {
+   "name": "整容准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "安全防护",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "清洁更衣",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "整容整形",
+   "weight_pct": 25.0
+  },
+  {
+   "name": "美容化妆",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "消毒处理",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "遗体防腐",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-18-08": [
+  {
+   "name": "施工准备",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "基础施工",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "下部结构施工",
+   "weight_pct": 15.0
+  },
+  {
+   "name": "钢筋混凝土和预应力混凝土梁式桥施工",
+   "weight_pct": 18.0
+  },
+  {
+   "name": "拱桥拱结构施工",
+   "weight_pct": 12.0
+  },
+  {
+   "name": "桥面及附属工程施工",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "安全环保和职业健康",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "钢筋模板混凝土施工",
+   "weight_pct": 10.0
+  }
+ ],
+ "CN:occupation:MOHRSS_CN:2-02-20-03": [
+  {
+   "name": "园林绿化用地整理",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "园林硬质景观施工",
+   "weight_pct": 18.0
+  },
+  {
+   "name": "园林植物栽植与繁育",
+   "weight_pct": 20.0
+  },
+  {
+   "name": "园林植物修剪与整形",
+   "weight_pct": 12.0
+  },
+  {
+   "name": "园林植物基础养护",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "园林植物有害生物防治",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "立体绿化",
+   "weight_pct": 10.0
+  },
+  {
+   "name": "古树名木保护",
+   "weight_pct": 10.0
+  }
+ ]
+}

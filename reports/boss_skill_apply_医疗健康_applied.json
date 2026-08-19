@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "医疗健康",
+  "dry_run": false,
+  "occupations": 61,
+  "requires_edges": 422,
+  "new_skill_nodes": 1550,
+  "new_logical_skills": 310,
+  "reused_existing_skill_levels": 112,
+  "nodes_upserted": 1550,
+  "stale_requires_removed": 0,
+  "edges_upserted": 422,
+  "occupations_patched": 61
+}

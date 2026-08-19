@@ -417,6 +417,9 @@ def create_node(
         # 负责人默认取创建人（原型「负责人」列），可在编辑页改
         "owner": body.get("owner") or user_id,
         "owner_name": body.get("owner_name") or user_name,
+        # 技能大类。这一列以前不在 INSERT 里 —— 上层把 category 放进 body 也白搭，
+        # 静默丢掉，新建的技能一律「待归类」。
+        "category": body.get("category"),
     }
     with connect() as conn:
         conn.execute(
@@ -424,13 +427,13 @@ def create_node(
             INSERT INTO kg_node (
               id, region, type, name, name_en, name_zh, aliases, description, attrs,
               source_system, source_id, source_url, license, fetched_at, confidence,
-              status, updated_by, updated_by_name, owner, owner_name,
+              status, updated_by, updated_by_name, owner, owner_name, category,
               is_draft, target_status
             ) VALUES (
               %(id)s, %(region)s, %(type)s, %(name)s, %(name_en)s, %(name_zh)s, %(aliases)s,
               %(description)s, %(attrs)s, %(source_system)s, %(source_id)s, %(source_url)s,
               %(license)s, %(fetched_at)s, %(confidence)s, %(status)s, %(updated_by)s,
-              %(updated_by_name)s, %(owner)s, %(owner_name)s,
+              %(updated_by_name)s, %(owner)s, %(owner_name)s, %(category)s,
               %(is_draft)s, %(target_status)s
             )
             ON CONFLICT (id, is_draft) DO UPDATE SET
@@ -445,7 +448,10 @@ def create_node(
               status = EXCLUDED.status,
               target_status = EXCLUDED.target_status,
               updated_by = EXCLUDED.updated_by,
-              updated_by_name = EXCLUDED.updated_by_name
+              updated_by_name = EXCLUDED.updated_by_name,
+              -- 只在传了值时覆盖：重复提交/其它 type 的节点不带 category，
+              -- 无条件赋值会把已有分类抹成 NULL
+              category = COALESCE(EXCLUDED.category, kg_node.category)
             """,
             row,
         )
@@ -928,6 +934,20 @@ def archive_node(
         node_id, "archived", user_id=user_id, user_name=user_name
     )
     if node is not None:
+        # 线上行归档了，草稿行还得清掉。否则这条已删记录继续挂在「待发布」页，
+        # 点一下发布就把 status 写回 published —— 等于草稿能撤销一个立即生效的删除。
+        with connect() as conn:
+            conn.execute(
+                "DELETE FROM kg_edge WHERE is_draft AND (unit_id = %s OR src_id = %s "
+                "OR dst_id = %s)",
+                (node_id, node_id, node_id),
+            )
+            n = conn.execute(
+                "DELETE FROM kg_node WHERE id = %s AND is_draft", (node_id,)
+            ).rowcount
+            conn.commit()
+        if n:
+            node["discarded_draft"] = True
         return node
     # 没有线上行 = 这条记录从没发布过（只有草稿行）。**这时删除就是丢弃草稿** ——
     # 不这么处理的话「新建一条、还没发布、想删掉」会 404，运营删不掉自己刚建的东西。

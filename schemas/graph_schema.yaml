@@ -90,12 +90,19 @@ relation_types:
     domain: major
     range: course
   advances_to:
-    label_zh: 岗位晋升（同专业/岗位族内按 level 递进，1:1 有向）
+    # 2026-08-18 由 1:1 改为 1:N。现实里一个岗位有多个向上方向：本方向纵深、
+    # 转管理、跨方向转型。原先定成 1:1，读路径据此 LIMIT 1，于是 Java 明明有
+    # 「全栈工程师 / 技术经理 / 架构师」三条边，页面只显示一条。
+    # 允许跨岗位族（Java → 技术经理），但 from.level 必须**严格低于** to.level，
+    # 平行方向（Java → Python）不是晋升。
+    label_zh: 岗位晋升（按 level 递进，可跨岗位族，1:N 有向）
     domain: occupation
     range: occupation
 
 # ---------- 边结构层（前端分层渲染 / 默认折叠）----------
-# 每条边打 structure_layer：tree(归属树,1:N) | net(关联网,N:M) | chain(进阶链,1:1)
+# 每条边打 structure_layer：tree(归属树,1:N) | net(关联网,N:M) | chain(进阶链,1:N)
+# chain 指「有方向、可逐级串起来」，不是「每级只有一个后继」——
+# advances_to 一个岗位可以有多条向上路径，展开出来是棵树而不是一条线。
 edge_structure_layers:
   tree:
     - contain

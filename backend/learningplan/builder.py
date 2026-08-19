@@ -49,7 +49,12 @@ _DEFAULT_DURATION = 45
 # 若产品要「首次全 false，仅换代结转」，把这里改 False 即可，其余逻辑不动。
 CARRY_OVER_COMPLETED_ON_FIRST_IMPORT = True
 
-UNCATEGORIZED = "未分类"
+# 分类 code 的兜底值。展示名从字典表取（category_name_of），别在这里写中文 ——
+# 这里曾是 "未分类" 字面量，而 skill.category 存的是 code，
+# 学习计划的阶段名就会显示成 "TECH"、"OPERATE" 给学员看。
+from backend.kg.pg_store.skill_taxonomy import FALLBACK_CODE as UNCATEGORIZED
+from backend.kg.pg_store.skill_taxonomy import name_of as category_name_of
+from backend.kg.pg_store.skill_taxonomy import to_code as category_to_code
 
 
 def external_path_id_for(region: str, session_id: int) -> str:
@@ -198,7 +203,13 @@ def build_payload(
 
     # 阶段：按技能大类分组，顺序沿用国标「职业功能」推进顺序（安全环保 → 作业准备
     # → 操作加工 → 检修质检 → 技术管理 → 培训指导），与技能图谱的分区顺序同源。
-    all_cats = sorted({(s.get("category") or UNCATEGORIZED) for s in ordered},
+    # 分组键先过 to_code：库里 category 还留着中文写法（采集脚本/直连改库/历史数据），
+    # 不归一就会出现「作业准备」与「操作与加工」分成两个阶段、而展示名都叫「操作与生产」。
+    # to_code 的 docstring 写的就是这条：读写两侧都要走它，只在一处映射另一处就会分家。
+    def _cat_of(sk: dict[str, Any]) -> str:
+        return category_to_code(sk.get("category") or UNCATEGORIZED)
+
+    all_cats = sorted({_cat_of(s) for s in ordered},
                       key=lambda c: (category_rank(c), c))
     # 超上限就把尾部并进最后一个保留阶段，而不是丢技能。
     # （当前 MAX_SKILLS_IN_PATH=8 < MAX_PHASES=12，走不到这里；留作防御。）
@@ -207,7 +218,7 @@ def build_payload(
 
     grouped: dict[str, list[dict[str, Any]]] = {c: [] for c in kept}
     for s in ordered:
-        grouped[remap[s.get("category") or UNCATEGORIZED]].append(s)
+        grouped[remap[_cat_of(s)]].append(s)
     # 空阶段必须剔除：契约要求每阶段至少 1 个任务，空的会被 422
     cats = [c for c in kept if grouped[c]]
 
@@ -270,7 +281,8 @@ def build_payload(
     phase_models = [
         Phase(
             external_phase_id=f"stage-{i}",
-            phase_name=(cat or UNCATEGORIZED)[:256],
+            # 阶段名给学员看，用中文展示名而不是分类 code
+            phase_name=category_name_of(cat)[:256],
             phase_weight=w,
             tasks=tasks,
         )

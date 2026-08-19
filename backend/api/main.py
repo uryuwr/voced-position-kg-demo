@@ -73,6 +73,7 @@ from backend.api.schemas import (
     ServiceDiscovery,
     StatsResponse,
 )
+from backend.api.schemas_biz import SkillCategory
 from backend.api.routes_admin_biz import router as admin_biz_router
 from backend.api.routes_assessment import router as assessment_router
 from backend.api.routes_student import router as student_router
@@ -483,7 +484,9 @@ def _node_detail_core(
         if (n.get("status") or "published") != "published":
             raise HTTPException(status_code=404, detail="node not found")
     if include_counts:
-        # 计数口径跟着 scope：管理台要看草稿视图的技能数，否则列表/详情/构成页三个数字
+        # 计数口径跟着 scope：管理台要看草稿视图的技能数，否则列表/详情/构成页三个数字。
+        # 用 `_is_manage_scope` 归一而不是直接透传 scope 串：manage/admin/all 都算管理台，
+        # 直接透传时只有恰好等于 "manage" 的那个值会被下游认出来
         attach_counts_by_type(
             [n],
             node_type=n.get("type"),
@@ -1090,6 +1093,35 @@ def api_occupation_skills_graph(
 
 
 @app.get(
+    "/v1/kg/skill-categories",
+    tags=["管理台 · 数据列表"],
+    response_model=list[SkillCategory],
+    summary="技能分类字典（管理台检索用）",
+    description=(
+        "技能分类的**唯一字典**，来自 `kg_skill_category` 表。\n\n"
+        "给新技能定分类时用这个接口检索：`code` 写进 `kg_node.category`，"
+        "展示一律用 `name`。前端**不要**按 code 硬编码中文文案 —— "
+        "改名只动这张表，不动 12000 多条技能数据。\n\n"
+        "- `q`：按名称 / code / 说明模糊检索，留空返回全部\n"
+        "- `skill_count`：该类下的**逻辑技能**数（按 `skill_key` 去重，不是节点数；"
+        "一个技能在库里是 L1–L5 五个节点，按节点数会虚报五倍）\n"
+        "- `is_fallback=true` 的是兜底类「待归类」：新技能认不出时落这里。"
+        "它代表**数据缺口**而不是一种能力，管理台应逐步消化\n\n"
+        "分类刻意做粗（11 个实类 + 1 兜底），覆盖制造操作与互联网知识两侧口径；"
+        "细了以后每新增一批技能就要重排一次。"
+    ),
+)
+def kg_skill_categories(
+    q: str | None = Query(None, min_length=1, max_length=50, description="模糊检索词"),
+    user: TempUser = Depends(require_temp_user),
+) -> list[SkillCategory]:
+    _ = user
+    from backend.kg.pg_store import biz_store as _biz
+
+    return [SkillCategory.model_validate(x) for x in _biz.skill_categories(q=q)]
+
+
+@app.get(
     "/v1/kg/nodes",
     tags=["管理台 · 数据列表"],
     response_model=NodeListResponse,
@@ -1172,6 +1204,8 @@ def api_list_nodes(
         scope=scope,
     )
     if include_counts and data.get("items"):
+        # scope 要跟着列表口径走：管理台列表放行 draft/disabled（并认草稿边），
+        # 计数却按 published 算的话，列表里的技能数会比详情页少
         attach_counts_by_type(
             data["items"],
             node_type=type,

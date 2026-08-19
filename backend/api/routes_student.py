@@ -24,6 +24,7 @@ from backend.api.schemas_student import (
     ResumeExtractOut,
     ResumeSampleOut,
     PositionCoursesOut,
+    PositionProgressionsOut,
     SkillCompositionOut,
     StudentProfileOut,
     UserSkillItem,
@@ -225,6 +226,39 @@ def student_position_courses(
             occupation_courses(
                 id, limit_per_skill=limit_per_skill, include_catalog=include_catalog
             )
+        )
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@router.get(
+    "/positions/progressions",
+    tags=["前台 · 岗位探索与详情"],
+    summary="岗位晋升链路（多条，可多跳）",
+    description=(
+        "从该岗位出发沿 `advances_to` 展开出**全部**向上路径，每条可多跳"
+        "（如 Java → 技术经理 → CTO），逐跳给出要补的技能。\n\n"
+        "**与岗位详情接口相互独立**，加卡片不动既有契约。\n\n"
+        "`advances_to` 是 **1:N**：一个岗位有多个向上方向（本方向纵深 / 管理路线 / "
+        "跨方向转型），`direction` 给出分类，可直接用作 tab 标题。早期本体误定为 1:1、"
+        "读路径 `LIMIT 1`，导致 Java 有三条向上路径却只显示一条。\n\n"
+        "晋升边由 LLM 推断（`confidence=ai_inferred`），`evidence` 是判定依据。"
+        "覆盖率仍低（约 5% 的岗位有晋升边），无数据时 `paths` 为空数组而非报错。"
+    ),
+    response_model=PositionProgressionsOut,
+)
+def student_position_progressions(
+    id: str = Query(..., description="岗位节点 id"),
+    max_depth: int = Query(4, ge=1, le=6, description="最大跳数，超过多为数据噪音"),
+    max_paths: int = Query(12, ge=1, le=50, description="最多返回几条路径"),
+    user: TempUser = Depends(require_temp_user),
+) -> PositionProgressionsOut:
+    _ = user
+    try:
+        from backend.kg.pg_store.progression import occupation_progressions
+
+        return PositionProgressionsOut.model_validate(
+            occupation_progressions(id, max_depth=max_depth, max_paths=max_paths)
         )
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
@@ -696,7 +730,10 @@ def student_diagnosed_occupations(
         "- **下一级成长目标**：沿 `advances_to` 的下一级岗位，及进阶需补的关键技能\n"
         "- **测评结果**：该用户针对**这个岗位**最近一次报告（匹配度/雷达/优势/短板）\n\n"
         "三者都按岗位绑定，换目标即换整套数据。\n\n"
-        "注意：`advances_to` 边目前只覆盖约 1% 的岗位，多数情况下 `next_level` 为 null，"
+        "`advances_to` 是 **1:N**：`next_levels` 给出全部向上方向，`next_level` 是其中"
+        "第一条（兼容旧前端）。要看多跳完整链路用 "
+        "`GET /v1/student/positions/progressions`。\n\n"
+        "注意：晋升边目前只覆盖约 5% 的岗位，多数情况下 `next_levels` 为空数组，"
         "前端应隐藏该区块而非报错。"
     ),
     response_model=GoalOverviewOut,

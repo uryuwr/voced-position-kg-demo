@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "服务业",
+  "dry_run": false,
+  "occupations": 79,
+  "requires_edges": 532,
+  "new_skill_nodes": 2005,
+  "new_logical_skills": 401,
+  "reused_existing_skill_levels": 131,
+  "nodes_upserted": 2005,
+  "stale_requires_removed": 0,
+  "edges_upserted": 532,
+  "occupations_patched": 79
+}

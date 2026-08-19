@@ -776,7 +776,7 @@
             "/v1/admin/composition/options?limit=50" + (q ? "&q=" + encodeURIComponent(q) : ""));
           // datalist 的 option 只能放纯值，档位信息放 label 里提示
           $("cpList").innerHTML = cpOpts.map((x) =>
-            `<option value="${esc(x.skill_key)}" label="${esc(x.level_completeness)} ${esc(x.category || "")}"></option>`).join("");
+            `<option value="${esc(x.skill_key)}" label="${esc(x.level_completeness)} ${esc(x.category_name || x.category || "")}"></option>`).join("");
           $("cpHint").textContent = cpOpts.length ? `${cpOpts.length} 个匹配` : "无匹配";
         } catch (e) { toast(e.message || e, true); }
       };
@@ -906,14 +906,14 @@
               `<tr><td>${esc(sk.skill_key)}${sk.is_core ? ' <span class="tag">核心</span>' : ""}</td>
                    <td>L${sk.required_level ?? "-"}</td>
                    <td>${sk.weight_pct != null ? sk.weight_pct + "%" : "—"}</td>
-                   <td class="muted">${esc(sk.category || "未分类")}</td>
+                   <td class="muted">${esc(sk.category_name || sk.category || "待归类")}</td>
                    <td class="muted">${(sk.prereqs || []).length ? esc(sk.prereqs.join("、")) : "无先修"}</td>
                    <td>${(sk.levels || []).map((g) => g.required ? "■" : (g.exists ? "□" : "·")).join("")}</td>
                </tr>`).join("") + `</table>`
           : `<div class="muted">无</div>`;
       } else if (n.type === "skill_level") {
         body += kv("技能 key", esc(d.skill_key || ""));
-        body += kv("分类", esc(d.category || "未分类"));
+        body += kv("分类", esc(d.category_name || d.category || "待归类"));
         body += kv("等级完整度", esc(d.level_completeness || "—") + " " +
           (d.levels || []).map((g) => g.exists ? "■" : "·").join(""));
         body += kv("先修", (d.prereqs || []).map((x) => esc(x.prereq_skill_key)).join("、") || "无");
@@ -1062,7 +1062,7 @@
           // 原型技能库列：技能 / 分类 / 状态 / 版本 / 负责人 / 等级完整度
           return `<tr>
             <td class="name-cell">${esc(name)}<div class="id-cell">${esc(idShow)}</div></td>
-            <td class="muted">${esc(n.category || "未分类")}</td>
+            <td class="muted">${esc(n.category_name || n.category || "未分类")}</td>
             <td>${nodeStatusCell(n)}</td>
             <td>${esc(n.version_label || "—")}</td>
             <td class="muted">${esc(n.owner_name || n.updated_by_name || "—")}</td>
@@ -1073,6 +1073,8 @@
               ${st === "published"
                 ? `<button class="btn" type="button" data-dis-skill="${esc(n.skill_key || n.name || "")}">停用</button>`
                 : `<button class="btn ok" type="button" data-en-skill="${esc(n.skill_key || n.name || "")}">发布</button>`}
+              <button class="btn danger" type="button" data-del-skill="${esc(n.skill_key || n.name || "")}"
+                      data-del-occ="${(n.counts || {}).occupation || 0}" title="软删：L1–L5 与关联边一起归档，可恢复">删除</button>
             </td>
           </tr>`;
         }
@@ -1317,6 +1319,25 @@
             });
             stayAndReload(actMsg("已发布（须过 BR 门禁）", "已提交发布审核"));
           } catch (e) { toast(e.message, true); }
+        };
+      });
+      main.querySelectorAll("[data-del-skill]").forEach((b) => {
+        b.onclick = async () => {
+          const key = b.dataset.delSkill;
+          const occ = Number(b.dataset.delOcc || 0);
+          // 影响面写进确认框：软删可恢复，但挂着岗位的技能删掉后那些岗位会少一项能力要求
+          const warn = occ > 0
+            ? `
+
+该技能还挂在 ${occ} 个岗位的技能构成里，删除后这些岗位会少一项要求。`
+            : "";
+          if (!confirm(`确定删除技能「${key}」？
+
+L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn}`)) return;
+          try {
+            const r = await api.apiFetch("/v1/admin/skills/" + encodeURIComponent(key), { method: "DELETE" });
+            stayAndReload(`已删除「${key}」：归档 ${r.archived_nodes} 个档位、${r.archived_edges} 条边`);
+          } catch (e) { toast(e.message || e, true); }
         };
       });
       main.querySelectorAll("[data-dis-skill]").forEach((b) => {
@@ -1763,6 +1784,20 @@
       { code: "L5", label: "专家" },
     ];
 
+    /* 技能分类字典。真源是服务端 kg_skill_category 表，**不要在前端写死中文** ——
+       改名只动那张表；这里缓存一次，避免每次开表单都请求。 */
+    let SKILL_CATS = null;
+    async function loadSkillCategories() {
+      if (SKILL_CATS) return SKILL_CATS;
+      try {
+        SKILL_CATS = await api.apiFetch("/v1/kg/skill-categories");
+      } catch (e) {
+        SKILL_CATS = [];
+        toast("技能分类字典加载失败: " + (e.message || e), true);
+      }
+      return SKILL_CATS;
+    }
+
     /** 新建/编辑逻辑技能：L1–L5 + 岗位权重 + 先修 → admin/skills */
     async function openSkillBundleForm(seed) {
       seed = seed || {};
@@ -1775,6 +1810,7 @@
       } catch (e) {
         toast("加载岗位失败: " + (e.message || e), true);
       }
+      const cats = await loadSkillCategories();
       if (isEdit && seed.skill_key && !detail) {
         try {
           detail = await api.apiFetch("/v1/admin/skills/" + encodeURIComponent(seed.skill_key));
@@ -1803,11 +1839,23 @@
         return `<option value="${esc(it.id)}">${esc(lab)}</option>`;
       }).join("");
       const preList = (detail?.prerequisites || []).map((p) => p.skill_key || p.name).filter(Boolean);
+      // 编辑时回显原分类；新建默认落兜底类，让人主动去选而不是被塞进某一类
+      const curCat = seed.category || detail?.category
+        || (cats.find((c) => c.is_fallback) || {}).code || "";
       openModal(`
         <h2>${isEdit ? "编辑" : "新建"}技能 · L1–L5</h2>
         <p class="muted">审核通过后拆成多条 skill_level；岗位<strong>权重写在 requires 边</strong>（非技能节点）。</p>
         <div class="form-row"><label>技能名 skill_key *</label>
           <input id="f_skill_key" value="${esc(seed.skill_key || seed.name || detail?.skill_key || "")}" placeholder="如：流量承接" ${isEdit ? "readonly" : ""} />
+        </div>
+        <div class="form-row"><label>技能分类 category</label>
+          <select id="f_category">
+            ${cats.map((c) => `<option value="${esc(c.code)}"${
+              c.code === curCat ? " selected" : ""
+            }>${esc(c.name)}${c.is_fallback ? "（默认）" : ""} · ${c.skill_count} 个技能</option>`).join("")
+              || `<option value="">（字典加载失败）</option>`}
+          </select>
+          <div class="muted" id="catHint" style="margin-top:4px"></div>
         </div>
         <div class="form-row"><label>能力等级 levels.L* = {}</label>
           ${levelRows}
@@ -1877,6 +1925,16 @@
         renderOccLinks();
       };
       $("f_cancel").onclick = closeModal;
+      // 分类说明就是「这一类涵盖什么」，选的时候能看到才不容易分错
+      const catSel = $("f_category"), catHint = $("catHint");
+      if (catSel && catHint) {
+        const showHint = () => {
+          const c = cats.find((x) => x.code === catSel.value);
+          catHint.textContent = c ? `${c.code} —— ${c.description}` : "";
+        };
+        catSel.onchange = showHint;
+        showHint();
+      }
 
       function buildBody() {
         const skill_key = $("f_skill_key").value.trim();
@@ -1893,7 +1951,8 @@
           weight: x.weight_pct != null ? x.weight_pct / 100 : null,
           required_level: x.required_level,
         }));
-        return { skill_key, name: skill_key, levels, occupation_links, region: "CN" };
+        const category = ($("f_category") || {}).value || undefined;
+        return { skill_key, name: skill_key, levels, occupation_links, category, region: "CN" };
       }
 
       $("f_preview").onclick = async () => {

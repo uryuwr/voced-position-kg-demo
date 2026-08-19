@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "销售",
+  "dry_run": false,
+  "occupations": 52,
+  "requires_edges": 350,
+  "new_skill_nodes": 790,
+  "new_logical_skills": 158,
+  "reused_existing_skill_levels": 192,
+  "nodes_upserted": 790,
+  "stale_requires_removed": 0,
+  "edges_upserted": 350,
+  "occupations_patched": 52
+}

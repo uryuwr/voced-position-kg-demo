@@ -9,6 +9,8 @@ from typing import Any
 
 from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.config import DEFAULT_REGION, online_only, prefer_draft
+from backend.kg.pg_store.config import ENROLL_SOURCES as _CFG_ENROLL_SOURCES
+from backend.kg.pg_store.skill_taxonomy import name_of as _cat_name
 
 # SQL 片段：kg_node 别名 n，attrs 为 TEXT（可能为空）
 _ATTRS_JSON = """(
@@ -230,6 +232,7 @@ def assemble_bundle(
         # is_core：权重 >= 30% 视为该岗位的核心技能（原型「核心」标记）
         "is_core": bool(isinstance(weight, (int, float)) and weight >= 0.3),
         "category": category,
+        "category_name": _cat_name(category),
         "desc": desc,
         "description": desc,
         "counts": counts,
@@ -382,14 +385,19 @@ def list_skill_bundles(
         total_pages = max(1, math.ceil(total / page_size)) if total else 0
         offset = (page - 1) * page_size
 
+        # 排序：最近建/改的技能排最前。逻辑技能是多个档位节点聚合出来的，
+        # 取各档 created_at 的 max —— 补档也算「动过」，比 min 更贴「最近在维护什么」。
+        # 原先是 `ORDER BY 1`（技能名字母序），新建的技能会散落在几百页中间找不到。
+        # NULLS LAST：历史数据 created_at 可能为空，不该压在最新的前面。
         page_sql = f"""
         SELECT {key_expr} AS skill_key,
                count(*) AS level_count,
+               max(n.created_at) AS created_at,
                array_agg(n.id ORDER BY {li_expr} NULLS LAST) AS node_ids
         {base_from}
         {filters}
         GROUP BY 1
-        ORDER BY 1
+        ORDER BY max(n.created_at) DESC NULLS LAST, 1
         LIMIT %s OFFSET %s
         """
         page_rows = conn.execute(
@@ -399,12 +407,15 @@ def list_skill_bundles(
         all_ids: list[str] = []
         key_order: list[str] = []
         key_to_ids: dict[str, list[str]] = {}
+        created_by_key: dict[str, Any] = {}
         for r in page_rows:
             sk = r["skill_key"]
             key_order.append(sk)
             ids = list(r["node_ids"] or [])
             key_to_ids[sk] = ids
             all_ids.extend(ids)
+            ca = r.get("created_at")
+            created_by_key[sk] = ca.isoformat() if hasattr(ca, "isoformat") else ca
 
         nodes_by_id: dict[str, dict[str, Any]] = {}
         if all_ids:
@@ -442,14 +453,15 @@ def list_skill_bundles(
         items = []
         for sk in key_order:
             nodes = [nodes_by_id[i] for i in key_to_ids[sk] if i in nodes_by_id]
-            items.append(
-                assemble_bundle(
-                    sk,
-                    nodes,
-                    region=reg,
-                    occupation_count=occ_counts.get(sk, 0),
-                )
+            b = assemble_bundle(
+                sk,
+                nodes,
+                region=reg,
+                occupation_count=occ_counts.get(sk, 0),
             )
+            # 列表按它倒序，前端也要能显示「创建于」
+            b["created_at"] = created_by_key.get(sk)
+            items.append(b)
 
         # 管理台（scope=manage / 指定 status）要能看出「这个技能有没有未发布的改动」。
         # 技能库列表走的是本接口，不是四维列表 —— 上次给四维列表加 record_status 时漏了这里，
@@ -679,8 +691,15 @@ def entity_skill_composition(
         # 多取再聚合：一个 skill_key 可能有多条档位边
         limit=max((limit or 100) * 5, 200),
     )
-    bundles = group_nodes_to_bundles(rows)
+    # 主线（0a6842a）在读路径加的去重：同一技能只保留最高要求档，权重合并过来。
+    # 写路径已在重建前清旧边，但直连改库/其它采集脚本/历史数据都绕得过应用层 ——
+    # 两侧都要站得住（与 attrs.level 脏值防护同一原则）。
+    # **必须放在唯一实现里**：它原来长在 `occupation_skill_bundles` 里，
+    # 那个函数已并进本函数；不接过来的话「同一技能挂 L2+L3」会让详情页按边算 10 项、
+    # 列表页按 skill_key 算 7 项，主线刚修好的对不上又回来了。
+    bundles = group_nodes_to_bundles(_dedupe_requires_by_skill(rows))
     # 异常标记按 skill_key 汇总上来：bundle 里任一档的边指向不可见节点就标 dangling
+    # （用**去重前**的 rows 算：被去掉的低档边指向停用节点，同样是要让运营看见的异常）
     bad = {}
     for r in rows:
         if r.get("dangling"):
@@ -763,10 +782,52 @@ def occupation_skill_bundles(
 
     保留这个名字是因为调用点多（学员端、报告、诊断）；实现已并入
     `entity_skill_composition`，口径只有那一份。
+
+    `scope="manage"` 按管理台口径放行 draft / disabled 技能（仍挡 archived），
+    默认 public 只给 published。**口径必须跟着调用方走**：管理台的岗位详情、
+    技能构成、列表计数如果各用各的，同一个岗位就会显示出三个技能数 ——
+    库里正好有 64 个 draft、5 个 disabled、30 个 archived 技能，够把三个数字全岔开。
     """
     return entity_skill_composition(
         occupation_id, scope=scope, limit=limit, rel_type="requires"
     )
+
+
+def _dedupe_requires_by_skill(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """同一岗位同一技能只保留**最高要求档** —— 高档天生覆盖低档。
+
+    为什么读路径也要做：写路径已在 link_boss_skill_chain 重建前清旧边，但
+    直连改库、其它采集脚本、历史数据都绕得过应用层，两侧都要站得住
+    （与 attrs.level 脏值防护同一原则）。
+
+    症状很隐蔽：`.NET Core开发` 同时挂 L2 和 L3 时，列表页按 skill_key 聚合算 7 项、
+    详情页按边算 10 项，两处数字对不上，而且低档那条往往 weight 为空，
+    白白拉低权重和。
+
+    保留规则：档位高者优先；档位相同则取有权重的那条。权重取各档之和
+    （低档边通常无权重，不会影响 Σ≈1）。
+    """
+    best: dict[str, dict[str, Any]] = {}
+    for n in nodes:
+        key = skill_key_from_node(n)
+        if not key:
+            continue
+        lv = level_from_node(n) or 0
+        w = (n.get("edge") or {}).get("weight")
+        prev = best.get(key)
+        if prev is None:
+            best[key] = n
+            continue
+        prev_lv = level_from_node(prev) or 0
+        prev_w = (prev.get("edge") or {}).get("weight")
+        take_new = (lv, w is not None) > (prev_lv, prev_w is not None)
+        keep, drop = (n, prev) if take_new else (prev, n)
+        # 权重合并到保留项，避免丢掉挂在被丢弃那档上的权重
+        kw, dw = (keep.get("edge") or {}).get("weight"), (drop.get("edge") or {}).get("weight")
+        if dw is not None:
+            keep.setdefault("edge", {})["weight"] = float(kw or 0) + float(dw)
+        best[key] = keep
+    return list(best.values())
 
 
 def occupation_skill_composition(occupation_id: str) -> dict[str, Any]:
@@ -801,20 +862,28 @@ def occupation_skill_composition(occupation_id: str) -> dict[str, Any]:
     }
 
 
-# 课程资源三分类 —— 判定依据是 **attrs.role**，不是 source_system。
+# 课程资源分类 —— 判定依据是 **attrs.role**，不是 source_system。
 #
-# 踩过的坑：曾把 MOE_CN 归进「真实课程」，结果点开是教育部课标**目录页**。
-# 那 15960 门是课标里的「课目名称」，`role=curriculum_catalog`，
-# 本体明确写了「不能单独冒充可学资源」—— 它们是培养方案条目，不是能学的课。
-#
-#   real     平台真实课程页，点开就能学（中国大学MOOC / 学堂在线）
+#   real     点开**当场就能学**：免登录、免报名、无开课周期
+#   enroll   是真课程，但要登录报名 / 按学期开课，往期只剩介绍页
 #   catalog  课标目录条目，点开是专业培养方案，**没有具体课程内容**
 #   landing  检索入口，点开是搜索结果页
+#
+# 这套口径是被两次打脸打出来的，别再往回改：
+# 1. 曾把 MOE_CN 归进「真实课程」，点开是教育部课标**目录页** —— 那 15960 门是
+#    课标里的「课目名称」，`role=curriculum_catalog`，本体写明「不能单独冒充可学资源」。
+# 2. `real` 当初只保证「是个课程页」，却被当成「点开可学」，于是 129 门中国大学MOOC
+#    顶着「真课」标签挂在 67 个岗位上，学员点进去全是报名墙，还有一批往期课程已结课。
+#    2026-08-18 起 MOOC / 学堂在线归入 enroll，库里那批已 archived
+#    （`scripts/archive_courses.py`，要恢复加 --restore）。
 _ROLE_LEARNABLE = "learnable_resource"
 _ROLE_CATALOG = "curriculum_catalog"
-# ⚠ 新增课程来源时**必须同步这里**，否则 _course_kind 会落到 fallback 分支
+# ⚠ 新增课程来源时**必须同步这两个元组之一**，否则 _course_kind 会落到 fallback 分支
 # 把它判成 catalog，默认过滤掉 —— 节点入了库但页面上看不到（已踩过一次：OFFICIAL_DOCS）。
-_REAL_COURSE_SOURCES = ("ICOURSE163", "XUETANGX", "SMART_EDU_VOC", "OFFICIAL_DOCS")
+_REAL_COURSE_SOURCES = ("SMART_EDU_VOC", "OFFICIAL_DOCS")
+# 从 config 借用，不另抄一份：过滤层（learnable_course 的 SQL）与展示层（这里判
+# kind）必须同源，否则只同步一处就会出现「列表里没有、详情里却标着可直接学」。
+_ENROLL_COURSE_SOURCES = _CFG_ENROLL_SOURCES
 # 课标条目自带的 source_url 是「专业教学标准」大类目录页，对学员无意义；
 # 真要展示时改用按课程名生成的检索地址
 _MOOC_SEARCH = "https://www.icourse163.org/search.htm?search="
@@ -834,6 +903,8 @@ def _course_kind(role: str | None, platform: str, match_method: str | None) -> s
         return "catalog"
     if match_method == "search_landing" or platform == "SEARCH_LANDING_CN":
         return "landing"
+    if platform in _ENROLL_COURSE_SOURCES:
+        return "enroll"
     if role == _ROLE_LEARNABLE and platform in _REAL_COURSE_SOURCES:
         return "real"
     return "real" if platform in _REAL_COURSE_SOURCES else "catalog"
@@ -889,7 +960,7 @@ def occupation_courses(
         ORDER BY re.weight DESC NULLS LAST, te.weight DESC NULLS LAST, c.name
     """
     groups: dict[str, dict[str, Any]] = {}
-    real_n = catalog_n = landing_n = 0
+    real_n = enroll_n = catalog_n = landing_n = 0
     seen: set[tuple[str, str]] = set()
     with session() as conn, conn.cursor() as cur:
         cur.execute(sql, (occupation_id,))
@@ -902,6 +973,7 @@ def occupation_courses(
                 "required_level": r["req_level"],
                 "weight": float(r["skill_weight"]) if r["skill_weight"] is not None else None,
                 "category": r["category"],
+                "category_name": _cat_name(r["category"]),
                 "courses": [],
             })
             if (key, r["course_id"]) in seen or len(g["courses"]) >= limit_per_skill:
@@ -923,6 +995,8 @@ def occupation_courses(
                     continue  # 计数保留（便于观察数据缺口），但不返回给学员
             elif kind == "real":
                 real_n += 1
+            elif kind == "enroll":
+                enroll_n += 1
             else:
                 landing_n += 1
             url = r["url"]
@@ -953,13 +1027,15 @@ def occupation_courses(
         },
         "by_skill": items,
         "skill_count": len(items),
-        "course_count": real_n + catalog_n + landing_n,
+        "course_count": real_n + enroll_n + catalog_n + landing_n,
         "real_course_count": real_n,
+        "enroll_count": enroll_n,
         "catalog_count": catalog_n,
         "catalog_hidden": (not include_catalog) and catalog_n > 0,
         "landing_count": landing_n,
         "note": (
-            "kind=real 平台真实课程页，点开可学（带 learner_count 判热度）；"
+            "kind=real 免登录免报名、点开当场能学；"
+            "kind=enroll 是真课程但要报名或按学期开课（MOOC 类）；"
             "kind=catalog 课标目录条目，点开是专业培养方案而非课程内容；"
             "kind=landing 检索入口，点开是搜索结果页。"
             "只有 real 才是真正可学的资源。"

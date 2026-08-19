@@ -29,6 +29,7 @@ if str(ROOT) not in sys.path:
 
 from backend.kg.pg_store.client import connect  # noqa: E402
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL  # noqa: E402
+from backend.kg.pg_store.skill_taxonomy import name_of, to_code  # noqa: E402
 
 # 明显的表格解析噪声，不是技能，不分类
 NOISE = re.compile(r"^(总计|合计|小计|序号|备注|说明|其他|其它|—+|-+)$")
@@ -56,12 +57,17 @@ COMPILED = [(name, re.compile(pat)) for name, pat in RULES]
 
 
 def classify(skill_key: str) -> str | None:
+    """返回分类 **code**（不是中文名）。
+
+    RULES 里第一列写中文是为了规则本身可读，落库一律转成 code —— `kg_node.category`
+    自 2026-08-18 起存 code，这里若写回中文名会把迁移覆盖掉，而且不报错。
+    """
     s = (skill_key or "").strip()
     if not s or NOISE.match(s):
         return None
     for name, pat in COMPILED:
         if pat.search(s):
-            return name
+            return to_code(name)
     return None
 
 
@@ -85,7 +91,7 @@ def main() -> int:
         print(f"逻辑技能总数 {len(keys)} · 可分类 {len(mapping)} "
               f"({len(mapping) * 100 // max(len(keys), 1)}%) · 未分类 {len(keys) - len(mapping)}")
         for c, n in sorted(dist.items(), key=lambda x: -x[1]):
-            print(f"  {n:5d}  {c}")
+            print(f"  {n:5d}  {c:<10} {name_of(c)}")
 
         if args.dry_run:
             print("\n[dry-run] 未写库")
@@ -99,9 +105,15 @@ def main() -> int:
                 "INSERT INTO _skill_cat(k, cat) VALUES (%s, %s) ON CONFLICT (k) DO NOTHING",
                 list(mapping.items()),
             )
+        # 只**补缺**，不覆盖已有分类：这套规则是按国标技能名写的，
+        # 里面没有 TECH/DESIGN/GENERAL 这些互联网侧的类
+        # （「技术管理与创新」会落到 MANAGE），无差别跑一遍会把 LLM 技能的
+        # TECH 改写成 MANAGE，而且悄无声息。
         r = conn.execute(
             f"UPDATE kg_node n SET category = t.cat FROM _skill_cat t "
+            # NOT n.is_draft：种子脚本只动线上行，别把别人没发布的草稿也改了
             f"WHERE n.type='skill_level' AND NOT n.is_draft AND {SKILL_KEY_SQL} = t.k "
+            f"AND COALESCE(NULLIF(n.category,''), 'UNSORTED') = 'UNSORTED' "
             f"AND n.category IS DISTINCT FROM t.cat"
         )
         print(f"\n已更新 kg_node.category：{r.rowcount} 个 skill_level 节点")

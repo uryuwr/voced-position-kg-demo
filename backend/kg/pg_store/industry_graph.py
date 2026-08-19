@@ -12,8 +12,9 @@ from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.config import DEFAULT_REGION, edge_published
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 from backend.kg.pg_store.skill_taxonomy import (
-    UNCATEGORIZED,
+    FALLBACK_CODE,
     category_rank,
+    name_of,
     topo_depth,
 )
 
@@ -250,7 +251,10 @@ def occupation_skills_graph(
         for r in rows:
             k = r["skill_key"]
             keys.append(k)
-            cat = r["category"] or UNCATEGORIZED
+            # 分区 key 一律用 **code**。这里曾写 `or UNCATEGORIZED`，而那个常量
+            # 是中文展示名 —— 结果有分类的分区 key 是 TECH、没分类的是「待归类」，
+            # 同一个字段混着两种取值，下面按 key 取计数也就永远取不到。
+            cat = r["category"] or FALLBACK_CODE
             cat_of[k] = cat
             groups.setdefault(cat, []).append(
                 {
@@ -287,8 +291,9 @@ def occupation_skills_graph(
             s["depth"] = depth.get(s["skill_key"], 0)
         # 区内按层深排，同层按名称，供前端纵向分层
         skills.sort(key=lambda s: (s["depth"], s["skill_key"]))
+    # key 是 code，name 是展示名 —— 前端不要按 code 硬编码中文
     categories = [
-        {"key": c, "rank": category_rank(c), "skills": s}
+        {"key": c, "name": name_of(c), "rank": category_rank(c), "skills": s}
         for c, s in sorted(groups.items(), key=lambda x: (category_rank(x[0]), x[0]))
     ]
     return {
@@ -299,7 +304,7 @@ def occupation_skills_graph(
             "matched": 1,
             "skill_total": len(keys),
             "category_count": len(categories),
-            "uncategorized": len(groups.get(UNCATEGORIZED, [])),
+            "uncategorized": len(groups.get(FALLBACK_CODE, [])),
             "prereq_total": len(prereqs),
             "max_depth": max(depth.values(), default=0),
             "order": "categories 按学习顺序排列；skills[].depth 为前置层深(0=可直接学)",

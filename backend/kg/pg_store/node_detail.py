@@ -282,9 +282,11 @@ def _occupation_detail(conn, oid: str) -> dict[str, Any]:
 
     from backend.kg.pg_store.skill_prereq import prereq_map
 
-    # **管理台口径**：草稿优先。本文件是管理台详情，之前这里走的是 published 口径，
-    # 于是「改完技能构成」在构成页看得到、在详情页看不到 —— 同一个 scope 两个答案。
-    # 现在与 /v1/admin/composition 共用 entity_skill_composition，口径只有一份。
+    # **管理台口径**：draft / disabled 也要能看到并编辑，只挡 archived，且草稿优先。
+    # 与 `skill_composition.get_composition`、`counts_for_occupations` 必须同口径，
+    # 否则同一岗位在列表、详情、技能构成三处显示三个技能数（主线 0a6842a 修的就是这个）。
+    # 这里直接走唯一实现 —— 主线那版调的 `occupation_skill_bundles(scope="manage")`
+    # 现在只是它的兼容包装，口径只有 `_composition_pred` 那一份。
     bundles = entity_skill_composition(oid, scope="manage", limit=200, conn=conn)
     pmap = prereq_map(conn, [b.get("skill_key") for b in bundles])
 

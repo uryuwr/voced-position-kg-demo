@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "市场/公关/广告",
+  "dry_run": false,
+  "occupations": 35,
+  "requires_edges": 239,
+  "new_skill_nodes": 730,
+  "new_logical_skills": 146,
+  "reused_existing_skill_levels": 93,
+  "nodes_upserted": 730,
+  "stale_requires_removed": 0,
+  "edges_upserted": 239,
+  "occupations_patched": 35
+}
