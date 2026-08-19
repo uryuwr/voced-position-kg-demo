@@ -1,307 +1,19 @@
 {
-  "started_at": "2026-08-18T07:10:42.477518+00:00",
+  "started_at": "2026-08-19T02:53:19.043739+00:00",
   "l1": {
-    "服务业": {
-      "occupations": 79,
-      "steps": [
-        {
-          "step": "link_boss_skill_chain collect",
-          "ok": true,
-          "sec": 432.7,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain merge",
-          "ok": true,
-          "sec": 107.5,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain apply",
-          "ok": true,
-          "sec": 0.4,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain advance",
-          "ok": true,
-          "sec": 44.3,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_major_course major",
-          "ok": true,
-          "sec": 334.5,
-          "msg": ""
-        }
-      ],
-      "ok": true
-    },
-    "教育培训": {
-      "occupations": 66,
-      "steps": [
-        {
-          "step": "link_boss_skill_chain collect",
-          "ok": true,
-          "sec": 355.9,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain merge",
-          "ok": true,
-          "sec": 75.6,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain apply",
-          "ok": true,
-          "sec": 0.4,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain advance",
-          "ok": true,
-          "sec": 31.2,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_major_course major",
-          "ok": true,
-          "sec": 212.2,
-          "msg": ""
-        }
-      ],
-      "ok": true
-    },
-    "医疗健康": {
-      "occupations": 61,
-      "steps": [
-        {
-          "step": "link_boss_skill_chain collect",
-          "ok": true,
-          "sec": 364.4,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain merge",
-          "ok": true,
-          "sec": 94.4,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain apply",
-          "ok": true,
-          "sec": 0.5,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain advance",
-          "ok": true,
-          "sec": 112.0,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_major_course major",
-          "ok": true,
-          "sec": 225.7,
-          "msg": ""
-        }
-      ],
-      "ok": true
-    },
-    "销售": {
-      "occupations": 52,
-      "steps": [
-        {
-          "step": "link_boss_skill_chain collect",
-          "ok": true,
-          "sec": 300.2,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain merge",
-          "ok": true,
-          "sec": 54.0,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain apply",
-          "ok": true,
-          "sec": 0.5,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain advance",
-          "ok": true,
-          "sec": 52.9,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_major_course major",
-          "ok": true,
-          "sec": 194.4,
-          "msg": ""
-        }
-      ],
-      "ok": true
-    },
-    "人力/财务/行政": {
-      "occupations": 41,
-      "steps": [
-        {
-          "step": "link_boss_skill_chain collect",
-          "ok": true,
-          "sec": 232.0,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain merge",
-          "ok": true,
-          "sec": 56.9,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain apply",
-          "ok": true,
-          "sec": 0.5,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain advance",
-          "ok": true,
-          "sec": 103.9,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_major_course major",
-          "ok": true,
-          "sec": 232.1,
-          "msg": ""
-        }
-      ],
-      "ok": true
-    },
-    "客服/运营": {
-      "occupations": 39,
-      "steps": [
-        {
-          "step": "link_boss_skill_chain collect",
-          "ok": true,
-          "sec": 229.6,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain merge",
-          "ok": true,
-          "sec": 54.7,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain apply",
-          "ok": true,
-          "sec": 0.5,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain advance",
-          "ok": true,
-          "sec": 55.5,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_major_course major",
-          "ok": true,
-          "sec": 214.6,
-          "msg": ""
-        }
-      ],
-      "ok": true
-    },
-    "房地产/建筑": {
-      "occupations": 39,
-      "steps": [
-        {
-          "step": "link_boss_skill_chain collect",
-          "ok": true,
-          "sec": 222.6,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain merge",
-          "ok": true,
-          "sec": 58.8,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain apply",
-          "ok": true,
-          "sec": 0.5,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain advance",
-          "ok": true,
-          "sec": 68.8,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_major_course major",
-          "ok": true,
-          "sec": 209.2,
-          "msg": ""
-        }
-      ],
-      "ok": true
-    },
-    "市场/公关/广告": {
-      "occupations": 35,
-      "steps": [
-        {
-          "step": "link_boss_skill_chain collect",
-          "ok": true,
-          "sec": 199.3,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain merge",
-          "ok": true,
-          "sec": 52.7,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain apply",
-          "ok": true,
-          "sec": 0.5,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain advance",
-          "ok": true,
-          "sec": 64.0,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_major_course major",
-          "ok": true,
-          "sec": 186.2,
-          "msg": ""
-        }
-      ],
-      "ok": true
-    },
-    "直播/影视/传媒": {
+    "设计": {
       "occupations": 34,
       "steps": [
         {
           "step": "link_boss_skill_chain collect",
           "ok": true,
-          "sec": 202.6,
+          "sec": 1.6,
           "msg": ""
         },
         {
           "step": "link_boss_skill_chain merge",
           "ok": true,
-          "sec": 55.9,
+          "sec": 56.0,
           "msg": ""
         },
         {
@@ -313,132 +25,306 @@
         {
           "step": "link_boss_skill_chain advance",
           "ok": true,
-          "sec": 59.2,
+          "sec": 65.4,
           "msg": ""
         },
         {
           "step": "link_boss_major_course major",
           "ok": true,
-          "sec": 176.4,
+          "sec": 208.7,
           "msg": ""
         }
       ],
       "ok": true
-    },
-    "设计": {
-      "occupations": 33,
-      "steps": [
-        {
-          "step": "link_boss_skill_chain collect",
-          "ok": true,
-          "sec": 203.2,
-          "msg": ""
-        },
-        {
-          "step": "link_boss_skill_chain merge",
-          "ok": false,
-          "sec": 0.1,
-          "msg": "rc=1 88, in _run_code\n  File \"D:\\workspace\\职业教育知识图谱\\crawlers\\cn\\link_boss_skill_chain.py\", line 72, in <module>\n    CATEGORIES = [c[\"name\"] for c in SKILL_CATEGORIES if not c[\"code\"] == FALLBACK_CODE]"
-        }
-      ],
-      "ok": false
     },
     "金融": {
       "occupations": 29,
       "steps": [
         {
           "step": "link_boss_skill_chain collect",
-          "ok": false,
-          "sec": 0.1,
-          "msg": "rc=1 88, in _run_code\n  File \"D:\\workspace\\职业教育知识图谱\\crawlers\\cn\\link_boss_skill_chain.py\", line 72, in <module>\n    CATEGORIES = [c[\"name\"] for c in SKILL_CATEGORIES if not c[\"code\"] == FALLBACK_CODE]"
+          "ok": true,
+          "sec": 184.6,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain merge",
+          "ok": true,
+          "sec": 53.1,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain apply",
+          "ok": true,
+          "sec": 0.5,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain advance",
+          "ok": true,
+          "sec": 47.6,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_major_course major",
+          "ok": true,
+          "sec": 136.5,
+          "msg": ""
         }
       ],
-      "ok": false
+      "ok": true
     },
     "供应链/物流": {
       "occupations": 28,
       "steps": [
         {
           "step": "link_boss_skill_chain collect",
-          "ok": false,
-          "sec": 0.1,
-          "msg": "rc=1 88, in _run_code\n  File \"D:\\workspace\\职业教育知识图谱\\crawlers\\cn\\link_boss_skill_chain.py\", line 72, in <module>\n    CATEGORIES = [c[\"name\"] for c in SKILL_CATEGORIES if not c[\"code\"] == FALLBACK_CODE]"
+          "ok": true,
+          "sec": 182.6,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain merge",
+          "ok": true,
+          "sec": 43.2,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain apply",
+          "ok": true,
+          "sec": 0.5,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain advance",
+          "ok": true,
+          "sec": 43.0,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_major_course major",
+          "ok": true,
+          "sec": 173.0,
+          "msg": ""
         }
       ],
-      "ok": false
+      "ok": true
     },
     "咨询/翻译/法律": {
       "occupations": 21,
       "steps": [
         {
           "step": "link_boss_skill_chain collect",
-          "ok": false,
-          "sec": 0.1,
-          "msg": "rc=1 88, in _run_code\n  File \"D:\\workspace\\职业教育知识图谱\\crawlers\\cn\\link_boss_skill_chain.py\", line 72, in <module>\n    CATEGORIES = [c[\"name\"] for c in SKILL_CATEGORIES if not c[\"code\"] == FALLBACK_CODE]"
+          "ok": true,
+          "sec": 165.6,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain merge",
+          "ok": true,
+          "sec": 36.0,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain apply",
+          "ok": true,
+          "sec": 0.5,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain advance",
+          "ok": true,
+          "sec": 34.6,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_major_course major",
+          "ok": true,
+          "sec": 91.2,
+          "msg": ""
         }
       ],
-      "ok": false
+      "ok": true
     },
     "采购/贸易": {
       "occupations": 13,
       "steps": [
         {
           "step": "link_boss_skill_chain collect",
-          "ok": false,
-          "sec": 0.1,
-          "msg": "rc=1 88, in _run_code\n  File \"D:\\workspace\\职业教育知识图谱\\crawlers\\cn\\link_boss_skill_chain.py\", line 72, in <module>\n    CATEGORIES = [c[\"name\"] for c in SKILL_CATEGORIES if not c[\"code\"] == FALLBACK_CODE]"
+          "ok": true,
+          "sec": 85.1,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain merge",
+          "ok": true,
+          "sec": 28.6,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain apply",
+          "ok": true,
+          "sec": 0.5,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain advance",
+          "ok": true,
+          "sec": 26.0,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_major_course major",
+          "ok": true,
+          "sec": 78.5,
+          "msg": ""
         }
       ],
-      "ok": false
+      "ok": true
     },
     "高级管理": {
       "occupations": 8,
       "steps": [
         {
           "step": "link_boss_skill_chain collect",
-          "ok": false,
-          "sec": 0.1,
-          "msg": "rc=1 88, in _run_code\n  File \"D:\\workspace\\职业教育知识图谱\\crawlers\\cn\\link_boss_skill_chain.py\", line 72, in <module>\n    CATEGORIES = [c[\"name\"] for c in SKILL_CATEGORIES if not c[\"code\"] == FALLBACK_CODE]"
+          "ok": true,
+          "sec": 61.5,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain merge",
+          "ok": true,
+          "sec": 20.8,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain apply",
+          "ok": true,
+          "sec": 0.5,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain advance",
+          "ok": true,
+          "sec": 11.9,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_major_course major",
+          "ok": true,
+          "sec": 44.1,
+          "msg": ""
         }
       ],
-      "ok": false
+      "ok": true
     },
     "旅游": {
       "occupations": 5,
       "steps": [
         {
           "step": "link_boss_skill_chain collect",
-          "ok": false,
-          "sec": 0.1,
-          "msg": "rc=1 88, in _run_code\n  File \"D:\\workspace\\职业教育知识图谱\\crawlers\\cn\\link_boss_skill_chain.py\", line 72, in <module>\n    CATEGORIES = [c[\"name\"] for c in SKILL_CATEGORIES if not c[\"code\"] == FALLBACK_CODE]"
+          "ok": true,
+          "sec": 45.1,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain merge",
+          "ok": true,
+          "sec": 20.8,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain apply",
+          "ok": true,
+          "sec": 0.5,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain advance",
+          "ok": true,
+          "sec": 17.6,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_major_course major",
+          "ok": true,
+          "sec": 32.9,
+          "msg": ""
         }
       ],
-      "ok": false
+      "ok": true
     },
     "农/林/牧/渔": {
       "occupations": 4,
       "steps": [
         {
           "step": "link_boss_skill_chain collect",
-          "ok": false,
-          "sec": 0.1,
-          "msg": "rc=1 88, in _run_code\n  File \"D:\\workspace\\职业教育知识图谱\\crawlers\\cn\\link_boss_skill_chain.py\", line 72, in <module>\n    CATEGORIES = [c[\"name\"] for c in SKILL_CATEGORIES if not c[\"code\"] == FALLBACK_CODE]"
+          "ok": true,
+          "sec": 37.4,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain merge",
+          "ok": true,
+          "sec": 19.0,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain apply",
+          "ok": true,
+          "sec": 0.5,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain advance",
+          "ok": true,
+          "sec": 13.6,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_major_course major",
+          "ok": true,
+          "sec": 31.6,
+          "msg": ""
         }
       ],
-      "ok": false
+      "ok": true
     },
     "其他": {
       "occupations": 1,
       "steps": [
         {
           "step": "link_boss_skill_chain collect",
-          "ok": false,
-          "sec": 0.1,
-          "msg": "rc=1 88, in _run_code\n  File \"D:\\workspace\\职业教育知识图谱\\crawlers\\cn\\link_boss_skill_chain.py\", line 72, in <module>\n    CATEGORIES = [c[\"name\"] for c in SKILL_CATEGORIES if not c[\"code\"] == FALLBACK_CODE]"
+          "ok": true,
+          "sec": 2.3,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain merge",
+          "ok": true,
+          "sec": 14.1,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain apply",
+          "ok": true,
+          "sec": 0.5,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_skill_chain advance",
+          "ok": true,
+          "sec": 12.9,
+          "msg": ""
+        },
+        {
+          "step": "link_boss_major_course major",
+          "ok": true,
+          "sec": 16.9,
+          "msg": ""
         }
       ],
-      "ok": false
+      "ok": true
     }
   },
-  "finished_at": "2026-08-18T08:49:37.780355+00:00"
+  "finished_at": "2026-08-19T03:29:06.966311+00:00"
 }

@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "供应链/物流",
+  "dry_run": false,
+  "occupations": 28,
+  "requires_edges": 192,
+  "new_skill_nodes": 570,
+  "new_logical_skills": 114,
+  "reused_existing_skill_levels": 78,
+  "nodes_upserted": 570,
+  "stale_requires_removed": 0,
+  "edges_upserted": 192,
+  "occupations_patched": 28
+}

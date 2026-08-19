@@ -491,19 +491,40 @@ def stage_apply(*, l1: str, dry_run: bool) -> dict:
                     "fetched_at": fetched_at, "confidence": "ai_inferred",
                 })
 
-        # 回写岗位 job_level / job_family，供晋升视图与前端排序
+        # 回写岗位 job_level / job_family，供晋升视图与前端排序。
+        #
+        # 这里静默失败过：库里 546 个 BOSS 岗位 attrs 里连 level 这个 key 都没有，
+        # 而采集产物里 job_level 明明有值。后果不显形 —— stage_advance 的
+        # 「职级必须严格递进」对它们等于没有，于是建出「药物合成 → 分公司负责人」
+        # 这种跨 3 级的边；岗位详情的职级列也是空的。
+        # 所以下面三件事都要做：跳过节点不存在的、不拿空值覆盖已有的、把漏掉的计数报出来。
         patches = []
+        skipped_no_node = 0
+        skipped_no_level = 0
         for r in data["items"]:
             row = conn.execute("SELECT attrs FROM nodes WHERE id=?", (r["id"],)).fetchone()
+            if row is None:
+                # 节点不在采集库里，UPDATE 会影响 0 行、不报错
+                skipped_no_node += 1
+                continue
             try:
-                a = json.loads((row[0] if row else "") or "{}")
+                a = json.loads(row[0] or "{}")
             except Exception:
                 a = {}
-            a.update({"level": r["job_level"], "job_family": r["job_family"]})
+            lv = r.get("job_level")
+            if lv in (None, ""):
+                skipped_no_level += 1
+            else:
+                a["level"] = lv
+            if r.get("job_family"):
+                a["job_family"] = r["job_family"]
             patches.append((json.dumps(a, ensure_ascii=False), r["id"]))
 
         rep = {"stage": "apply", "l1": l1, "dry_run": dry_run,
                "occupations": len(data["items"]),
+               # 非 0 就说明有岗位的职级没落库 —— 别让它继续静默
+               "job_level_missing": skipped_no_level,
+               "occupations_not_in_sqlite": skipped_no_node,
                "requires_edges": len(edges),
                "new_skill_nodes": len(new_nodes),
                "new_logical_skills": len(new_nodes) // len(LEVELS) if new_nodes else 0,
@@ -528,10 +549,16 @@ def stage_apply(*, l1: str, dry_run: bool) -> dict:
                     occ_ids,
                 ).rowcount
             rep["edges_upserted"] = upsert_edges(conn, edges)
+            patched = 0
             for attrs_json, nid in patches:
-                conn.execute("UPDATE nodes SET attrs=? WHERE id=?", (attrs_json, nid))
+                patched += conn.execute(
+                    "UPDATE nodes SET attrs=? WHERE id=?", (attrs_json, nid)
+                ).rowcount
             conn.commit()
-            rep["occupations_patched"] = len(patches)
+            # 报实际改动行数而不是 len(patches)：两者不等就是有 UPDATE 没命中
+            rep["occupations_patched"] = patched
+            if patched != len(patches):
+                rep["patch_mismatch"] = len(patches) - patched
     finally:
         conn.close()
     return rep
@@ -573,6 +600,10 @@ def _load_external_occupations(*, exclude: set[str]) -> dict[str, dict]:
 # 于是销售、市场、客服这些门类的清单里最高只到 L3 —— 它们的向上出口在别的清单里，
 # LLM 看不到就永远连不出来（实测指向该门类的晋升边为 0 条）。
 CROSS_L1 = "高级管理"
+
+# 跨门类晋升允许的最大职级跨度。同领域内 L2→L5 说得通（一条职能线走到头），
+# 换领域还跨 3 级就不成立了。实测放开时出现「票务员(L2) → 分公司负责人(L5)」。
+MAX_CROSS_L1_SPAN = 2
 
 # 该门类里**不适合当晋升终点**的：助理/秘书是服务性岗位不是上升位，
 # 「高级管理职位」是泛称不是具体岗位，联合创始人也不是升上去的。
@@ -668,8 +699,20 @@ def stage_advance(*, l1: str, dry_run: bool, batch: int, sleep: float) -> dict:
         if not a or not b or a["id"] == b["id"]:
             dropped.append({"path": p, "why": "岗位名不在本批次，且库里也没有"})
             continue
-        if a["job_level"] >= b["job_level"]:
-            dropped.append({"path": p, "why": f"职级未递进 L{a['job_level']}→L{b['job_level']}"})
+        # 职级缺失时不能放行：`None >= None` 会 TypeError，而拿 0 兜底又会让
+        # 「无职级 → L5」这种边一路通过 —— 库里 546 个岗位曾因职级没落库
+        # 而绕过这道校验，建出「药物合成 → 分公司负责人」（已回填，这里再挡一道）
+        fl, tl = a.get("job_level"), b.get("job_level")
+        if not isinstance(fl, int) or not isinstance(tl, int):
+            dropped.append({"path": p, "why": f"职级缺失 {a['name']}={fl} / {b['name']}={tl}"})
+            continue
+        # 跨门类只认「够得着」的一步：本领域内可以 L2→L5（同一条职能线上的纵深），
+        # 但换个领域还一步跨 3 级不成立 —— 票务员不会直接做分公司负责人。
+        if tn not in by_name and tl - fl > MAX_CROSS_L1_SPAN:
+            dropped.append({"path": p, "why": f"跨门类跨度过大 L{fl}→L{tl}"})
+            continue
+        if fl >= tl:
+            dropped.append({"path": p, "why": f"职级未递进 L{fl}→L{tl}"})
             continue
         key = (a["id"], b["id"])
         if key in seen:

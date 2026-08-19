@@ -1,0 +1,10 @@
+{
+  "stage": "merge",
+  "l1": "其他",
+  "input_names": 6,
+  "canon_skills": 6,
+  "merged_groups": 0,
+  "llm_failed": [],
+  "sample_merges": {},
+  "canon_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_canon_其他.json"
+}

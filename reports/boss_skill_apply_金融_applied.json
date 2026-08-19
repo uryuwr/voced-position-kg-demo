@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "金融",
+  "dry_run": false,
+  "occupations": 29,
+  "requires_edges": 201,
+  "new_skill_nodes": 705,
+  "new_logical_skills": 141,
+  "reused_existing_skill_levels": 60,
+  "nodes_upserted": 705,
+  "stale_requires_removed": 0,
+  "edges_upserted": 201,
+  "occupations_patched": 29
+}

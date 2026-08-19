@@ -1,0 +1,9 @@
+{
+  "stage": "collect",
+  "l1": "其他",
+  "occupations": 1,
+  "collected": 1,
+  "llm_failed": [],
+  "distinct_skill_names": 6,
+  "raw_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_raw_其他.json"
+}

@@ -1,0 +1,21 @@
+{
+  "stage": "merge",
+  "l1": "旅游",
+  "input_names": 34,
+  "canon_skills": 30,
+  "merged_groups": 3,
+  "llm_failed": [],
+  "sample_merges": {
+    "供应商管理": [
+      "供应商资源对接"
+    ],
+    "客诉处理应对": [
+      "客诉应急处理"
+    ],
+    "旅游合规把控": [
+      "旅游政策合规",
+      "旅游法规应用"
+    ]
+  },
+  "canon_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_canon_旅游.json"
+}
