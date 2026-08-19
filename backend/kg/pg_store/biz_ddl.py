@@ -45,6 +45,25 @@ CREATE TABLE IF NOT EXISTS biz_user_learning_plan (
 CREATE INDEX IF NOT EXISTS idx_biz_ulp_user_occ
   ON biz_user_learning_plan(user_id, occupation_id, created_at DESC);
 
+-- biz_diagnosis_session 必须建在引用它的表之前：下面 biz_assessment_question /
+-- biz_assessment_answer / biz_diagnosis_result / biz_chat_message 都 REFERENCES 它。
+-- 这份 DDL 是一次性整段执行、单事务全成或全败，顺序错了在**全新库**上必然
+-- UndefinedTable（老库因表已存在而看不出来），等于 backend 拷到空库起不来。
+-- 诊断会话
+CREATE TABLE IF NOT EXISTS biz_diagnosis_session (
+  id BIGSERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  user_name TEXT NOT NULL DEFAULT '',
+  channel TEXT NOT NULL,
+  target_occupation_id TEXT,
+  target_occupation_name TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_biz_diag_user ON biz_diagnosis_session(user_id);
+
+
 -- 测评题目与作答。
 -- 之前这些存在 LangGraph checkpointer 的序列化 blob 里，运营连「哪道题所有人都选
 -- 最低档、是不是出得有问题」这种 SQL 都写不出来。题目与答案本就是要长期保存、
@@ -92,20 +111,6 @@ CREATE TABLE IF NOT EXISTS biz_user_skill (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (user_id, skill_id)
 );
-
--- 诊断会话
-CREATE TABLE IF NOT EXISTS biz_diagnosis_session (
-  id BIGSERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  user_name TEXT NOT NULL DEFAULT '',
-  channel TEXT NOT NULL,
-  target_occupation_id TEXT,
-  target_occupation_name TEXT,
-  status TEXT NOT NULL DEFAULT 'active',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  finished_at TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS idx_biz_diag_user ON biz_diagnosis_session(user_id);
 
 CREATE TABLE IF NOT EXISTS biz_diagnosis_result (
   session_id BIGINT PRIMARY KEY REFERENCES biz_diagnosis_session(id) ON DELETE CASCADE,

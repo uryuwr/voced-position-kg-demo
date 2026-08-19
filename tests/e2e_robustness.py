@@ -37,7 +37,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-PORT = 18097
+# 端口可用 E2E_PORT 覆盖：同一台机器上常有多个实例在跑（8088 正常服务、
+# 18200/18201 各自的验收实例），撞端口的表现是「服务未在 60s 内就绪」，很难一眼看出。
+PORT = int(os.getenv("E2E_PORT") or 18097)
 BASE = f"http://127.0.0.1:{PORT}"
 HEAD = {"X-Test-Uid": "9001", "X-Test-Uname": "robust"}
 LOG = ROOT / "tests" / "_e2e_robustness_server.log"
@@ -309,6 +311,51 @@ def seg_d() -> None:
             c.execute("DELETE FROM biz_diagnosis_session WHERE id=%s", (other,))
 
 
+# ── E 跨类型 id 注入 ─────────────────────────────────────────
+def seg_e(ids: dict[str, str]) -> None:
+    """把**存在但类型不对**的 id 喂给每个按 id 取详情的接口。
+
+    A 段注入的是 `CN:occupation:NOT:EXIST` 这类**不存在**的 id，走的是浅路径（直接 404），
+    扫不到「id 存在、类型不对」这条深路径：那时接口会照着错误的类型去组装响应，
+    撞上「声明一种类型、库里另一种」的字段就 500。实测
+    `/v1/student/professions/<occupation_id>` 就是这样炸的
+    （专业的 `attrs.level` 是 `voc_associate`，岗位的是 int 2）。
+
+    口径：**404 是正确答案**（类型不对等于这个资源不存在），5xx 才算失败。
+    """
+    print("\n== E 跨类型 id（存在但类型不对）==")
+    paths = [
+        "/v1/student/professions/{id}",
+        "/v1/student/positions/{id}",
+        "/v1/student/positions/courses?id={id}",
+        "/v1/student/positions/skill-composition?id={id}",
+        "/v1/student/positions/match?position_id={id}",
+        "/v1/student/skills/bundles/{id}",
+        "/v1/kg/node-detail?id={id}",
+        "/v1/node?id={id}&include_counts=1&include_links=1",
+        "/v1/nodes/{id}",
+        "/v1/expand?node_id={id}",
+        "/v1/admin/composition?node_id={id}",
+        "/v1/occupations/skills?occupation_id={id}",
+        "/v1/majors/occupations?major_id={id}",
+        "/v1/industries/{id}/occupations",
+        "/v1/capability?major_id={id}",
+    ]
+    fails, n = [], 0
+    for key in ("major_id", "occupation_id", "industry_id", "skill_id"):
+        nid = ids.get(key)
+        if not nid:
+            continue
+        quoted = urllib.parse.quote(nid, safe="")
+        for tpl in paths:
+            st, b = call("GET", tpl.replace("{id}", quoted))
+            n += 1
+            if st >= 500 or st == -1:
+                fails.append(f"{st} {tpl} ← {key} -> {b[:120]}")
+    check(f"E 跨类型 id 不打 5xx（{n} 次调用）", not fails,
+          "; ".join(dict.fromkeys(fails))[:700] if fails else f"{n} 次全部 <500")
+
+
 def main() -> int:
     proc = start_server()
     try:
@@ -317,6 +364,7 @@ def main() -> int:
         seg_b(ids)
         seg_c()
         seg_d()
+        seg_e(ids)
     finally:
         proc.terminate()
         try:

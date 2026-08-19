@@ -19,6 +19,11 @@ from backend.kg.pg_store.skill_taxonomy import (
 
 _PUB_N = "COALESCE(n.status,'published')='published'"
 
+# 技能构成的可见性谓词与 skill_aggregate 同源（本文件是前台能力全景 → public）
+from backend.kg.pg_store.skill_aggregate import _composition_pred as _cp  # noqa: E402
+
+_COMP_E, _COMP_N = _cp("public", edge="e", node="n")
+
 # 边可见性：归档/草稿边不对外返回（各别名一份，供 f-string SQL 内插）
 EP_E = edge_published("e")
 EP_BE = edge_published("be")
@@ -167,8 +172,8 @@ def industry_graph(
                 SELECT e.src_id, e.dst_id, e.confidence, e.evidence,
                        s.name AS from_name, d.name AS to_name
                 FROM kg_edge e
-                JOIN kg_node s ON s.id = e.src_id
-                JOIN kg_node d ON d.id = e.dst_id
+                JOIN kg_node s ON s.id = e.src_id AND NOT s.is_draft
+                JOIN kg_node d ON d.id = e.dst_id AND NOT d.is_draft
                 WHERE e.rel_type='advances_to'
                   AND COALESCE(e.status,'published')='published'
                   AND e.src_id = ANY(%s) AND e.dst_id = ANY(%s)
@@ -319,9 +324,11 @@ def _build_matrix(conn, major_ids: list[str], occ_ids: list[str]) -> dict[str, A
           WHERE pe.rel_type='prepares_for' AND {EP_PE}
             AND pe.src_id = ANY(%s) AND pe.dst_id = ANY(%s)
         ), os AS (
+          -- 批量热力矩阵：形状是 major × occupation 的聚合，不是「单实体取明细」，
+          -- 所以没并进 entity_skill_composition，但**共用它那份可见性谓词**
           SELECT e.src_id AS o, ({SKILL_KEY_SQL}) AS k
-          FROM kg_edge e JOIN kg_node n ON n.id = e.dst_id
-          WHERE e.rel_type='requires' AND {EP_E} AND n.type='skill_level' AND {_PUB_N}
+          FROM kg_edge e JOIN kg_node n ON n.id = e.dst_id AND {_COMP_N}
+          WHERE e.rel_type='requires' AND {_COMP_E} AND n.type='skill_level'
             AND e.src_id = ANY(%s)
         ), ms AS (
           SELECT mo.m, os.k, count(DISTINCT os.o) AS cnt

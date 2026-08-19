@@ -349,10 +349,16 @@ def _node_to_skill(n: dict[str, Any]) -> dict[str, Any]:
         "kg_type": n.get("type"),
         "region": n.get("region"),
         "desc": n.get("description"),
-        "required_level": a.get("required_level"),
-        "weight": (n.get("edge") or {}).get("weight")
-        if isinstance(n.get("edge"), dict)
-        else a.get("weight"),
+        # attrs 无任何数据库约束：`required_level` 可能是 "L3"、`weight` 可能是 "abc"。
+        # 一律过 config 那份唯一口径（脏值取 None / 0.0），不要让脏值直接撞响应模型 ——
+        # 「一条脏数据打死一整页」这个形状本项目已经栽过三次
+        "required_level": as_level(a.get("required_level")),
+        "weight": as_weight(
+            (n.get("edge") or {}).get("weight")
+            if isinstance(n.get("edge"), dict)
+            else a.get("weight")
+        )
+        or None,
         "source_url": n.get("source_url"),
         "attrs": a,
         "edge": n.get("edge"),
@@ -387,6 +393,20 @@ def _bundle_to_skill_out(b: dict[str, Any]) -> dict[str, Any]:
         "weight_pct": b.get("weight_pct"),
         "is_core": b.get("is_core"),
         "category": b.get("category"),
+        # 状态四件套：technically bundle 是 5 个节点的聚合，规则见
+        # skill_aggregate.attach_bundle_draft_state（任一档有草稿 → 整个 bundle 记 draft）。
+        # **必须透传**：技能库列表拿不到 status 就会在前端兜底成一个业务状态
+        "status": b.get("status"),
+        "record_status": b.get("record_status"),
+        "has_draft": b.get("has_draft"),
+        "draft_change": b.get("draft_change"),
+        # 版本/负责人：bundle 按各档聚合（见 attach_bundle_draft_state）。
+        # 只在管理台口径下有值 —— 前台没人用，也不该看到运维元数据
+        "version": b.get("version"),
+        "version_label": b.get("version_label"),
+        "owner": b.get("owner"),
+        "owner_name": b.get("owner_name"),
+        "updated_by_name": b.get("updated_by_name"),
         "source_url": b.get("source_url"),
         "attrs": {
             "skill_key": b.get("skill_key"),
@@ -472,9 +492,15 @@ def list_professions(
 
 
 def get_profession(pid: str, *, conn: Any | None = None) -> dict[str, Any] | None:
+    """按 id 取专业。**类型不对就当不存在**（调用方回 404）。
+
+    不校验类型的后果实测过：把一个 occupation id 传进来，这里照样把它当专业组装，
+    而岗位的 `attrs.level` 是 int、专业的是 `voc_associate` 这种字符串，
+    响应模型一校验就 500。「传错类型的 id」是客户端错误，该回 404 而不是 5xx。
+    """
     with use_conn(conn) as c:
         n = get_node(pid, scope="public", conn=c)
-        if not n:
+        if not n or (n.get("type") or "").lower() != "major":
             return None
         p = _node_to_profession(n)
         _attach_major_counts([p], conn=c)
@@ -551,9 +577,10 @@ def list_positions(
 
 
 def get_position(pid: str, *, conn: Any | None = None) -> dict[str, Any] | None:
+    """按 id 取岗位；类型不对当不存在（同 `get_profession` 的理由）。"""
     with use_conn(conn) as c:
         n = get_node(pid, scope="public", conn=c)
-        if not n:
+        if not n or (n.get("type") or "").lower() != "occupation":
             return None
         p = _node_to_position(n)
         _attach_position_extra([p], conn=c)

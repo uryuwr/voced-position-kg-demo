@@ -40,7 +40,10 @@ def main() -> int:
             """
             UPDATE kg_node n
             SET status = 'published'
-            WHERE COALESCE(n.status, 'published') <> 'published'
+            -- 只动线上行：草稿行 status 恒为 draft（ck_kg_node_draft_status），
+            -- 顺手把草稿改成 published 就是把没发布的内容发出去了
+            WHERE NOT n.is_draft
+              AND COALESCE(n.status, 'published') <> 'published'
               AND COALESCE(n.status, 'published') NOT IN ('archived')
               AND EXISTS (
                 SELECT 1 FROM kg_edge e
@@ -55,7 +58,8 @@ def main() -> int:
             """
             UPDATE kg_edge e
             SET status = 'published'
-            WHERE COALESCE(e.status, 'published') NOT IN ('published', 'archived')
+            WHERE NOT e.is_draft
+              AND COALESCE(e.status, 'published') NOT IN ('published', 'archived')
             """
         )
         n_edges = int(cur2.rowcount or 0)

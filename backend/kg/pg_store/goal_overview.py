@@ -49,17 +49,27 @@ def _next_level(conn, occupation_id: str) -> dict[str, Any] | None:
 
 
 def _skill_keys(conn, occupation_id: str) -> dict[str, dict[str, Any]]:
-    rows = conn.execute(
-        f"""
-        SELECT ({SKILL_KEY_SQL}) AS skill_key, n.category,
-               {_LEVEL_N} AS required_level, e.weight
-        FROM kg_edge e
-        JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level' AND {_NP}
-        WHERE e.src_id = %s AND e.rel_type = 'requires' AND {_EP}
-        """,
-        (occupation_id,),
-    ).fetchall()
-    return {r["skill_key"]: dict(r) for r in rows}
+    """岗位的 {skill_key: {category, required_level, weight}} —— 走全站唯一实现。
+
+    原来这里是自己拼的一条 SQL，**一个 skill_key 有多档边时字典后写覆盖前写**，
+    required_level 取到哪一档取决于行顺序；而岗位详情那边取的是最高档。
+    同一份数据两个数字，目标卡和详情页对不上。现在与它们同源
+    （`entity_skill_composition` 的 public 口径：最高档 + 该档的权重）。
+    """
+    from backend.kg.pg_store.skill_aggregate import entity_skill_composition
+
+    return {
+        b["skill_key"]: {
+            "skill_key": b["skill_key"],
+            "category": b.get("category"),
+            "required_level": b.get("required_level"),
+            "weight": b.get("weight"),
+        }
+        for b in entity_skill_composition(
+            occupation_id, scope="public", limit=500, conn=conn
+        )
+        if b.get("skill_key")
+    }
 
 
 def _latest_report(conn, user_id: str, occupation_id: str) -> dict[str, Any] | None:
@@ -238,8 +248,13 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
     has_goal = bool(goal and goal.get("occupation_id"))
     labels = label_map()
     with connect() as conn:
+        # 学员端点查：必须带前台可见性谓词。裸 `WHERE id=%s` 时只要知道（或猜到）id
+        # 就能把 archived/draft 的岗位读出来当目标（审查文档第 128 条），
+        # 草稿态上线后它还会命中草稿行 —— 学员会看到别人正在改的名字。
         occ = conn.execute(
-            "SELECT id, name, level, description, attrs FROM kg_node WHERE id=%s", (occ_id,)
+            f"SELECT id, name, level, description, attrs FROM kg_node "
+            f"WHERE id=%s AND {node_published()}",
+            (occ_id,),
         ).fetchone()
         cur_skills = _skill_keys(conn, occ_id)
         nxt = _next_level(conn, occ_id)

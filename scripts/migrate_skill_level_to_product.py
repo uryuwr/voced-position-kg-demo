@@ -119,7 +119,8 @@ def do_pg(apply: bool) -> int:
             return 1 if unresolved and apply else 0
         with conn.cursor() as cur:
             cur.executemany(
-                "UPDATE kg_node SET attrs=%s, name=%s, description=%s WHERE id=%s", updates
+                "UPDATE kg_node SET attrs=%s, name=%s, description=%s "
+            "WHERE id=%s AND NOT is_draft", updates
             )
         conn.commit()
         print(f"  [已提交] PG 更新 {len(updates)} 个节点")

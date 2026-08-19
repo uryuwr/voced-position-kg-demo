@@ -203,12 +203,25 @@
       { type: "occupation", label: "岗位模型", nav: "occupation" },
       { type: "skill_level", label: "技能库", nav: "skill" },
     ];
+    // 待发布清单里的维度名与失败码文案（清单是跨维度的，不能复用 DIMS 的页面标题）
+    const DIM_ZH = {
+      industry: "行业", major: "专业", occupation: "岗位", skill_level: "技能",
+      course: "课程", credential: "认证",
+    };
+    const CODE_ZH = {
+      published: "已发布", gate_failed: "门禁未通过", conflict: "版本冲突（需刷新重编辑）",
+      code_conflict: "编码被占用", missing_endpoints: "端点尚未发布", not_found: "草稿已不存在",
+    };
 
     const state = {
       view: "dash",
       listType: "major",
       q: "",
       statusFilter: "", // ""=全部 | published|draft|disabled
+      // 待发布页上次发布/批量发布的结果横幅。**必须存在 state 里**：
+      // 发布后要 render() 重新拉清单，而 render 会重建 main.innerHTML，
+      // 直接写进 DOM 的横幅会被这次重建冲掉，运营根本看不到失败原因
+      draftMsg: null,
       page: 1,
       pageSize: 20,
       total: 0,
@@ -251,9 +264,15 @@
       toast._t = setTimeout(() => el.classList.remove("on"), 3200);
     }
 
+    // 拿不到状态时显示「未知」，**绝不兜底成某个业务状态**。
+    // 这个项目栽过多次同一个形状：把「没数据」渲染成一个确定的业务结论
+    // （match_score ?? 0 把「算不出来」显示成「完全不匹配」）。
+    // 技能库上一版就是 `n.status || "draft"`，接口不返回 status → 21074 个技能
+    // 全部显示「草稿」，而草稿标记正是这个功能的核心信号。
     function statusTag(s, label) {
-      const v = s || "published";
+      const v = s || "unknown";
       const map = {
+        unknown: ["", "未知"],
         published: ["pub", "已发布"],
         disabled: ["arch", "已停用"],
         draft: ["draft", "草稿"],
@@ -264,6 +283,16 @@
       const [cls, lab] = map[v] || ["", v];
       return `<span class="tag ${cls}">${esc(label || lab)}</span>`;
     }
+    /** 一行数据的「记录状态」：草稿优先。四维节点与技能 bundle 都用它，
+     *  两处各写一遍迟早分家 —— 技能库那次就是这么漏的。
+     *  拿不到任何状态字段时返回 undefined，交给 statusTag 显示「未知」。 */
+    function recordStatusOf(n) {
+      return n.record_status || n.status || undefined;
+    }
+    /** 这一行该显示「发布」还是「停用」：有草稿 → 发布；已发布 → 停用。 */
+    function needsPublish(n) {
+      return recordStatusOf(n) !== "published";
+    }
     const PENDING_ACT_ZH = {
       update: "有待审编辑",
       delete: "有待审删除",
@@ -271,9 +300,15 @@
       enable: "有待审发布",
       create: "有待审新建",
     };
-    /** 主状态 = 库内生效状态（未审通过前删除仍显示已发布，前台继续可见） */
+    /** 记录状态 = 最新版本的状态：有草稿就是「草稿」，否则取库内生效状态。
+     *
+     * 优先读 `record_status`（服务端按**发布单元**算：节点字段有草稿、或只改了
+     * 技能构成/关联都算 draft）。只看 `status` 的话，「只改了技能构成」那种
+     * 线上行 status 还是 published，列表上就看不出这条数据有未发布的改动。
+     * 待审提案（pending_*）是另一维，仍然叠加显示。
+     */
     function nodeStatusCell(n) {
-      const st = n.status || "published";
+      const st = recordStatusOf(n);
       let html = statusTag(st);
       if (n.pending_action) {
         const tip = PENDING_ACT_ZH[n.pending_action] || "有待审";
@@ -338,6 +373,7 @@
         { id: "edges", label: "边管理" },
         { id: "edgeReview", label: "AI边抽检" },
         { sec: "治理", id: "create", label: "手工建数" },
+        { id: "drafts", label: "待发布" },
         { id: "review", label: "审核发布" },
         { sec: "图谱", id: "kgexp", label: "知识图谱（行业入口）" },
         { sec: "图谱", id: "graph", label: "知识图谱（探索）" },
@@ -382,6 +418,7 @@
         else if (state.view === "edges") await viewEdges(main);
         else if (state.view === "edgeReview") await viewEdgeReview(main);
         else if (state.view === "create") viewCreate(main);
+        else if (state.view === "drafts") await viewDrafts(main);
         else if (state.view === "review") await viewReview(main);
         else if (state.view === "capability") await viewCapability(main);
         else main.innerHTML = `<div class="empty">未知视图</div>`;
@@ -985,7 +1022,11 @@
           name: b.name || b.skill_name || b.skill_key,
           source_system: b.source_system || "aggregated",
           confidence: b.confidence || "—",
-          status: b.status || "draft",
+          // 不兜底：状态由接口给（status=线上聚合，record_status=含草稿）
+          status: b.status,
+          record_status: b.record_status,
+          has_draft: b.has_draft,
+          draft_change: b.draft_change,
         }));
         state.total = data.total || 0;
         state.totalPages = data.total_pages || 0;
@@ -1017,13 +1058,13 @@
         const name = n.display_name || n.name || "—";
         const idShow = isSkillBundle ? (n.skill_key || n.id) : n.id;
         if (isSkillBundle) {
-          const st = n.status || "draft";
+          const st = recordStatusOf(n);
           // 原型技能库列：技能 / 分类 / 状态 / 版本 / 负责人 / 等级完整度
           return `<tr>
             <td class="name-cell">${esc(name)}<div class="id-cell">${esc(idShow)}</div></td>
             <td class="muted">${esc(n.category || "未分类")}</td>
             <td>${nodeStatusCell(n)}</td>
-            <td>${esc(n.version_label || "V1")}</td>
+            <td>${esc(n.version_label || "—")}</td>
             <td class="muted">${esc(n.owner_name || n.updated_by_name || "—")}</td>
             <td>${esc(n.level_completeness || "—")} ${levelsCellHtml(n)}</td>
             <td class="row-actions">
@@ -1046,7 +1087,7 @@
         const mid = dim.type === "industry"
           ? `<td>${c.major ?? 0}</td><td>${c.occupation ?? 0}</td>`
           : dim.type === "major"
-            ? `<td>${esc(n.version_label || "V1")}</td><td>${c.occupation ?? 0}</td><td>${c.skill ?? 0}</td>`
+            ? `<td>${esc(n.version_label || "—")}</td><td>${c.occupation ?? 0}</td><td>${c.skill ?? 0}</td>`
             : isOcc
               ? `<td class="name-cell">${industryCellHtml(n)}</td>
                  <td>${n.level != null ? "L" + n.level : '<span class="muted">—</span>'}</td>
@@ -1065,9 +1106,9 @@
             ${n.pending_action
               ? `<span class="muted">审核中 #${esc(n.pending_change_id)}</span>`
               : `<button class="btn" type="button" data-detail="${esc(n.id)}">详情</button>${extraBtn}<button class="btn" type="button" data-edit="${esc(n.id)}">编辑</button>
-            ${(n.status || "published") === "published"
-              ? `<button class="btn" type="button" data-dis="${esc(n.id)}">停用</button>`
-              : `<button class="btn ok" type="button" data-en="${esc(n.id)}">发布</button>`}
+            ${needsPublish(n)
+              ? `<button class="btn ok" type="button" data-en="${esc(n.id)}">发布</button>`
+              : `<button class="btn" type="button" data-dis="${esc(n.id)}">停用</button>`}
             <button class="btn danger" type="button" data-del="${esc(n.id)}">删除</button>`}
           </td>
         </tr>`;
@@ -1152,7 +1193,7 @@
               ? `<table class="data"><thead><tr><th>等级</th><th>状态</th><th>节点 ID</th><th>描述</th><th></th></tr></thead><tbody>${
                   levels.map((lv) => `<tr>
                     <td><span class="tag pub">${lv.level ? "L" + lv.level : "L?"}</span> ${esc(lv.level_label || "")}</td>
-                    <td>${statusTag(lv.status || detail.status || "draft")}</td>
+                    <td>${statusTag(lv.status || detail.record_status || detail.status)}</td>
                     <td class="id-cell">${esc(lv.node_id || "—")}</td>
                     <td class="muted">${esc((lv.description || "").slice(0, 80))}</td>
                     <td>${lv.node_id ? `<button class="btn" type="button" data-edit-lv="${esc(lv.node_id)}">编辑</button>` : ""}</td>
@@ -1164,7 +1205,7 @@
               ? `<p class="muted">先修：${prereqs.map((p) => esc(p.skill_key || p.name)).join("、")}</p>`
               : `<p class="muted">先修：无</p>`;
             openModal(`
-              <h2>技能档位 · ${esc(detail.name || key)} ${statusTag(detail.status || "draft")}</h2>
+              <h2>技能档位 · ${esc(detail.name || key)} ${statusTag(recordStatusOf(detail))}</h2>
               <p class="muted">关联岗位 ${detail.counts?.occupation ?? 0} · 已有 ${(detail.available_levels || []).map((v) => "L" + v).join(" / ") || "—"}</p>
               ${preHtml}
               ${body}
@@ -1482,6 +1523,142 @@
       $("btnErGo").onclick = load;
       $("btnErReload").onclick = load;
       load();
+    }
+
+    /** 门禁/冲突的失败原因转人话。
+     *
+     * 发布失败最常见的是 BR 门禁（`gate_failed`）与并发（`stale_draft`），
+     * 后端把结构化理由放在 `detail.violations` / `detail.message` 里。
+     * 只 toast 一句「400」的话运营看不出是哪条规则、缺什么，只能来问人。
+     */
+    function publishFailReason(e) {
+      // api-client 把响应体挂在 err.data 上（不是 body），别拿错字段
+      const d = (e && e.data && e.data.detail) || (e && e.detail) || null;
+      if (d && typeof d === "object") {
+        if (Array.isArray(d.violations) && d.violations.length) {
+          return d.violations.map((v) => `${v.rule}：${v.message}`).join("；");
+        }
+        if (Array.isArray(d.missing) && d.missing.length) {
+          return `${d.message || "端点未发布"}（${d.missing.join("、")}）`;
+        }
+        if (d.message) return d.message;
+      }
+      return (e && e.message) || String(e);
+    }
+
+    /** 待发布工作台：改完的数据在这里一处看全 + 逐条/批量发布。
+     *
+     * 为什么需要它：草稿是按**发布单元**记的，四维列表分开看、而且「只改技能构成」
+     * 那种记录在四维里得先筛才看得到。运营改完一批数据需要一个地方回答
+     * 「还有哪些没发出去」。数据全部来自 `/v1/admin/drafts`（按单元聚合，最全的那一份）。
+     */
+    async function viewDrafts(main) {
+      const data = await api.apiFetch("/v1/admin/drafts?page_size=200");
+      const items = data.items || [];
+      const rows = items.map((it) => {
+        const stale = it.stale
+          ? `<span class="tag pend" title="你编辑期间别人发布过，直接发布会 409">需刷新</span>`
+          : "";
+        const isNew = it.is_new ? `<span class="tag draft">新建</span>` : "";
+        const edges = (it.edges_upsert || it.edges_remove)
+          ? `<span class="muted">边 +${it.edges_upsert || 0} / -${it.edges_remove || 0}</span>`
+          : "";
+        const target = it.target_status
+          ? `<span class="muted" title="发布后线上行会变成这个状态">→ ${esc(it.target_status)}</span>`
+          : "";
+        return `<tr>
+          <td class="name-cell">${esc(it.name || "—")} ${isNew} ${stale}
+            <div class="id-cell">${esc(it.node_id)}</div></td>
+          <td class="muted">${esc(DIM_ZH[it.type] || it.type || "—")}</td>
+          <td>${esc(it.change_label || it.change_kind || "—")} ${edges} ${target}</td>
+          <td class="muted">${esc(it.updated_by_name || "—")}</td>
+          <td class="muted">${esc((it.created_at || "").slice(0, 19).replace("T", " "))}</td>
+          <td class="row-actions">
+            <button class="btn ok" type="button" data-pub="${esc(it.node_id)}">发布</button>
+            <button class="btn danger" type="button" data-disc="${esc(it.node_id)}">丢弃</button>
+          </td>
+        </tr>`;
+      }).join("");
+      main.innerHTML = `
+        <div class="page-h">
+          <div>
+            <h1>待发布</h1>
+            <p>管理台的编辑先落草稿，前台看的仍是已发布内容 · 共 ${items.length} 个待发布单元
+               · 一个单元 = 一条记录的内容改动 + 挂在它上面的关联/技能构成改动</p>
+          </div>
+          <div>
+            <button class="btn ok" type="button" id="btnPubAll" ${items.length ? "" : "disabled"}>全部发布</button>
+            <button class="btn" type="button" id="btnDraftReload">刷新</button>
+          </div>
+        </div>
+        <div id="pubResult">${state.draftMsg || ""}</div>
+        <div class="panel">
+          ${items.length ? `
+          <table class="data">
+            <thead><tr><th>名称</th><th>维度</th><th>改动</th><th>最近编辑人</th><th>编辑时间</th><th>操作</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>` : `<div class="empty">没有待发布的改动。在四维列表编辑内容、或改技能构成后会出现在这里。</div>`}
+        </div>
+      `;
+      $("btnDraftReload").onclick = () => { state.draftMsg = null; render(); };
+      main.querySelectorAll("[data-pub]").forEach((b) => {
+        b.onclick = async () => {
+          b.disabled = true;
+          try {
+            const r = await api.apiFetch(
+              "/v1/admin/publish/node?node_id=" + encodeURIComponent(b.dataset.pub),
+              { method: "POST", body: {} });
+            state.draftMsg =
+              `<div class="panel">已发布 ${esc(b.dataset.pub)} → ${esc(r.status)}`
+              + (r.edges_published ? ` · 边 ${r.edges_published} 条生效` : "")
+              + (r.edges_archived ? ` · 边 ${r.edges_archived} 条归档` : "") + `</div>`;
+            toast(`已发布：${r.status}${r.edges_published ? ` · 边 ${r.edges_published} 条生效` : ""}`);
+            render();
+          } catch (e) {
+            // 发布失败**要把门禁原因显示在页面上**，不能只 toast 一句 400：
+            // 运营看不出是 BR-03 权重没配满还是端点没发布，就只能来问人
+            const reason = publishFailReason(e);
+            state.draftMsg =
+              `<div class="warn-banner">发布失败 · ${esc(b.dataset.pub)}：${esc(reason)}</div>`;
+            $("pubResult").innerHTML = state.draftMsg;
+            toast(reason, true);
+            b.disabled = false;
+          }
+        };
+      });
+      main.querySelectorAll("[data-disc]").forEach((b) => {
+        b.onclick = async () => {
+          if (!confirm("丢弃这份草稿？未发布的修改会直接消失，找不回来。")) return;
+          try {
+            await api.apiFetch(
+              "/v1/admin/draft?node_id=" + encodeURIComponent(b.dataset.disc),
+              { method: "DELETE" });
+            toast("已丢弃草稿");
+            render();
+          } catch (e) { toast(publishFailReason(e), true); }
+        };
+      });
+      const all = $("btnPubAll");
+      if (all) {
+        all.onclick = async () => {
+          if (!confirm(`发布全部 ${items.length} 个单元？逐条走各自的事务，一个失败不影响其余。`)) return;
+          all.disabled = true;
+          try {
+            const r = await api.apiFetch("/v1/admin/publish/batch",
+              { method: "POST", body: { node_ids: items.map((i) => i.node_id) } });
+            const bad = (r.items || []).filter((x) => !x.ok);
+            const lines = bad.map((x) =>
+              `<div>· ${esc(x.node_id)} — <b>${esc(CODE_ZH[x.code] || x.code)}</b>：${esc(x.message || "")}</div>`);
+            state.draftMsg =
+              `<div class="${bad.length ? "warn-banner" : "panel"}">
+                 批量发布：成功 ${r.published} · 失败 ${r.failed}
+                 ${lines.length ? `<div style="margin-top:6px">${lines.join("")}</div>` : ""}
+               </div>`;
+            toast(`发布完成：成功 ${r.published} · 失败 ${r.failed}`, !!bad.length);
+            render();     // 清单要刷新；横幅靠 state.draftMsg 活过这次重建
+          } catch (e) { toast(publishFailReason(e), true); all.disabled = false; }
+        };
+      }
     }
 
     async function viewReview(main) {

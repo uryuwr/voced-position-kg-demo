@@ -8,7 +8,7 @@ import urllib.parse
 from typing import Any
 
 from backend.kg.pg_store.client import connect
-from backend.kg.pg_store.config import DEFAULT_REGION
+from backend.kg.pg_store.config import DEFAULT_REGION, online_only, prefer_draft
 
 # SQL 片段：kg_node 别名 n，attrs 为 TEXT（可能为空）
 _ATTRS_JSON = """(
@@ -45,6 +45,10 @@ def _level_labels() -> dict[int, str]:
 
 
 _PUB_N = "COALESCE(n.status, 'published') = 'published'"
+# 草稿态：管理台口径（`NOT IN ('archived')`）对草稿行也成立，聚合前必须先去重，
+# 否则一个技能被编辑过就多出一档、level_count 与「等级完整度 n/5」全错（方案 §6.2）。
+_PD_N = prefer_draft("n")
+_ONLINE_N = online_only("n")
 
 
 def _default_region(region: str | None) -> str | None:
@@ -317,6 +321,13 @@ def list_skill_bundles(
     key_expr = SKILL_KEY_SQL
     li_expr = LEVEL_SQL
 
+    # 行选择条件：**prefer_draft 只能用在管理台口径上**。
+    # 与 `status='published'` 组合是致命的：一条记录有草稿时 prefer_draft 留下草稿行、
+    # 丢掉线上行，而草稿行的 status 恒为 'draft' 被 published 过滤掉 ——
+    # 这个技能就整条从前台列表里消失了。实测过：管理台改一下技能，
+    # 学员端技能库里这个技能不见了。前台一律钉线上行。
+    row_pick = _ONLINE_N if published_only else _PD_N
+
     # 节点级 status 条件（聚合前）
     if st and st != "mixed":
         status_clause = "AND COALESCE(n.status, 'published') = %s"
@@ -334,6 +345,7 @@ def list_skill_bundles(
             base_from = f"""
             FROM kg_edge e
             JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level'
+                 AND {row_pick}
             WHERE e.src_id = %s AND e.rel_type = 'requires'
               AND COALESCE(e.status, 'published') = 'published'
               {status_clause}
@@ -342,7 +354,7 @@ def list_skill_bundles(
         else:
             base_from = f"""
             FROM kg_node n
-            WHERE n.type = 'skill_level'
+            WHERE n.type = 'skill_level' AND {row_pick}
               {status_clause}
               AND (%s::text IS NULL OR n.region = %s)
             """
@@ -399,10 +411,14 @@ def list_skill_bundles(
             from backend.kg.pg_store.query import _node_dict  # local import avoid cycle
 
             nrows = conn.execute(
-                "SELECT * FROM kg_node WHERE id = ANY(%s)", (all_ids,)
+                f"SELECT * FROM kg_node WHERE id = ANY(%s) AND "
+                + (online_only() if published_only else prefer_draft()),
+                (all_ids,),
             ).fetchall()
             for row in nrows:
-                nodes_by_id[row["id"]] = _node_dict(row)
+                # 管理台口径（scope=manage / 指定 status）才带运维元数据；
+                # 学员端 /v1/student/skills 走 published_only=True，不带
+                nodes_by_id[row["id"]] = _node_dict(row, admin=not published_only)
 
         # occupation counts for page keys
         occ_counts: dict[str, int] = {}
@@ -411,8 +427,10 @@ def list_skill_bundles(
             SELECT {key_expr} AS skill_key, count(DISTINCT e.src_id) AS c
             FROM kg_edge e
             JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level'
+                 AND {_ONLINE_N}
             JOIN kg_node o ON o.id = e.src_id AND o.type = 'occupation'
               AND COALESCE(o.status, 'published') = 'published'
+              AND {online_only('o')}
             WHERE e.rel_type = 'requires'
               AND COALESCE(e.status, 'published') = 'published'
               AND ({key_expr}) = ANY(%s)
@@ -432,6 +450,11 @@ def list_skill_bundles(
                     occupation_count=occ_counts.get(sk, 0),
                 )
             )
+
+        # 管理台（scope=manage / 指定 status）要能看出「这个技能有没有未发布的改动」。
+        # 技能库列表走的是本接口，不是四维列表 —— 上次给四维列表加 record_status 时漏了这里，
+        # 结果 21074 个技能在页面上全显示「草稿」（前端拿不到 status 就兜底成 draft）。
+        attach_bundle_draft_state(items, conn=conn, admin=not published_only)
 
     return {
         "items": items,
@@ -459,6 +482,7 @@ def get_skill_bundle(
             sk = parts[2]
     reg = _default_region(region)
     key_expr = SKILL_KEY_SQL
+    row_pick = _ONLINE_N if published_only else _PD_N
     status_sql = (
         "AND COALESCE(n.status, 'published') = 'published'"
         if published_only
@@ -469,7 +493,7 @@ def get_skill_bundle(
             f"""
             SELECT n.*
             FROM kg_node n
-            WHERE n.type = 'skill_level'
+            WHERE n.type = 'skill_level' AND {row_pick}
               {status_sql}
               AND (%s::text IS NULL OR n.region = %s)
               AND ({key_expr}) = %s
@@ -481,14 +505,16 @@ def get_skill_bundle(
             return None
         from backend.kg.pg_store.query import _node_dict
 
-        nodes = [_node_dict(r) for r in rows]
+        nodes = [_node_dict(r, admin=not published_only) for r in rows]
         occ_row = conn.execute(
             f"""
             SELECT count(DISTINCT e.src_id) AS c
             FROM kg_edge e
             JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level'
+                 AND {_ONLINE_N}
             JOIN kg_node o ON o.id = e.src_id AND o.type = 'occupation'
               AND COALESCE(o.status, 'published') = 'published'
+              AND {online_only('o')}
             WHERE e.rel_type = 'requires'
               AND COALESCE(e.status, 'published') = 'published'
               AND ({key_expr}) = %s
@@ -497,6 +523,7 @@ def get_skill_bundle(
         ).fetchone()
         occ_c = int(occ_row["c"] if occ_row else 0)
         bundle = assemble_bundle(sk, nodes, region=reg, occupation_count=occ_c)
+        attach_bundle_draft_state([bundle], conn=conn, admin=not published_only)
         try:
             from backend.kg.pg_store.skill_prereq import list_prereqs
 
@@ -514,39 +541,232 @@ def get_skill_bundle(
         return bundle
 
 
-def occupation_skill_bundles(
-    occupation_id: str, *, limit: int = 100
+# ── 技能构成：全站唯一实现 ────────────────────────────────────
+#
+# 「取一个岗位/专业的技能构成」这件事，草稿态之前在全仓有 29 处独立 SQL、散在 12 个模块，
+# 每处各自拼可见性口径。以前所有口径都是 published，抄多份看不出来；草稿态加了
+# 「草稿优先」这一维之后立刻分家 —— 实测同一个管理台 scope 下，
+# `/v1/admin/composition` 显示改后的权重，而 `/v1/kg/node-detail` 还是发布前那份，
+# 运营看到「改了技能构成但数据没进草稿态」。
+#
+# 所以收敛成下面这一个函数，scope 参数化。**读侧的展示/计算路径一律调它，不要再拼 SQL。**
+# 没收进来的三类（有意为之）：
+#   - `publish_rules`：门禁必须永远只看**已发布**的事实（BR-03 算的是发布后的 Σweight），
+#     口径固定，参数化只会让人误以为它能跟着 scope 变
+#   - `skill_write` / `node_layout_meta`：写侧与派生缓存重算，不是展示读路径
+#   - `counts` 的批量计数：一次算一批 id，形状是 `GROUP BY src_id`，
+#     与「单实体取明细」不是同一个查询；它按 scope 复用本函数的**谓词**（见 _composition_pred）
+
+_COMPOSITION_REL = {"occupation": "requires", "major": "covers"}
+
+
+def _composition_pred(
+    scope: str, *, edge: str = "e", node: str = "s"
+) -> tuple[str, str]:
+    """技能构成的可见性谓词 → (边条件, 技能节点条件)。**口径唯一真源。**
+
+    - `public`：只看已发布的线上边与线上技能节点（前台）
+    - `manage`：管理台口径 —— 草稿优先、墓碑（待归档/待删）算已删、排除 archived
+
+    `edge` / `node` 是 SQL 别名：批量聚合类查询（`counts`、能力全景热力矩阵）
+    的形状与「单实体取明细」不同，没法直接调 `entity_skill_composition`，
+    但**可以共用这份谓词** —— 口径仍然只有一处。
+    """
+    from backend.kg.pg_store.config import (
+        edge_not_archived,
+        edge_published,
+        node_not_archived,
+        node_published,
+        online_only,
+        online_only_edge,
+        prefer_draft,
+        prefer_draft_edge,
+    )
+
+    if (scope or "").strip().lower() in ("manage", "admin", "all"):
+        return (
+            f"{edge_not_archived(edge)} AND {prefer_draft_edge(edge)} "
+            f"AND COALESCE({edge}.target_status, '') NOT IN ('archived', 'deleted')",
+            f"{node_not_archived(node)} AND {prefer_draft(node)}",
+        )
+    return (
+        f"{edge_published(edge)} AND {online_only_edge(edge)}",
+        f"{node_published(node)} AND {online_only(node)}",
+    )
+
+
+def composition_rows(
+    node_id: str,
+    *,
+    scope: str = "public",
+    rel_type: str | None = None,
+    conn: Any = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    """岗位 requires → 逻辑技能 bundle 列表（权重取自边）。"""
+    """技能构成的**边级**原始行（每条 requires/covers 边一行），按 scope 取可见性。
+
+    返回的每行都是 `_node_dict` 后的技能节点 + `edge` 字典（id/weight/confidence/…），
+    直接可喂给 `group_nodes_to_bundles`。需要 bundle 形态的用
+    `entity_skill_composition`，需要逐边明细的（构成编辑页）用本函数。
+    """
+    from backend.kg.pg_store.client import use_conn
     from backend.kg.pg_store.query import _node_dict
 
-    with connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT s.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence, e.evidence
+    e_pred, s_pred = _composition_pred(scope)
+    manage = (scope or "").strip().lower() in ("manage", "admin", "all")
+    with use_conn(conn) as c:
+        if not rel_type:
+            trow = c.execute(
+                "SELECT type FROM kg_node WHERE id = %s LIMIT 1", (node_id,)
+            ).fetchone()
+            ntype = (trow or {}).get("type") or ""
+            rel_type = _COMPOSITION_REL.get(ntype, "requires")
+        rows = c.execute(
+            f"""
+            SELECT s.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence,
+                   e.evidence, e.is_draft AS edge_is_draft, e.target_status AS edge_target
             FROM kg_edge e
-            JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level'
-            WHERE e.src_id = %s AND e.rel_type = 'requires'
-              AND COALESCE(e.status, 'published') = 'published'
-              AND COALESCE(s.status, 'published') = 'published'
-            ORDER BY e.weight DESC NULLS LAST, s.name
-            LIMIT %s
+            JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level' AND {s_pred}
+            WHERE e.src_id = %s AND e.rel_type = %s AND {e_pred}
+            ORDER BY e.weight DESC NULLS LAST, s.name, s.id
+            {"LIMIT %s" if limit else ""}
             """,
-            (occupation_id, max(limit * 5, 200)),  # 多取再聚合
+            (node_id, rel_type, limit) if limit else (node_id, rel_type),
         ).fetchall()
-    flat = []
+    out = []
     for r in rows:
-        node = _node_dict(r)
+        node = _node_dict(r, admin=manage)
+        st = r.get("status") or "published"
         node["edge"] = {
             "id": r.get("edge_id"),
-            "rel_type": r.get("rel_type") or "requires",
+            "rel_type": r.get("rel_type") or rel_type,
             "weight": r.get("weight"),
             "confidence": r.get("confidence"),
             "evidence": r.get("evidence"),
+            "is_draft": bool(r.get("edge_is_draft")),
         }
-        flat.append(node)
-    bundles = group_nodes_to_bundles(flat)
-    return bundles[:limit]
+        if manage:
+            # 「边是 published、指向的技能节点却被停用/草稿」是一种**存量异常**：
+            # 前台按节点状态过滤看不到这条技能（5 项 Σ0.81），管理台口径 `<> archived`
+            # 看得到（6 项 Σ1.00）—— 同一个岗位两个权重和。
+            # **不在读侧偷偷过滤掉**：那样运营永远看不到异常，数据只会越烂。
+            # 这里标出来，让构成页/详情页能显式提示「这条边指向不可见的技能」。
+            node["endpoint_status"] = st
+            node["dangling"] = st != "published"
+        out.append(node)
+    return out
+
+
+def entity_skill_composition(
+    node_id: str,
+    *,
+    scope: str = "public",
+    conn: Any = None,
+    limit: int | None = 100,
+    rel_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """岗位/专业的技能构成（bundle 形态）—— **全站唯一实现**。
+
+    `scope="public"` 只看已发布边（前台）；`scope="manage"` 草稿优先 + 墓碑算已删
+    （管理台）。同一实体在同一 scope 下，不论从哪个接口读，结果必须一致 ——
+    这正是收敛它的理由。
+    """
+    rows = composition_rows(
+        node_id,
+        scope=scope,
+        rel_type=rel_type,
+        conn=conn,
+        # 多取再聚合：一个 skill_key 可能有多条档位边
+        limit=max((limit or 100) * 5, 200),
+    )
+    bundles = group_nodes_to_bundles(rows)
+    # 异常标记按 skill_key 汇总上来：bundle 里任一档的边指向不可见节点就标 dangling
+    bad = {}
+    for r in rows:
+        if r.get("dangling"):
+            bad.setdefault(skill_key_from_node(r), []).append(
+                {"node_id": r.get("id"), "endpoint_status": r.get("endpoint_status")}
+            )
+    for b in bundles:
+        hit = bad.get(b.get("skill_key"))
+        if hit:
+            b["dangling"] = True
+            b["dangling_endpoints"] = hit
+    return bundles[: limit] if limit else bundles
+
+
+def attach_bundle_draft_state(
+    bundles: list[dict[str, Any]], *, conn: Any = None, admin: bool = False
+) -> None:
+    """给 bundle 补 `status` / `record_status` / `has_draft` / `draft_change`（原地改）。
+
+    技能是**逻辑实体**：一个 skill_key 由 L1–L5 五个节点组成，草稿态是按节点记的。
+    聚合规则（契约里也写了这一条）：**任一档有草稿 → 整个 bundle 记 `draft`**。
+    运营看的是「这个技能我改过没有」，不需要知道是哪一档在草稿里。
+
+    `status` 一律按**线上行**聚合。不这么做的话：管理台口径下 `prefer_draft` 拿到的是
+    草稿行（status 恒为 'draft'），聚合出来永远是 draft —— 和「库里 21074 个技能全是
+    published」的事实对不上，运营分不清哪个技能真被改过。
+    """
+    if not admin or not bundles:
+        return
+    from backend.kg.pg_store.client import use_conn
+    from backend.kg.pg_store.query import unit_draft_kinds
+
+    ids = [i for b in bundles for i in (b.get("node_ids") or []) if i]
+    if not ids:
+        return
+    kinds = unit_draft_kinds(ids, conn)
+    with use_conn(conn) as c:
+        rows = c.execute(
+            "SELECT id, status, version, owner, owner_name, updated_by, updated_by_name "
+            "FROM kg_node WHERE id = ANY(%s) AND NOT is_draft",
+            (ids,),
+        ).fetchall()
+    online = {r["id"]: (r["status"] or "published") for r in rows}
+    meta = {r["id"]: dict(r) for r in rows}
+    for b in bundles:
+        nids = [i for i in (b.get("node_ids") or []) if i]
+        sts = [online[i] for i in nids if i in online]
+        # 没有任何线上行 = 这个技能是新建的，只有草稿
+        b["status"] = aggregate_bundle_status([{"status": x} for x in sts]) if sts else "draft"
+        kind = next((kinds[i] for i in nids if i in kinds), None)
+        b["has_draft"] = kind is not None
+        b["record_status"] = "draft" if kind else b["status"]
+        if kind:
+            b["draft_change"] = kind
+        # 版本 / 负责人 / 最近修改人：bundle 没有自己的行，取各档线上行聚合 ——
+        # **版本取最大档**（任一档发过一版，这个逻辑技能就到了那一版）。
+        # 不返回的话前端会 `|| "V1"` 兜出一个恒为 V1 的假版本号，
+        # 与「状态列恒显示草稿」是同一个形状：接口不给、前端编一个看起来像真的值。
+        ms = [meta[i] for i in nids if i in meta]
+        if ms:
+            vs = [int(m["version"] or 1) for m in ms]
+            b["version"] = max(vs)
+            b["version_label"] = f"V{max(vs)}"
+            b["owner"] = next((m["owner"] for m in ms if m.get("owner")), None)
+            b["owner_name"] = next(
+                (m["owner_name"] or m["owner"] for m in ms if m.get("owner_name") or m.get("owner")),
+                None,
+            )
+            b["updated_by_name"] = next(
+                (m["updated_by_name"] or m["updated_by"] for m in ms
+                 if m.get("updated_by_name") or m.get("updated_by")),
+                None,
+            )
+
+
+def occupation_skill_bundles(
+    occupation_id: str, *, limit: int = 100, scope: str = "public"
+) -> list[dict[str, Any]]:
+    """岗位 requires → 逻辑技能 bundle 列表（权重取自边）。
+
+    保留这个名字是因为调用点多（学员端、报告、诊断）；实现已并入
+    `entity_skill_composition`，口径只有那一份。
+    """
+    return entity_skill_composition(
+        occupation_id, scope=scope, limit=limit, rel_type="requires"
+    )
 
 
 def occupation_skill_composition(occupation_id: str) -> dict[str, Any]:

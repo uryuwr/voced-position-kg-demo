@@ -17,7 +17,7 @@ import re
 from collections import defaultdict
 from typing import Any
 
-from backend.kg.pg_store.client import connect
+from backend.kg.pg_store.client import connect, use_conn
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL, skill_key_from_node
 from backend.kg.pg_store.skill_level_meta import REQUIRED_LEVEL_CODES
 
@@ -45,8 +45,11 @@ def _maybe_json(v: Any) -> Any:
     return v
 
 
-def check_br02_major(major_id: str) -> list[dict[str, Any]]:
-    with connect() as conn:
+def check_br02_major(major_id: str, *, conn: Any = None) -> list[dict[str, Any]]:
+    # conn 可传：发布事务里要在**未提交**的状态上跑门禁（方案 §7 第 1 步）。
+    # 自己 connect() 的话看不见同一事务里刚套用的草稿，门禁校的是旧内容，
+    # 于是「改完权重去发布」会拿着改之前的 Σweight 判定，放过真正不合规的那次。
+    with use_conn(conn) as conn:
         row = conn.execute(
             f"""
             SELECT count(DISTINCT e.dst_id) AS c
@@ -72,8 +75,10 @@ def check_br02_major(major_id: str) -> list[dict[str, Any]]:
     ]
 
 
-def check_br03_occupation(occupation_id: str) -> list[dict[str, Any]]:
-    with connect() as conn:
+def check_br03_occupation(
+    occupation_id: str, *, conn: Any = None
+) -> list[dict[str, Any]]:
+    with use_conn(conn) as conn:
         rows = conn.execute(
             f"""
             SELECT ({SKILL_KEY_SQL}) AS skill_key, max(e.weight) AS w
@@ -118,8 +123,10 @@ def check_br03_occupation(occupation_id: str) -> list[dict[str, Any]]:
     ]
 
 
-def _level_descriptions_for_skill_key(skill_key: str, region: str = "CN") -> dict[str, str]:
-    with connect() as conn:
+def _level_descriptions_for_skill_key(
+    skill_key: str, region: str = "CN", *, conn: Any = None
+) -> dict[str, str]:
+    with use_conn(conn) as conn:
         rows = conn.execute(
             f"""
             SELECT n.name, n.description, n.attrs
@@ -157,8 +164,10 @@ def _level_descriptions_for_skill_key(skill_key: str, region: str = "CN") -> dic
     return found
 
 
-def check_br04_skill(skill_key: str, *, region: str = "CN") -> list[dict[str, Any]]:
-    found = _level_descriptions_for_skill_key(skill_key, region)
+def check_br04_skill(
+    skill_key: str, *, region: str = "CN", conn: Any = None
+) -> list[dict[str, Any]]:
+    found = _level_descriptions_for_skill_key(skill_key, region, conn=conn)
     missing = [c for c in REQUIRED_LEVEL_CODES if c not in found]
     ok = len(missing) == 0
     return [
@@ -179,8 +188,10 @@ def check_br04_skill(skill_key: str, *, region: str = "CN") -> list[dict[str, An
     ]
 
 
-def check_br05_prereq_acyclic(skill_key: str, *, region: str = "CN") -> list[dict[str, Any]]:
-    with connect() as conn:
+def check_br05_prereq_acyclic(
+    skill_key: str, *, region: str = "CN", conn: Any = None
+) -> list[dict[str, Any]]:
+    with use_conn(conn) as conn:
         rows = conn.execute(
             "SELECT skill_key, prereq_skill_key FROM kg_skill_prereq WHERE region=%s",
             (region,),
@@ -222,8 +233,10 @@ def check_br05_prereq_acyclic(skill_key: str, *, region: str = "CN") -> list[dic
     ]
 
 
-def check_br06_skill_delete(skill_key: str, *, region: str = "CN") -> list[dict[str, Any]]:
-    with connect() as conn:
+def check_br06_skill_delete(
+    skill_key: str, *, region: str = "CN", conn: Any = None
+) -> list[dict[str, Any]]:
+    with use_conn(conn) as conn:
         node_ids = [
             r["id"]
             for r in conn.execute(
@@ -232,6 +245,7 @@ def check_br06_skill_delete(skill_key: str, *, region: str = "CN") -> list[dict[
                 WHERE n.type='skill_level'
                   AND ({SKILL_KEY_SQL}) = %s
                   AND (%s::text IS NULL OR n.region = %s)
+                  AND NOT n.is_draft
                 """,
                 (skill_key, region, region),
             ).fetchall()
@@ -297,6 +311,7 @@ def validate_publish(
     skill_key: str | None = None,
     region: str = "CN",
     action: str = "enable",
+    conn: Any = None,
 ) -> dict[str, Any]:
     ntype = (node_type or "").lower()
     checks: list[dict[str, Any]] = []
@@ -306,13 +321,13 @@ def validate_publish(
         if not sk and node_id:
             from backend.kg.pg_store.query import get_node
 
-            n = get_node(node_id)
+            n = get_node(node_id, conn=conn)
             if n and n.get("type") == "skill_level":
                 sk = skill_key_from_node(n)
             elif ntype in ("skill_level", "skill_bundle", "skill"):
                 sk = node_id
         if sk:
-            checks.extend(check_br06_skill_delete(sk, region=region))
+            checks.extend(check_br06_skill_delete(sk, region=region, conn=conn))
         else:
             checks.append(
                 {
@@ -325,20 +340,20 @@ def validate_publish(
         return _pack(checks)
 
     if ntype == "major" and node_id:
-        checks.extend(check_br02_major(node_id))
+        checks.extend(check_br02_major(node_id, conn=conn))
     elif ntype == "occupation" and node_id:
-        checks.extend(check_br03_occupation(node_id))
+        checks.extend(check_br03_occupation(node_id, conn=conn))
     elif ntype in ("skill_level", "skill", "skill_bundle") or skill_key:
         sk = skill_key
         if not sk and node_id:
             from backend.kg.pg_store.query import get_node
 
-            n = get_node(node_id)
+            n = get_node(node_id, conn=conn)
             if n:
                 sk = skill_key_from_node(n) if n.get("type") == "skill_level" else node_id
         if sk:
-            checks.extend(check_br04_skill(sk, region=region))
-            checks.extend(check_br05_prereq_acyclic(sk, region=region))
+            checks.extend(check_br04_skill(sk, region=region, conn=conn))
+            checks.extend(check_br05_prereq_acyclic(sk, region=region, conn=conn))
         else:
             checks.append(
                 {
@@ -465,7 +480,8 @@ def demote_noncompliant(
         summary["occupation"]["ids"] = occ_fail[:50]
         if not dry_run and occ_fail:
             conn.execute(
-                "UPDATE kg_node SET status='draft' WHERE id = ANY(%s)",
+                # 降级只针对已发布的线上行；草稿行的 status 恒为 draft，动它就违约
+                "UPDATE kg_node SET status='draft' WHERE id = ANY(%s) AND NOT is_draft",
                 (occ_fail,),
             )
 
@@ -556,6 +572,7 @@ def demote_noncompliant(
                     WHERE n.type = 'skill_level'
                       AND n.region = %s
                       AND ({SKILL_KEY_SQL}) = ANY(%s)
+                      AND NOT n.is_draft
                     """,
                     (region, chunk),
                 )
@@ -593,7 +610,7 @@ def demote_noncompliant(
         summary["major"]["ids"] = major_ids[:50]
         if not dry_run and major_ids:
             conn.execute(
-                "UPDATE kg_node SET status='draft' WHERE id = ANY(%s)",
+                "UPDATE kg_node SET status='draft' WHERE id = ANY(%s) AND NOT is_draft",
                 (major_ids,),
             )
 
@@ -639,7 +656,9 @@ def _find_cyclic_keys(graph: dict[str, list[str]]) -> set[str]:
 def _set_status(node_id: str, status: str) -> None:
     with connect() as conn:
         conn.execute(
-            "UPDATE kg_node SET status=%s WHERE id=%s",
+            # 发布侧只动线上行：不钉 NOT is_draft 会把草稿行的 status 一起改，
+            # 写 published 直接撞 ck_kg_node_draft_status（草稿 status 恒为 draft）
+            "UPDATE kg_node SET status=%s WHERE id=%s AND NOT is_draft",
             (status, node_id),
         )
         conn.commit()
@@ -653,6 +672,7 @@ def _set_skill_key_status(skill_key: str, status: str, *, region: str = "CN") ->
             WHERE n.type = 'skill_level'
               AND (%s::text IS NULL OR n.region = %s)
               AND ({SKILL_KEY_SQL}) = %s
+              AND NOT n.is_draft
             """,
             (status, region, region, skill_key),
         )
@@ -691,10 +711,18 @@ def try_publish_node(
     )
     if not gate["ok"]:
         patch_node(
-            node_id, {"status": "draft"}, user_id=user_id, user_name=user_name
+            node_id,
+            {"status": "draft"},
+            user_id=user_id,
+            user_name=user_name,
+            to_draft=False,      # 发布侧：直接改线上行的 status（方案 §4）
         )
         return {"status": "draft", "gate": gate, "node_id": node_id}
     patch_node(
-        node_id, {"status": "published"}, user_id=user_id, user_name=user_name
+        node_id,
+        {"status": "published"},
+        user_id=user_id,
+        user_name=user_name,
+        to_draft=False,
     )
     return {"status": "published", "gate": gate, "node_id": node_id}

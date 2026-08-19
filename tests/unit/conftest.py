@@ -60,6 +60,17 @@ assert _settings.config_source() == "local", (
     "SDP 拉取没有被掐断，单测将依赖内网配置中心；请检查 conftest 的 patch 顺序"
 )
 
+# ── 2b) `.env` 里显式写了 DATABASE_URL 时要再压一次 ────────────
+# `backend/.env` 是 `override=True` 加载的（见 backend/settings.py），所以第 2 步
+# 设的环境变量会被它**盖回去**。平时 backend/.env 里没有这个键（真值来自 SDP 配置中心，
+# 而配置中心已在第 3 步掐断），所以看不出问题；但本地要连隔离库调试时会直接写在
+# backend/.env 里（草稿态开发用的 voced_kg_draftdev 就是这么配的），
+# 一写单测就整个 collect 失败 —— 而且失败信息指向下面那句 assert，看不出根因在 .env。
+# 这里在读取 pg_store.config 之前把它压回死地址：单测的要求是「谁都别连库」，
+# 不管 .env 里写的是哪个库。
+os.environ["DATABASE_URL"] = UNREACHABLE_DB
+_settings.DATABASE_URL = UNREACHABLE_DB  # type: ignore[attr-defined]
+
 import backend.kg.pg_store.config as _pg_config  # noqa: E402
 
 assert _pg_config.DATABASE_URL == UNREACHABLE_DB, (

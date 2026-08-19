@@ -11,18 +11,27 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import connect
-from backend.kg.pg_store.config import attrs_level_int, edge_published, node_not_archived
+from backend.kg.pg_store.config import (
+    attrs_level_int,
+    edge_published,
+    node_not_archived,
+    prefer_draft,
+)
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
 _EP = edge_published("e")
-_NODE_VISIBLE = node_not_archived("n")
+# 管理台口径（`<> 'archived'`）对草稿行也成立，所以每处都要跟一个 prefer_draft，
+# 否则同一条数据在关联列表里出现两次。这里合成一个常量：本文件 12 处 JOIN 共用它，
+# 分开写迟早漏一处 —— 这个项目已经因为「同一判定各写一份」栽过四次。
+_NODE_VISIBLE = f"{node_not_archived('n')} AND {prefer_draft('n')}"
 _LEVEL_N = attrs_level_int("n")
 
 
 def _base(row: dict[str, Any]) -> dict[str, Any]:
     from backend.kg.pg_store.query import _node_dict
 
-    return _node_dict(row)
+    # 管理台详情：带版本/负责人/最近修改人（前台口径下这些不返回，见 query._node_dict）
+    return _node_dict(row, admin=True)
 
 
 def _levels_grid(levels: list[int], required: int | None) -> list[dict[str, Any]]:
@@ -39,16 +48,45 @@ def _levels_grid(levels: list[int], required: int | None) -> list[dict[str, Any]
 
 
 def node_detail(node_id: str) -> dict[str, Any]:
-    """按节点类型返回管理台详情。未找到返回 {'node': None}。"""
+    """按节点类型返回管理台详情。未找到返回 {'node': None}。
+
+    草稿态（方案 §6.3）：一条记录最多两行，这里**一次查询取回两行**，
+    `node` 是运营该看到的那份（有草稿取草稿），另外把 `published` / `draft` 都给出去，
+    供编辑页做「改前 / 改后」对比。`record_status` 是派生值、不落库。
+    """
     with connect() as conn:
-        row = conn.execute(
-            f"SELECT * FROM kg_node n WHERE n.id = %s AND {_NODE_VISIBLE}", (node_id,)
-        ).fetchone()
-        if not row:
+        # 不能用 _NODE_VISIBLE：它带 prefer_draft，会把线上行滤掉，就拿不到对比的另一半
+        rows = conn.execute(
+            f"SELECT * FROM kg_node n WHERE n.id = %s AND {node_not_archived('n')} "
+            f"ORDER BY n.is_draft DESC",
+            (node_id,),
+        ).fetchall()
+        if not rows:
             return {"node": None, "meta": {"matched": 0}}
+        draft_row = next((r for r in rows if r.get("is_draft")), None)
+        online_row = next((r for r in rows if not r.get("is_draft")), None)
+        row = draft_row or online_row
         node = _base(row)
         ntype = node.get("type")
-        out: dict[str, Any] = {"node": node, "meta": {"matched": 1, "type": ntype}}
+        # **按发布单元判定，不能只看草稿节点行**：改技能构成只产生草稿边
+        # （unit_id = 本节点 id），节点行一个字没动。只看节点行的话，
+        # 运营在详情页看到的是「已发布」，却不知道有一批改动还没发出去。
+        from backend.kg.pg_store.query import unit_draft_kinds
+
+        draft_change = unit_draft_kinds([node_id], conn).get(node_id)
+        out: dict[str, Any] = {
+            "node": node,
+            # 两份都从同一张表按 is_draft 取，一次查询即可；无草稿时 draft 为 null
+            "published": _base(online_row) if online_row else None,
+            "draft": _base(draft_row) if draft_row else None,
+            "record_status": "draft"
+            if draft_change
+            else ((online_row or {}).get("status") or "published"),
+            "has_draft": draft_change is not None,
+            # node=只改了节点字段 | edges=只改了关联/技能构成 | both=都改了
+            "draft_change": draft_change,
+            "meta": {"matched": 1, "type": ntype},
+        }
 
         if ntype == "industry":
             out.update(_industry_detail(conn, node_id))
@@ -132,25 +170,20 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
 
     # 专业直连技能（covers, E4）：需求变更后专业以此管理技能，
     # 不再展示「经岗位聚合」的技能——后者是间接推导，且无法被运营直接维护。
-    direct = conn.execute(
-        f"""
-        SELECT ({SKILL_KEY_SQL}) AS skill_key, n.category,
-               {_LEVEL_N} AS level
-        FROM kg_edge e
-        JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level' AND {_NODE_VISIBLE}
-        WHERE e.src_id = %s AND e.rel_type='covers' AND {_EP}
-        ORDER BY 1
-        """,
-        (mid,),
-    ).fetchall()
+    # 专业直连技能（covers）：同样走唯一实现的管理台口径，
+    # 否则专业详情与构成页又是两个答案
+    from backend.kg.pg_store.skill_aggregate import entity_skill_composition
 
     direct_skills = [
         {
-            "skill_key": r["skill_key"],
-            "category": r["category"],
-            "selected_level": r["level"],
+            "skill_key": b.get("skill_key"),
+            "category": b.get("category"),
+            "selected_level": b.get("required_level"),
+            "dangling": bool(b.get("dangling")),
         }
-        for r in direct
+        for b in entity_skill_composition(
+            mid, scope="manage", limit=500, rel_type="covers", conn=conn
+        )
     ]
 
     occ_ids = [o["id"] for o in occs]
@@ -164,7 +197,7 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
                    {_LEVEL_N} AS level
             FROM kg_edge e
             JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level' AND {_NODE_VISIBLE}
-            JOIN kg_node o ON o.id = e.src_id
+            JOIN kg_node o ON o.id = e.src_id AND {prefer_draft('o')}
             WHERE e.src_id = ANY(%s) AND e.rel_type='requires' AND {_EP}
             """,
             (occ_ids,),
@@ -245,11 +278,14 @@ def _occupation_detail(conn, oid: str) -> dict[str, Any]:
         (oid,),
     ).fetchall()
 
-    from backend.kg.pg_store.skill_aggregate import occupation_skill_bundles
+    from backend.kg.pg_store.skill_aggregate import entity_skill_composition
 
     from backend.kg.pg_store.skill_prereq import prereq_map
 
-    bundles = occupation_skill_bundles(oid, limit=200)
+    # **管理台口径**：草稿优先。本文件是管理台详情，之前这里走的是 published 口径，
+    # 于是「改完技能构成」在构成页看得到、在详情页看不到 —— 同一个 scope 两个答案。
+    # 现在与 /v1/admin/composition 共用 entity_skill_composition，口径只有一份。
+    bundles = entity_skill_composition(oid, scope="manage", limit=200, conn=conn)
     pmap = prereq_map(conn, [b.get("skill_key") for b in bundles])
 
     skills = []
@@ -269,6 +305,11 @@ def _occupation_detail(conn, oid: str) -> dict[str, Any]:
                 # 原型：每技能显示先修，无则「无先修」
                 "prereqs": pmap.get(b.get("skill_key") or "", []),
                 "levels": _levels_grid(b.get("available_levels") or [], b.get("required_level")),
+                # 异常标记：这条边指向的技能节点不是 published（停用/归档/草稿）。
+                # 前台按节点状态过滤会看不到它，于是前后台技能数与权重和不一致 ——
+                # 管理台必须显式看得见，不能在读侧偷偷滤掉当没事
+                "dangling": bool(b.get("dangling")),
+                "dangling_endpoints": b.get("dangling_endpoints"),
             }
         )
     return {

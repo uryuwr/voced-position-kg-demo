@@ -149,10 +149,14 @@ def clear_graph(conn) -> None:
 
 
 def insert_nodes(conn, nodes: list[dict], batch_size: int = 2000) -> int:
+    # is_draft=false 是显式写的，不靠列默认值：灌库是离线采集，不是运营编辑（方案 §4），
+    # 落的必须是**线上行**。冲突目标同时带上 is_draft，才不会去撞同一 id 的草稿行 ——
+    # 主键是 (id, is_draft)，只写 `ON CONFLICT (id)` 会直接报
+    # "there is no unique or exclusion constraint matching"。
     sql = f"""
-    INSERT INTO kg_node ({", ".join(NODE_COLS)})
-    VALUES ({", ".join(["%s"] * len(NODE_COLS))})
-    ON CONFLICT (id) DO UPDATE SET
+    INSERT INTO kg_node ({", ".join(NODE_COLS)}, is_draft)
+    VALUES ({", ".join(["%s"] * len(NODE_COLS))}, false)
+    ON CONFLICT (id, is_draft) DO UPDATE SET
       name = EXCLUDED.name,
       name_en = EXCLUDED.name_en,
       name_zh = EXCLUDED.name_zh,
@@ -175,9 +179,9 @@ def insert_nodes(conn, nodes: list[dict], batch_size: int = 2000) -> int:
 
 def insert_edges(conn, edges: list[dict], batch_size: int = 2000) -> int:
     sql = f"""
-    INSERT INTO kg_edge ({", ".join(EDGE_COLS)})
-    VALUES ({", ".join(["%s"] * len(EDGE_COLS))})
-    ON CONFLICT (id) DO UPDATE SET
+    INSERT INTO kg_edge ({", ".join(EDGE_COLS)}, is_draft)
+    VALUES ({", ".join(["%s"] * len(EDGE_COLS))}, false)
+    ON CONFLICT (id, is_draft) DO UPDATE SET
       weight = EXCLUDED.weight,
       evidence = EXCLUDED.evidence,
       attrs = EXCLUDED.attrs,
@@ -196,33 +200,51 @@ def insert_edges(conn, edges: list[dict], batch_size: int = 2000) -> int:
 
 
 def stats(conn=None) -> dict[str, Any]:
+    """图规模统计（`/v1/stats` 与灌库末尾的对账都读它）。
+
+    **只数线上行**：草稿行是「同一条记录的另一个版本」，不是新数据。不排除的话
+    ① 运营编辑一下前台的总节点数就跟着涨（方案 §12 的「前台逐字节不变」当场破）；
+    ② 本文件末尾 `s["nodes"] == len(nodes)` 的对账会因为草稿行而 MISMATCH，
+       灌库脚本 exit 1 —— 明明灌对了却报失败。
+    """
     own = conn is None
     c = conn or connect()
     try:
-        node_total = c.execute("SELECT COUNT(*) AS c FROM kg_node").fetchone()["c"]
-        edge_total = c.execute("SELECT COUNT(*) AS c FROM kg_edge").fetchone()["c"]
+        node_total = c.execute(
+            "SELECT COUNT(*) AS c FROM kg_node WHERE NOT is_draft"
+        ).fetchone()["c"]
+        edge_total = c.execute(
+            "SELECT COUNT(*) AS c FROM kg_edge WHERE NOT is_draft"
+        ).fetchone()["c"]
         by_type = {
             r["type"]: r["c"]
             for r in c.execute(
-                "SELECT type, COUNT(*) AS c FROM kg_node GROUP BY type ORDER BY type"
+                "SELECT type, COUNT(*) AS c FROM kg_node WHERE NOT is_draft "
+                "GROUP BY type ORDER BY type"
             )
         }
         by_region = {
             r["region"]: r["c"]
             for r in c.execute(
-                "SELECT region, COUNT(*) AS c FROM kg_node GROUP BY region"
+                # 三个分组统计都要 ORDER BY：不排的话 PG 的 HashAggregate 输出顺序
+                # 不保证稳定，同样的数据两次请求能给出不同的 JSON 键序，
+                # 「编辑前后前台响应逐字节相同」这类断言会随机翻红
+                "SELECT region, COUNT(*) AS c FROM kg_node WHERE NOT is_draft "
+                "GROUP BY region ORDER BY region"
             )
         }
         by_rel = {
             r["rel_type"]: r["c"]
             for r in c.execute(
-                "SELECT rel_type, COUNT(*) AS c FROM kg_edge GROUP BY rel_type"
+                "SELECT rel_type, COUNT(*) AS c FROM kg_edge WHERE NOT is_draft "
+                "GROUP BY rel_type ORDER BY rel_type"
             )
         }
         by_conf = {
             r["confidence"]: r["c"]
             for r in c.execute(
-                "SELECT confidence, COUNT(*) AS c FROM kg_edge GROUP BY confidence"
+                "SELECT confidence, COUNT(*) AS c FROM kg_edge WHERE NOT is_draft "
+                "GROUP BY confidence ORDER BY confidence"
             )
         }
         return {

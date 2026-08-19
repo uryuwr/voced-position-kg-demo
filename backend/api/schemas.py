@@ -156,6 +156,45 @@ class KgNode(BaseModel):
         None,
         description="skill_level 技能大类（国标职业功能维度：安全与环保/作业准备/…）",
     )
+    # 草稿态（scope=manage 的读路径会带上；前台读到的永远是线上行，这几个字段恒为
+    # is_draft=false / record_status=status / has_draft=false）。
+    # 详见 docs/方案-管理台草稿态与发布.md
+    is_draft: bool | None = Field(
+        None, description="这一行是不是草稿行。读路径「同一 id 只取一行、草稿优先」"
+    )
+    has_draft: bool | None = Field(
+        None,
+        description=(
+            "这条记录有没有未发布的草稿。等价于 `is_draft` —— 草稿优先取行之后，"
+            "「拿到的是草稿行」就等于「有草稿」，不是另一个落库字段"
+        ),
+    )
+    record_status: str | None = Field(
+        None,
+        description=(
+            "**记录状态 = 最新版本的状态**：有草稿就是 `draft`，否则等于线上行的 status。"
+            "列表上给运营看的就是这个；`status` 仍是本行自己的库内状态。"
+            "判定按**发布单元**——只改技能构成（草稿边、没有草稿节点行）也算 draft"
+        ),
+    )
+    draft_change: str | None = Field(
+        None,
+        description=(
+            "草稿改的是什么：`node`=节点字段 | `edges`=仅关联/技能构成 | `both`=两者。"
+            "`edges` 那种没有草稿节点行，但同样要发布才生效"
+        ),
+    )
+    target_status: str | None = Field(
+        None,
+        description=(
+            "仅草稿行有：发布后线上行会变成什么（published|disabled|archived），"
+            "null=只更新内容不改状态。**不要把它写进 status**，那样草稿会泄漏到前台"
+        ),
+    )
+    base_version: int | None = Field(
+        None,
+        description="仅草稿行有：基于哪个已发布版本改的；发布时与线上 version 不等则 409",
+    )
     # 管理列表 scope=manage：有待审变更时附带（库内 status 仍为 published/disabled，前台不受影响）
     pending_change_id: int | None = Field(
         None, description="待审变更 id；有值表示有未审完的操作，但生效状态仍以 status 为准"
@@ -506,6 +545,19 @@ class SkillBundleBrief(BaseModel):
     missing_levels: list[int] = Field(default_factory=list, description="尚缺的档位 1–5")
 
 
+class DeleteResult(BaseModel):
+    """物理删除实际影响的条数。
+
+    节点删除会连带删掉它两端的边（不级联删其它节点），所以两个计数都要给：
+    运营点一次「删除岗位」，需要知道顺带带走了多少条关联边。
+    """
+
+    node_id: str | None = Field(None, description="被删的节点 id；删边时为 null")
+    edge_id: str | None = Field(None, description="被删的边 id；删节点时为 null")
+    nodes_deleted: int = Field(0, ge=0, description="删掉的节点数（0 表示目标本就不存在）")
+    edges_deleted: int = Field(0, ge=0, description="连带删掉的关联边数")
+
+
 class ChangePayload(BaseModel):
     """变更内容。
 
@@ -565,7 +617,15 @@ class AppliedResult(BaseModel):
     linked_edges: list[KgEdge] | None = Field(None, description="自动建出的边")
     skill_bundle: bool | None = Field(None, description="true=走的是技能 bundle 写入路径")
     skill_key: str | None = Field(None, description="技能聚合主键")
-    levels: list[dict[str, Any]] | None = Field(None, description="各档明细")
+    levels: list[str] | list[dict[str, Any]] | None = Field(
+        None,
+        description=(
+            "本次落库涉及的档位。**实际是档位码列表**（`['L1','L2',…]`，"
+            "来自 `apply_skill_bundle_create`），历史上这里只声明了 `list[dict]`，"
+            "于是 `POST /v1/admin/skills` 明明写成功了，响应序列化却报 422/400 —— "
+            "按实际可能的取值声明，别照着「它应该是明细」想当然"
+        ),
+    )
     bundle: SkillBundleBrief | None = Field(None, description="聚合后的技能 bundle")
     status: str | None = Field(
         None, description="落库后的状态；draft 表示门禁未过，停在草稿"
@@ -573,7 +633,26 @@ class AppliedResult(BaseModel):
     gate: dict[str, Any] | None = Field(
         None, description="发布门禁结果（同 PublishValidateOut）；仅未通过时出现"
     )
-    deleted: bool | None = Field(None, description="删除类变更的结果")
+    deleted: bool | None = Field(
+        None,
+        description=(
+            "删除类变更是否已执行。**恒为布尔**——删除的条数看 `delete_result`。\n\n"
+            "这里曾经在物理删节点时被塞进一个 dict（`{node_id, nodes_deleted, "
+            "edges_deleted}`），而驳回那条路给的是 `true`，同一字段两种形状，"
+            "响应模型校验直接把整个删除接口打成 500。\n\n"
+            "草稿态下管理台的删除**不再立即物理删**：`deleted=false` + "
+            "`status=draft` + `target_status=deleted` 表示已记下删除意图，"
+            "发布时才真的删（这样删除也能撤销）。"
+        ),
+    )
+    delete_result: "DeleteResult | None" = Field(
+        None, description="删除实际影响的条数；仅真的物理删除时出现"
+    )
+    target_status: str | None = Field(
+        None,
+        description="草稿记下的发布意图：published|disabled|archived|deleted",
+    )
+    note: str | None = Field(None, description="人话补充说明（如「已存为草稿，发布请走…」）")
 
 
 class ProposalOut(BaseModel):

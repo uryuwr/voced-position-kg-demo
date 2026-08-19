@@ -69,6 +69,121 @@ class PublishDemoteOut(BaseModel):
     region: str = Field(..., description="地区，如 CN")
 
 
+# ── 草稿态：待发布清单 / 发布 / 丢弃 ─────────────────────────
+#
+# 状态模型见 docs/方案-管理台草稿态与发布.md：一条记录最多两行（线上行 + 草稿行），
+# 草稿行的 status 恒为 'draft'，「发布后要变成什么」在 target_status 里。
+
+
+class DraftItem(BaseModel):
+    """待发布清单的一行 = 一个发布单元（节点草稿 + 挂在它上面的草稿边）。"""
+
+    node_id: str = Field(..., description="单元 id（= 节点 id，草稿边的 unit_id 指向它）")
+    name: str | None = Field(None, description="名称：有草稿取草稿里的新名字")
+    type: str | None = Field(None, description="industry|major|occupation|skill_level|…")
+    region: str | None = Field(None, description="区域")
+    is_new: bool = Field(
+        ..., description="true=从未发布过（只有草稿行），发布后前台才第一次看到它"
+    )
+    has_node_draft: bool = Field(
+        ...,
+        description="false=节点本身没改、只改了关联边（如技能构成）；这种单元同样要发布",
+    )
+    change_kind: str = Field(
+        "node",
+        description=(
+            "这个单元改了什么：`node`=节点字段 | `edges`=仅关联/技能构成 | `both`=两者都有。"
+            "**只改技能构成时不会有草稿节点行**，但一样要发布，所以清单必须列出来并标明"
+        ),
+    )
+    change_label: str = Field("", description="`change_kind` 的中文说明，可直接展示")
+    record_status: str = Field("draft", description="记录状态，清单里恒为 draft")
+    target_status: str | None = Field(
+        None,
+        description=(
+            "发布后线上行应变成的状态：published | disabled | archived；"
+            "null=只更新内容、状态不变。"
+            "**停用 / 启用 / 删除已改成立即生效、不进草稿**，所以这里实际只剩两种来源："
+            "① 新建记录发布时该落成什么状态；② 边的墓碑（技能构成里移除一项）"
+        ),
+    )
+    base_version: int | None = Field(None, description="草稿基于的已发布版本号")
+    published_version: int | None = Field(None, description="线上行当前版本号")
+    published_status: str | None = Field(None, description="线上行当前状态")
+    stale: bool = Field(
+        ...,
+        description="true=你编辑期间别人发布过（base_version ≠ 线上 version），直接发布会 409",
+    )
+    edges_upsert: int = Field(0, ge=0, description="待新增/更新的边数")
+    edges_remove: int = Field(0, ge=0, description="待删除的边数（墓碑草稿）")
+    updated_by_name: str | None = Field(None, description="最后编辑人")
+    created_at: str | None = Field(None, description="草稿创建时间 ISO8601")
+
+
+class DraftListOut(BaseModel):
+    """待发布清单（分页）。"""
+
+    items: list[DraftItem] = Field(..., description="发布单元列表")
+    page: int = Field(..., ge=1, description="页码")
+    page_size: int = Field(..., ge=1, description="每页条数")
+    total: int = Field(..., ge=0, description="总单元数")
+    total_pages: int = Field(..., ge=0, description="总页数；total=0 时为 0")
+
+
+class PublishNodeOut(BaseModel):
+    """发布一个单元的结果。"""
+
+    node_id: str = Field(..., description="单元 id")
+    status: str = Field(..., description="发布后线上行的状态")
+    version: int = Field(..., ge=1, description="发布后的版本号（覆盖既有内容时 +1）")
+    published_node: bool = Field(
+        ..., description="false=本次只发布了边（节点本身没有草稿）"
+    )
+    edges_published: int = Field(0, ge=0, description="生效的边数")
+    edges_archived: int = Field(0, ge=0, description="归档的边数")
+    gate: PublishValidateOut | None = Field(
+        None,
+        description="BR 门禁结果；仅当发布后状态为 published 时才跑，其余为 null",
+    )
+
+
+class PublishBatchItem(BaseModel):
+    """批量发布里的一项。逐个独立事务，一个失败不影响其余。"""
+
+    node_id: str = Field(..., description="单元 id")
+    ok: bool = Field(..., description="是否发布成功")
+    code: str = Field(
+        ...,
+        description=(
+            "published=成功 | not_found=没有草稿 | conflict=并发(409) | "
+            "code_conflict=编码被占 | missing_endpoints=端点未发布 | gate_failed=门禁不过"
+        ),
+    )
+    message: str | None = Field(None, description="失败原因（人话，可直接展示）")
+    missing: list[str] | None = Field(None, description="missing_endpoints 时缺哪些节点")
+    violations: list[PublishCheck] | None = Field(
+        None, description="gate_failed 时未通过的规则"
+    )
+    detail: PublishNodeOut | None = Field(None, description="成功时的发布结果")
+
+
+class PublishBatchOut(BaseModel):
+    """批量发布结果。"""
+
+    total: int = Field(..., ge=0, description="提交的单元数（已去重）")
+    published: int = Field(..., ge=0, description="成功数")
+    failed: int = Field(..., ge=0, description="失败数")
+    items: list[PublishBatchItem] = Field(..., description="逐项结果")
+
+
+class DraftDiscardedOut(BaseModel):
+    """丢弃草稿的结果。线上行不受影响。"""
+
+    node_id: str = Field(..., description="单元 id")
+    nodes_discarded: int = Field(..., ge=0, description="删掉的节点草稿行数（0 或 1）")
+    edges_discarded: int = Field(..., ge=0, description="删掉的草稿边数")
+
+
 # ── 待审边 ───────────────────────────────────────────────────
 
 
@@ -243,6 +358,19 @@ class CompositionItem(BaseModel):
         None, description="权重；专业 covers 无权重，此时为 null"
     )
     weight_pct: int | None = Field(None, description="权重百分比，便于直接展示")
+    dangling: bool = Field(
+        False,
+        description=(
+            "**异常边标记**：这条边指向的技能节点不是 published（停用 / 归档 / 仅草稿）。"
+            "前台按节点状态过滤看不到这条技能，管理台口径看得到 —— "
+            "于是同一个岗位「前台 5 项 Σ0.81 / 管理台 6 项 Σ1.00」。"
+            "读侧**不会**偷偷把它滤掉（那样运营永远发现不了），而是在这里标出来。"
+            "存量数据用 `scripts/check_dangling_status_edges.py` 扫"
+        ),
+    )
+    endpoint_status: str | None = Field(
+        None, description="该边指向的技能节点的实际 status（dangling 时用它解释原因）"
+    )
 
 
 class CompositionCounts(BaseModel):

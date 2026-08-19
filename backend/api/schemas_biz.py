@@ -41,6 +41,14 @@ class EdgeBrief(BaseModel):
     confidence: str | None = Field(None, description="置信度标记，如 ai_inferred")
 
 
+# `attrs` 是无约束的 TEXT/JSON 列：同一个键在不同来源里可能是字符串、数字、布尔。
+# 直接把它声明成 `str` 就是在赌数据 —— 一条 `attrs.level=2` 的岗位记录混进专业详情，
+# 整个接口 500（本轮真撞到过）。展示类字段一律按**实际可能的取值**声明。
+# 需要参与计算的字段（required_level / weight）不走这个别名，而是在组装时过
+# `config.as_level` / `as_weight` 洗成确定类型 —— 类型放宽只该给纯展示字段。
+AttrScalar = str | int | float | bool | None
+
+
 class IndustryRef(BaseModel):
     id: str = Field(..., description="行业节点 id")
     name: str | None = Field(None, description="行业名")
@@ -57,10 +65,16 @@ class ProfessionOut(BaseModel):
     region: str | None = Field(None, description="地区，如 CN")
     status: int | None = Field(None, description="1=已发布 0=草稿 2=停用（映射）")
     desc: str | None = Field(None, description="简介")
-    industry: str | None = Field(None, description="行业/门类提示")
-    code: str | None = Field(None, description="专业代码")
-    level: str | None = Field(None, description="等级")
-    level_zh: str | None = Field(None, description="学历层次中文名")
+    industry: AttrScalar = Field(None, description="行业/门类提示（取自 attrs，类型不受约束）")
+    code: AttrScalar = Field(None, description="专业代码（取自 attrs，可能是数字）")
+    level: AttrScalar = Field(
+        None,
+        description=(
+            "层次：专业是 `voc_associate` 这类字符串，但同一个键在别的节点类型上是 int，"
+            "所以声明成标量联合"
+        ),
+    )
+    level_zh: AttrScalar = Field(None, description="学历层次中文名")
     source_url: str | None = Field(None, description="来源链接")
     attrs: dict[str, Any] | None = Field(None, description="自由属性（无数据库约束的 JSON 列，键随数据来源而异）")
     counts: RelationCounts | None = Field(
@@ -80,8 +94,8 @@ class PositionOut(BaseModel):
     status: int | None = Field(None, description="状态")
     desc: str | None = Field(None, description="简介")
     tier: str | int | None = Field(None, description="职级/推荐档")
-    demand: str | None = Field(None, description="需求热度")
-    salary: str | None = Field(None, description="薪资区间")
+    demand: AttrScalar = Field(None, description="需求热度（取自 attrs，可能是数字）")
+    salary: AttrScalar = Field(None, description="薪资区间（取自 attrs，可能是数字）")
     source_url: str | None = Field(None, description="来源链接")
     attrs: dict[str, Any] | None = Field(None, description="自由属性（无数据库约束的 JSON 列，键随数据来源而异）")
     edge: EdgeBrief | None = Field(None, description="与专业/行业的连边摘要")
@@ -111,13 +125,58 @@ class SkillOut(BaseModel):
     name: str | None = Field(None, description="名称")
     skill_name: str | None = Field(None, description="技能名（去等级后缀）")
     skill_key: str | None = Field(None, description="聚合主键")
-    level_label: str | None = Field(None, description="等级文案或要求档")
+    level_label: AttrScalar = Field(None, description="等级文案或要求档（取自 attrs）")
+    status: str | None = Field(
+        None,
+        description=(
+            "bundle 的**线上**状态：published | draft | disabled | mixed。"
+            "由 L1–L5 五个档位节点的线上行聚合而来（各档一致取之，否则 mixed）。"
+            "前端**不要**在拿不到它时兜底成某个业务状态 —— 把「没数据」渲染成"
+            "「草稿」会让 2 万多个技能全被标成有人在改"
+        ),
+    )
+    record_status: str | None = Field(
+        None,
+        description=(
+            "**记录状态 = 最新版本的状态**：任一档有草稿 → `draft`，否则等于 `status`。"
+            "管理台列表的状态列显示这个（仅管理台口径返回）"
+        ),
+    )
+    has_draft: bool | None = Field(
+        None, description="这个技能有没有未发布的改动（任一档有草稿行即为 true）"
+    )
+    draft_change: str | None = Field(
+        None, description="草稿改的是什么：node=档位节点字段 | edges=关联 | both"
+    )
+    version: int | None = Field(
+        None,
+        description=(
+            "版本号。bundle 没有自己的行，取 L1–L5 线上行的**最大** version。"
+            "仅管理台口径返回；拿不到时前端应显示「—」，"
+            "**不要兜底成 V1** —— 那是个看起来像真值的假版本号"
+        ),
+    )
+    version_label: str | None = Field(None, description="版本展示文案，如 `V3`")
+    owner: str | None = Field(None, description="业务负责人 user-id（各档第一个非空）")
+    owner_name: str | None = Field(None, description="业务负责人姓名")
+    updated_by_name: str | None = Field(None, description="最近修改人姓名")
     type: str = Field("skill", description="类型")
     kg_type: str | None = Field(None, description="图侧节点类型")
     region: str | None = Field(None, description="地区，如 CN")
     desc: str | None = Field(None, description="简介")
     required_level: int | None = Field(None, description="岗位要求档 L1–L5（int）")
-    weight: float | None = Field(None, description="岗位要求权重")
+    weight: float | None = Field(None, description="岗位要求权重（0–1 小数）")
+    weight_pct: int | None = Field(
+        None,
+        description=(
+            "权重百分比，直接展示用（学员端岗位详情的「权重」列读的就是这个）。"
+            "**上游一直在算，只是这里没声明** —— Pydantic 把它丢了，"
+            "于是学员端每一行权重都显示「-」，学员判断不出哪个技能更重要"
+        ),
+    )
+    is_core: bool | None = Field(
+        None, description="核心技能标记（权重 ≥ 30%）；同样是上游已算、这里补声明"
+    )
     source_url: str | None = Field(None, description="来源链接")
     attrs: dict[str, Any] | None = Field(None, description="自由属性（无数据库约束的 JSON 列，键随数据来源而异）")
     edge: EdgeBrief | None = Field(

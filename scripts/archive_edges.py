@@ -67,14 +67,16 @@ def main() -> int:
         for rel in rels:
             if args.restore:
                 cur = conn.execute(
+                    # 只动线上行：草稿边的 status 恒为 draft（ck_kg_edge_draft_status）
                     "UPDATE kg_edge SET status='published' "
-                    "WHERE rel_type=%s AND status='archived'",
+                    "WHERE rel_type=%s AND status='archived' AND NOT is_draft",
                     (rel,),
                 )
             else:
                 cur = conn.execute(
                     "UPDATE kg_edge SET status='archived' "
-                    "WHERE rel_type=%s AND COALESCE(status,'published') <> 'archived'",
+                    "WHERE rel_type=%s AND COALESCE(status,'published') <> 'archived' "
+                    "AND NOT is_draft",
                     (rel,),
                 )
             changed += cur.rowcount

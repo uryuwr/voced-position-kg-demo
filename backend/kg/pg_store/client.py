@@ -99,15 +99,109 @@ ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 1;
 ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS owner TEXT;
 ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS owner_name TEXT;
 
+-- ── 草稿态：同一条记录最多两行 ─────────────────────────────
+-- 方案见 docs/方案-管理台草稿态与发布.md。线上行 is_draft=false，草稿行 is_draft=true
+-- 且 **status 恒为 'draft'** —— 全仓约 120 处前台查询已经在过滤 status='published'，
+-- 靠这条不变量自动把草稿挡在前台之外，那些查询一处都不用改。
+-- 一旦有人把「发布后应变成什么」写进草稿行的 status，草稿当场泄漏到前台，
+-- 所以那个意图存在 target_status 里。
+ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS is_draft BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS target_status TEXT;
+ALTER TABLE kg_node ADD COLUMN IF NOT EXISTS base_version INT;
+ALTER TABLE kg_edge ADD COLUMN IF NOT EXISTS is_draft BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE kg_edge ADD COLUMN IF NOT EXISTS target_status TEXT;
+-- 发布单元 = 一个节点草稿行 + 所有 unit_id 指向它的草稿边（约定 unit_id = src_id）
+ALTER TABLE kg_edge ADD COLUMN IF NOT EXISTS unit_id TEXT;
+
+-- 主键从 id 变成 (id, is_draft)，两个外键因此**无法成立，只能删**：PostgreSQL 的外键
+-- 只能引用完整主键或唯一约束，引用不了 `UNIQUE(id) WHERE NOT is_draft` 这种部分索引。
+-- 代价是「边的两端一定存在」从此靠应用层保证（发布时校验端点 + scripts/check_orphan_edges.py）。
+ALTER TABLE kg_edge DROP CONSTRAINT IF EXISTS kg_edge_src_id_fkey;
+ALTER TABLE kg_edge DROP CONSTRAINT IF EXISTS kg_edge_dst_id_fkey;
+
+-- ADD PRIMARY KEY 天生不幂等，而这份 DDL 每次进程启动都跑 —— 必须先判断有没有换过，
+-- 否则第二次启动就 "multiple primary keys are not allowed"，服务起不来。
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_index i
+    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+    WHERE i.indrelid = 'kg_node'::regclass AND i.indisprimary AND a.attname = 'is_draft'
+  ) THEN
+    ALTER TABLE kg_node DROP CONSTRAINT IF EXISTS kg_node_pkey;
+    ALTER TABLE kg_node ADD PRIMARY KEY (id, is_draft);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_index i
+    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+    WHERE i.indrelid = 'kg_edge'::regclass AND i.indisprimary AND a.attname = 'is_draft'
+  ) THEN
+    ALTER TABLE kg_edge DROP CONSTRAINT IF EXISTS kg_edge_pkey;
+    ALTER TABLE kg_edge ADD PRIMARY KEY (id, is_draft);
+  END IF;
+END $$;
+
 -- 业务编码 attrs.code 唯一性：同 region+同 type 内不得重复（跨区域/跨类型允许重复，
 -- 因为教育部专业码、大典职业码、BOSS 行业码是三套独立体系）。
 -- 应用层在写入前已校验并返回 409；这里是并发兜底，避免两个请求同时通过检查。
 -- 归档节点不参与占用，便于「归档后用同一编码重建」。
-CREATE UNIQUE INDEX IF NOT EXISTS uq_kg_node_region_type_code
-  ON kg_node(region, type, (attrs::json->>'code'))
-  WHERE attrs::json->>'code' IS NOT NULL
-    AND attrs::json->>'code' <> ''
-    AND COALESCE(status, 'published') <> 'archived';
+--
+-- **草稿行必须排除在外**，否则「把编码从 A 改成 B」时草稿行会和自己的线上行相撞。
+-- 于是草稿之间不互斥，两个草稿可以同时占 B —— 那道校验补在发布事务里（见 draft_publish）。
+-- 用 DO 块而不是 CREATE UNIQUE INDEX IF NOT EXISTS：老库里已经有一个**不含 is_draft 条件**
+-- 的同名索引，IF NOT EXISTS 会直接跳过、旧定义留在库里，改编码就报唯一冲突。
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE schemaname = current_schema()
+      AND indexname = 'uq_kg_node_region_type_code'
+      AND indexdef LIKE '%is_draft%'
+  ) THEN
+    DROP INDEX IF EXISTS uq_kg_node_region_type_code;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_kg_node_region_type_code
+      ON kg_node(region, type, (attrs::json->>'code'))
+      WHERE attrs::json->>'code' IS NOT NULL
+        AND attrs::json->>'code' <> ''
+        AND COALESCE(status, 'published') <> 'archived'
+        AND NOT is_draft;
+  END IF;
+END $$;
+
+-- 草稿清单与「这条记录有没有草稿」的判定（config.prefer_draft 的反连接）走这两个部分索引
+CREATE INDEX IF NOT EXISTS idx_kg_node_draft ON kg_node(id) WHERE is_draft;
+CREATE INDEX IF NOT EXISTS idx_kg_edge_draft_unit ON kg_edge(unit_id) WHERE is_draft;
+
+-- **把「草稿行的 status 恒为 draft」这条不变量交给数据库**。
+-- 它是整个方案唯一的静默失效点：草稿行的 status 一旦被写成 'published'，
+-- 前台那 ~120 处 `status='published'` 查询当场命中它，不报错、不崩，只是草稿对外可见。
+-- 代码评审看不出来（INSERT 的 status 是参数化传值），只有 CHECK 拦得住。
+--
+-- 已有违规行时**跳过**而不是让 ALTER 失败：这份 DDL 在每次进程启动的必经路径上，
+-- 失败等于服务起不来。跳过会打一条 WARNING 到 PG 日志，用它排查。
+DO $$
+DECLARE bad int;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_kg_node_draft_status') THEN
+    SELECT count(*) INTO bad FROM kg_node WHERE is_draft AND status <> 'draft';
+    IF bad = 0 THEN
+      ALTER TABLE kg_node ADD CONSTRAINT ck_kg_node_draft_status
+        CHECK (NOT is_draft OR status = 'draft');
+    ELSE
+      RAISE WARNING 'kg_node 有 % 行草稿的 status 不是 draft，ck_kg_node_draft_status 未建立 —— 草稿可能已泄漏到前台', bad;
+    END IF;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_kg_edge_draft_status') THEN
+    SELECT count(*) INTO bad FROM kg_edge WHERE is_draft AND status <> 'draft';
+    IF bad = 0 THEN
+      ALTER TABLE kg_edge ADD CONSTRAINT ck_kg_edge_draft_status
+        CHECK (NOT is_draft OR status = 'draft');
+    ELSE
+      RAISE WARNING 'kg_edge 有 % 行草稿的 status 不是 draft，ck_kg_edge_draft_status 未建立', bad;
+    END IF;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS kg_proposal (
   id BIGSERIAL PRIMARY KEY,

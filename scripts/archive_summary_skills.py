@@ -70,11 +70,11 @@ def main(apply: bool) -> int:
             return 0
 
         conn.execute(
-            "UPDATE kg_edge SET status='archived' WHERE id = ANY(%s)",
+            "UPDATE kg_edge SET status='archived' WHERE id = ANY(%s) AND NOT is_draft",
             ([e["id"] for e in edges],),
         )
         conn.execute(
-            "UPDATE kg_node SET status='archived' WHERE id = ANY(%s)", (node_ids,)
+            "UPDATE kg_node SET status='archived' WHERE id = ANY(%s) AND NOT is_draft", (node_ids,)
         )
         conn.commit()
         print(f"\n[已提交] 归档节点 {len(node_ids)} 个、边 {len(edges)} 条。")

@@ -101,7 +101,7 @@ def main() -> int:
             )
         r = conn.execute(
             f"UPDATE kg_node n SET category = t.cat FROM _skill_cat t "
-            f"WHERE n.type='skill_level' AND {SKILL_KEY_SQL} = t.k "
+            f"WHERE n.type='skill_level' AND NOT n.is_draft AND {SKILL_KEY_SQL} = t.k "
             f"AND n.category IS DISTINCT FROM t.cat"
         )
         print(f"\n已更新 kg_node.category：{r.rowcount} 个 skill_level 节点")

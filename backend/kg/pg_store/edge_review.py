@@ -5,6 +5,13 @@ import math
 from typing import Any
 
 from backend.kg.pg_store.client import connect
+from backend.kg.pg_store.config import prefer_draft, prefer_draft_edge
+
+# 端点 JOIN 没有状态过滤：端点一有草稿行，一条边就 JOIN 出两行，抽检列表里
+# 同一条边出现两次、total 虚高（方案 §6.2）
+_PD_A = prefer_draft("a")
+_PD_B = prefer_draft("b")
+_PD_E = prefer_draft_edge("e")
 
 
 def list_edges_for_review(
@@ -31,7 +38,7 @@ def list_edges_for_review(
     wsql = " AND ".join(where)
     with connect() as conn:
         total = conn.execute(
-            f"SELECT count(*) AS c FROM kg_edge e WHERE {wsql}", params
+            f"SELECT count(*) AS c FROM kg_edge e WHERE {wsql} AND {_PD_E}", params
         ).fetchone()["c"]
         offset = (page - 1) * page_size
         rows = conn.execute(
@@ -41,9 +48,9 @@ def list_edges_for_review(
                    a.name AS src_name, a.type AS src_type,
                    b.name AS dst_name, b.type AS dst_type
             FROM kg_edge e
-            JOIN kg_node a ON a.id = e.src_id
-            JOIN kg_node b ON b.id = e.dst_id
-            WHERE {wsql}
+            JOIN kg_node a ON a.id = e.src_id AND {_PD_A}
+            JOIN kg_node b ON b.id = e.dst_id AND {_PD_B}
+            WHERE {wsql} AND {_PD_E}
             ORDER BY e.fetched_at DESC NULLS LAST, e.id
             LIMIT %s OFFSET %s
             """,

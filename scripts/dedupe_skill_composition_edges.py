@@ -22,7 +22,17 @@ weight 最大，再相同取 edge id 最小，保证可重复执行结果一致�
 
 保留最高档 = 与前台既有的 required_level=max(档) 一致，合并后前后台自然同源。
 
-用法：python -X utf8 scripts/dedupe_skill_composition_edges.py [--apply]
+用法
+----
+    python -X utf8 scripts/dedupe_skill_composition_edges.py            # dry-run，只报告
+    python -X utf8 scripts/dedupe_skill_composition_edges.py --check    # 闸门：有重复 exit 1
+    python -X utf8 scripts/dedupe_skill_composition_edges.py --apply    # 真归档
+
+`--check` 是给闸门用的：dry-run 永远 exit 0（只打印），当闸门等于没有闸门。
+发布会重建边，重建出「同一技能多条 requires 边」正是最容易复发的那类问题
+（CLAUDE.md 里那条边模型约定的闸门），所以发布后要跑一次 `--check`。
+判定口径 = 「同一 (实体, 关系, 技能) 有多条**线上 published** 边」的组数。
+草稿边不算：它们还没生效，等发布后这道闸门自然会覆盖到。
 """
 from __future__ import annotations
 
@@ -33,6 +43,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import argparse  # noqa: E402
+
 from backend.kg.pg_store.client import connect  # noqa: E402
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL  # noqa: E402
 
@@ -40,7 +52,7 @@ from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL  # noqa: E402
 RELS = ("requires", "covers")
 
 
-def main(apply: bool) -> int:
+def main(apply: bool, check: bool = False) -> int:
     with connect() as conn:
         rows = conn.execute(
             f"""
@@ -53,6 +65,8 @@ def main(apply: bool) -> int:
             JOIN kg_node o ON o.id = e.src_id
             WHERE e.rel_type = ANY(%s)
               AND COALESCE(e.status, 'published') = 'published'
+              -- 只看线上行：草稿边还没生效，重复与否要等发布后才算数
+              AND NOT e.is_draft AND NOT n.is_draft AND NOT o.is_draft
             """,
             (list(RELS),),
         ).fetchall()
@@ -98,8 +112,19 @@ def main(apply: bool) -> int:
         if not drop_ids:
             print("\n无需处理。")
             return 0
+        if check:
+            print(
+                f"\n[check] FAIL 有 {dup_groups} 组重复边"
+                f"（{len(drop_ids)} 条待归档）。"
+                "跑 --apply 归档，或查发布逻辑为什么又造出了多档边。"
+            )
+            return 1
         if not apply:
-            print("\n[dry-run] 未写库。加 --apply 执行。")
+            print(
+                "\n[dry-run] 未写库。加 --apply 执行；"
+                "当闸门用 --check（有重复则 exit 1 —— dry-run 永远 exit 0，"
+                "拿它当闸门等于没有闸门）。"
+            )
             return 0
 
         # 记录本次归档的 edge_id，便于精确回滚（库内原本也存在 archived 边，不能靠状态区分）
@@ -119,7 +144,7 @@ def main(apply: bool) -> int:
                 [(i,) for i in drop_ids],
             )
             cur.executemany(
-                "UPDATE kg_edge SET status='archived' WHERE id=%s",
+                "UPDATE kg_edge SET status='archived' WHERE id=%s AND NOT is_draft",
                 [(i,) for i in drop_ids],
             )
         conn.commit()
@@ -130,4 +155,14 @@ def main(apply: bool) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main("--apply" in sys.argv))
+    ap = argparse.ArgumentParser(description="技能构成重复边：报告 / 闸门 / 归档")
+    ap.add_argument("--apply", action="store_true", help="真的归档多余的边")
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="闸门模式：发现重复 exit 1，不写库（与 --apply 互斥）",
+    )
+    args = ap.parse_args()
+    if args.apply and args.check:
+        ap.error("--apply 与 --check 只能选一个")
+    raise SystemExit(main(args.apply, args.check))

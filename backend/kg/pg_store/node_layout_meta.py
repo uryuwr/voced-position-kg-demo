@@ -8,6 +8,11 @@ child_count 语义（能力图向下）：
   其它       → 0
 
 API 投影字段名：order ← sort_order，child_count 原样。
+
+这两个列是**系统重算的派生缓存，不是运营编辑的内容**，所以草稿态里它们照旧直写线上行
+（方案 §4）——草稿化会让布局永远不更新。但每一处都必须写 `NOT is_draft`：
+ranked CTE 里混进草稿行，ROW_NUMBER 会把它后面所有节点的序号顶掉一位，
+而且同一 id 的两行会争抢同一个 rn，整张图的同层顺序随「有没有人在编辑」而变。
 """
 from __future__ import annotations
 
@@ -43,10 +48,10 @@ def refresh_sort_order(*, region: str | None = None) -> int:
                       ORDER BY name NULLS LAST, id
                     )::int AS rn
                   FROM kg_node
-                  WHERE region = %s
+                  WHERE region = %s AND NOT is_draft
                 )
                 UPDATE kg_node n SET sort_order = r.rn
-                FROM ranked r WHERE n.id = r.id
+                FROM ranked r WHERE n.id = r.id AND NOT n.is_draft
                 """,
                 (region,),
             )
@@ -60,9 +65,10 @@ def refresh_sort_order(*, region: str | None = None) -> int:
                       ORDER BY name NULLS LAST, id
                     )::int AS rn
                   FROM kg_node
+                  WHERE NOT is_draft
                 )
                 UPDATE kg_node n SET sort_order = r.rn
-                FROM ranked r WHERE n.id = r.id
+                FROM ranked r WHERE n.id = r.id AND NOT n.is_draft
                 """
             )
         conn.commit()
@@ -84,11 +90,11 @@ def refresh_child_count(*, region: str | None = None) -> int:
         # 先清零目标范围
         if region:
             conn.execute(
-                "UPDATE kg_node SET child_count = 0 WHERE region = %s",
+                "UPDATE kg_node SET child_count = 0 WHERE region = %s AND NOT is_draft",
                 (region,),
             )
         else:
-            conn.execute("UPDATE kg_node SET child_count = 0")
+            conn.execute("UPDATE kg_node SET child_count = 0 WHERE NOT is_draft")
 
         # industry ← major.belongs_to
         conn.execute(
@@ -102,7 +108,7 @@ def refresh_child_count(*, region: str | None = None) -> int:
               WHERE e.rel_type = 'belongs_to' AND {EP_E} AND {_PUB_E}
               GROUP BY e.dst_id
             ) s
-            WHERE n.id = s.id AND n.type = 'industry' {reg_sql}
+            WHERE n.id = s.id AND n.type = 'industry' AND NOT n.is_draft {reg_sql}
             """,
             params,
         )
@@ -118,7 +124,7 @@ def refresh_child_count(*, region: str | None = None) -> int:
               WHERE e.rel_type = 'prepares_for' AND {EP_E} AND {_PUB_E}
               GROUP BY e.src_id
             ) s
-            WHERE n.id = s.id AND n.type = 'major' {reg_sql}
+            WHERE n.id = s.id AND n.type = 'major' AND NOT n.is_draft {reg_sql}
             """,
             params,
         )
@@ -134,7 +140,7 @@ def refresh_child_count(*, region: str | None = None) -> int:
               WHERE e.rel_type = 'requires' AND {EP_E} AND {_PUB_E}
               GROUP BY e.src_id
             ) s
-            WHERE n.id = s.id AND n.type = 'occupation' {reg_sql}
+            WHERE n.id = s.id AND n.type = 'occupation' AND NOT n.is_draft {reg_sql}
             """,
             params,
         )
@@ -144,13 +150,13 @@ def refresh_child_count(*, region: str | None = None) -> int:
             c = conn.execute(
                 """
                 SELECT count(*) AS c FROM kg_node
-                WHERE region=%s AND child_count > 0
+                WHERE region=%s AND child_count > 0 AND NOT is_draft
                 """,
                 (region,),
             ).fetchone()["c"]
         else:
             c = conn.execute(
-                "SELECT count(*) AS c FROM kg_node WHERE child_count > 0"
+                "SELECT count(*) AS c FROM kg_node WHERE child_count > 0 AND NOT is_draft"
             ).fetchone()["c"]
         return int(c)
 
@@ -177,7 +183,7 @@ def ensure_layout_meta_once() -> None:
         )
         conn.commit()
         row = conn.execute(
-            "SELECT 1 AS x FROM kg_node WHERE sort_order IS NULL LIMIT 1"
+            "SELECT 1 AS x FROM kg_node WHERE sort_order IS NULL AND NOT is_draft LIMIT 1"
         ).fetchone()
         need = row is not None
     if need:

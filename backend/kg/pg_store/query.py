@@ -15,11 +15,17 @@ from backend.kg.pg_store.client import connect, use_conn
 from backend.kg.pg_store.config import (
     ARCHIVED_STATUS,
     DEFAULT_REGION,
+    DRAFT_STATUS,
+    has_draft_edges,
     attrs_level_int,
     edge_not_archived,
     edge_published,
     node_not_archived,
     node_published,
+    online_only,
+    online_only_edge,
+    prefer_draft,
+    prefer_draft_edge,
 )
 from backend.kg.pg_store.migrate import stats as pg_stats
 from backend.kg.pg_store.occupation_level_meta import level_code as occ_level_code
@@ -74,7 +80,22 @@ def _major_display_name(name: str | None, attrs: Any, source_id: str | None = No
     return " · ".join(parts) if parts else name
 
 
-def _node_dict(row: dict[str, Any]) -> dict[str, Any]:
+def _node_dict(row: dict[str, Any], *, admin: bool = False) -> dict[str, Any]:
+    """库行 → API 节点对象。
+
+    `admin=False`（默认，前台口径）**不返回运维元数据**：
+    `version` / `version_label` / `updated_by` / `updated_by_name` / `owner` / `owner_name`
+    以及草稿态那几个字段。两个原因，一个比一个硬：
+
+    1. `updated_by_name` 是**内部运营人员的姓名**、`updated_by` 是内部 user-id ——
+       学员端拿到它就是信息泄露，与草稿态无关，早该收。
+    2. `version` 让「发布」改变前台响应的字节：发布只该改内容，改完 V4→V5
+       连带把 `/v1/node`、`/v1/nodes/{id}` 的响应也变了，「发布只影响该改的内容」
+       就不严格成立，前端拿响应做缓存键会无谓失效。
+
+    默认值取 False 而不是 True 是刻意的：新增读路径**默认不泄露**，
+    要给管理台看再显式传 `admin=True`。反过来设默认值，漏一处就是一次泄露。
+    """
     attrs = _maybe_json(row.get("attrs"))
     ntype = row.get("type")
     name = row.get("name")
@@ -104,6 +125,22 @@ def _node_dict(row: dict[str, Any]) -> dict[str, Any]:
     }
     if row.get("status") is not None:
         out["status"] = row.get("status")
+    # 草稿态：读路径经 prefer_draft 去重后，「拿到的这行是草稿行」就等于「节点内容有草稿」。
+    # 但**发布单元不止节点本身** —— 只改技能构成时只有草稿边、没有草稿节点行，
+    # 那时 has_draft 要由调用方按单元口径补（见 _mark_unit_drafts）。
+    if admin and row.get("is_draft") is not None:
+        is_draft = bool(row.get("is_draft"))
+        out["is_draft"] = is_draft
+        out["has_draft"] = is_draft
+        # 记录状态 = 最新版本的状态：有草稿就是「草稿」，否则取线上行的 status
+        out["record_status"] = "draft" if is_draft else (row.get("status") or "published")
+        if row.get("target_status"):
+            out["target_status"] = row.get("target_status")
+        if row.get("base_version") is not None:
+            try:
+                out["base_version"] = int(row.get("base_version"))
+            except (TypeError, ValueError):
+                pass
     # 技能大类 / 岗位层级：前台卡片与胜任力图谱要用，需透传到读路径
     if row.get("category") is not None:
         out["category"] = row.get("category")
@@ -113,16 +150,18 @@ def _node_dict(row: dict[str, Any]) -> dict[str, Any]:
     ca = row.get("created_at")
     if ca is not None:
         out["created_at"] = ca.isoformat() if hasattr(ca, "isoformat") else str(ca)
-    # 版本 / 负责人：原型「专业管理」「技能库」列表列
-    if row.get("version") is not None:
-        out["version"] = int(row.get("version") or 1)
-        out["version_label"] = f"V{int(row.get('version') or 1)}"
-    if row.get("owner_name") or row.get("owner"):
-        out["owner"] = row.get("owner")
-        out["owner_name"] = row.get("owner_name") or row.get("owner")
-    if row.get("updated_by"):
-        out["updated_by"] = row.get("updated_by")
-        out["updated_by_name"] = row.get("updated_by_name")
+    # 版本 / 负责人 / 最近修改人：**只给管理台**（原型「专业管理」「技能库」列表列）。
+    # 前台不返回的理由见函数 docstring —— 姓名是信息泄露，version 让发布改变前台字节。
+    if admin:
+        if row.get("version") is not None:
+            out["version"] = int(row.get("version") or 1)
+            out["version_label"] = f"V{int(row.get('version') or 1)}"
+        if row.get("owner_name") or row.get("owner"):
+            out["owner"] = row.get("owner")
+            out["owner_name"] = row.get("owner_name") or row.get("owner")
+        if row.get("updated_by"):
+            out["updated_by"] = row.get("updated_by")
+            out["updated_by_name"] = row.get("updated_by_name")
     # 布局元数据（与前端 GraphNode.order / child_count 对齐）
     so = row.get("sort_order")
     if so is not None:
@@ -138,6 +177,51 @@ def _node_dict(row: dict[str, Any]) -> dict[str, Any]:
             out["child_count"] = 0
     else:
         out["child_count"] = 0
+    return out
+
+
+def unit_draft_kinds(
+    node_ids: list[str], conn: Any | None = None
+) -> dict[str, str]:
+    """一批节点各自的**发布单元**里有什么草稿：`{node_id: 'node'|'edges'|'both'}`。
+
+    「这条记录有未发布改动」不等于「有草稿节点行」：改技能构成只产生草稿**边**
+    （`unit_id` = 本节点 id），节点行一个字都没动。只看草稿节点行的话，运营在列表和
+    详情里都看不出这个岗位有改动，也就不知道要去发布它 —— 与「所有编辑动作都进草稿」
+    直接矛盾（方案 §0 的「记录状态 = 最新版本的状态」也不成立）。
+
+    两条查询都走部分索引（`idx_kg_node_draft` / `idx_kg_edge_draft_unit`），
+    只在管理台口径下调用。
+    """
+    ids = [i for i in dict.fromkeys(node_ids) if i]
+    if not ids:
+        return {}
+    with use_conn(conn) as c:
+        node_ids_with_draft = {
+            r["id"]
+            for r in c.execute(
+                "SELECT id FROM kg_node WHERE is_draft AND id = ANY(%s)", (ids,)
+            ).fetchall()
+        }
+        # 用 config.has_draft_edges 这一份片段，而不是另写一条 SQL：
+        # 筛选（list_nodes 的 status=draft）与显示（这里）必须同源，
+        # 否则又会出现「列表显示草稿标、按草稿筛却是空」
+        edge_units = {
+            r["id"]
+            for r in c.execute(
+                f"SELECT id FROM kg_node WHERE id = ANY(%s) AND {has_draft_edges()}",
+                (ids,),
+            ).fetchall()
+        }
+    out: dict[str, str] = {}
+    for i in ids:
+        n, e = i in node_ids_with_draft, i in edge_units
+        if n and e:
+            out[i] = "both"
+        elif n:
+            out[i] = "node"
+        elif e:
+            out[i] = "edges"
     return out
 
 
@@ -172,6 +256,23 @@ _EDGE_PUB = edge_published("e")
 _EDGE_ADMIN = edge_not_archived("e")      # 管理台：含 draft/disabled，不含 archived
 _NODE_ADMIN = node_not_archived()         # 同上（节点，无别名）
 _EDGE_PUB_BARE = "COALESCE(status, 'published') = 'published'"
+# 管理台口径 `<> 'archived'` 对草稿行也成立，所以每处都要再拼 prefer_draft 去重（方案 §6.2）
+_NODE_ONE = prefer_draft()                # 无别名的 kg_node 查询
+_EDGE_ONE = prefer_draft_edge("e")
+# 「删一条边」在草稿模型里是一条 target_status='archived' 的草稿行（墓碑）——
+# 线上行还在，不能真删。管理台展示「改完之后长什么样」时要把墓碑算作已删。
+_EDGE_NOT_TOMBSTONE = "COALESCE(e.target_status, '') <> 'archived'"
+# 「关联查名字」型 JOIN 的钉桩：这些 JOIN 没有状态过滤，靠不上草稿 status='draft'，
+# 端点一有草稿行就 JOIN 出两行（列表重复 + 显示未发布的新名字）。前台一律钉线上行。
+_ONLINE_O = online_only("o")
+# 前台列表里的端点节点也必须是 published。这几处原来写的是管理台口径 `<> 'archived'`
+# （挂在「前台 · 图谱检索」tag 下），draft / disabled 的线上行会直接进前台
+_NODE_PUB_O = node_published("o")
+_NODE_PUB_S = node_published("s")
+_NODE_PUB_M = node_published("m")
+_ONLINE_M = online_only("m")
+_ONLINE_S = online_only("s")
+_ONLINE_E = online_only_edge("e")
 
 
 def search_nodes(
@@ -203,7 +304,10 @@ def search_nodes(
         ELSE 6
       END,
       CASE WHEN lower(n.name) LIKE lower(%s) THEN 0 ELSE 1 END,
-      n.name
+      n.name,
+      -- 稳定尾键：库里同名节点很多，只按 name 排时先后由物理行序决定，
+      -- 往表里插任何一行（比如某条记录的草稿行）都会让前台的结果顺序变一次
+      n.id
     LIMIT %s
     """
     like = f"%{q}%"
@@ -669,7 +773,9 @@ def occupation_requires(
       e.evidence AS evidence
     FROM kg_edge e
     JOIN kg_node o ON o.id = e.src_id AND o.type = 'occupation'
+         AND {_ONLINE_O} AND {_NODE_PUB_O}
     JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level'
+         AND {_ONLINE_S} AND {_NODE_PUB_S}
     WHERE e.rel_type = 'requires' AND {_EDGE_PUB}
       AND lower(o.name) LIKE lower(%s)
       AND (%s::text IS NULL OR o.region = %s)
@@ -1025,8 +1131,16 @@ def list_edges(
         params.append(st)
     elif manage:
         where.append(_EDGE_ADMIN)    # 管理台：含 draft/disabled
+        where.append(_EDGE_ONE)      # 同一边最多两行，草稿优先（方案 §6.2）
     else:
         where.append(_EDGE_PUB)      # 前台：仅 published
+    # 端点名字是 LEFT JOIN 查出来的，那两个 JOIN 没有状态过滤，靠不上「草稿 status='draft'」
+    # 这条不变量：端点一有草稿行，一条边就 JOIN 出两行 —— 列表里边重复、total 虚高。
+    # 管理台跟着草稿显示新名字，前台钉在线上行（否则编辑期间前台的边列表就变了）。
+    # 条件放在 ON 里而不是 WHERE：这是 LEFT JOIN，放 WHERE 会把「端点已被删、边残留」
+    # 那种行滤掉，而本接口的用途正是查这种残留边（src_name 为空）。
+    sn_ok = prefer_draft("sn") if manage else online_only("sn")
+    dn_ok = prefer_draft("dn") if manage else online_only("dn")
     if rel:
         where.append("e.rel_type = %s")
         params.append(rel)
@@ -1054,8 +1168,8 @@ def list_edges(
             f"""
             SELECT COUNT(*) AS c
             FROM kg_edge e
-            LEFT JOIN kg_node sn ON sn.id = e.src_id
-            LEFT JOIN kg_node dn ON dn.id = e.dst_id
+            LEFT JOIN kg_node sn ON sn.id = e.src_id AND {sn_ok}
+            LEFT JOIN kg_node dn ON dn.id = e.dst_id AND {dn_ok}
             WHERE {where_sql}
             """,
             params,
@@ -1068,8 +1182,8 @@ def list_edges(
               sn.name AS src_name, sn.type AS src_type,
               dn.name AS dst_name, dn.type AS dst_type
             FROM kg_edge e
-            LEFT JOIN kg_node sn ON sn.id = e.src_id
-            LEFT JOIN kg_node dn ON dn.id = e.dst_id
+            LEFT JOIN kg_node sn ON sn.id = e.src_id AND {sn_ok}
+            LEFT JOIN kg_node dn ON dn.id = e.dst_id AND {dn_ok}
             WHERE {where_sql}
             ORDER BY e.rel_type, COALESCE(sn.name, e.src_id), COALESCE(dn.name, e.dst_id)
             LIMIT %s OFFSET %s
@@ -1164,7 +1278,22 @@ def list_nodes(
     if st == ARCHIVED_STATUS:
         # archived 是逻辑删除：任何接口都不返回，恢复只能直接改库
         where.append("1=0")
+    elif st == DRAFT_STATUS:
+        # 「只看草稿」= **有未发布改动的记录**，判定必须按发布单元：
+        #   ① 自己就是草稿行（改了节点字段 / 新建），或历史遗留的 status='draft' 线上行
+        #   ② 或者这个单元有草稿边（只改了技能构成/关联 —— 运营最常做的操作，
+        #      节点行一个字没动，上一版这里筛不出来，点「只看草稿」全空）
+        # 计数与取行共用同一个 where_sql（下面 COUNT 与 SELECT 都拼它），
+        # 所以 total 与列出的行天然一致，不会出现「total=3 只列 1 行」。
+        where.append(
+            f"(COALESCE(status, 'published') = %s OR {has_draft_edges()})"
+        )
+        params.append(st)
+        where.append(_NODE_ADMIN)      # archived 是逻辑删除，任何筛选都不返回
+        where.append(_NODE_ONE)        # 同一 id 只留一行（草稿优先）
     elif st:
+        # published / disabled：草稿行的 status 恒为 'draft'，不会被这两个值命中，
+        # 所以一条记录最多只有线上行匹配 —— 不会重复计数，也不会把草稿算进来
         where.append("COALESCE(status, 'published') = %s")
         params.append(st)
     elif published_only:
@@ -1172,6 +1301,8 @@ def list_nodes(
     else:
         # scope=manage：可见 published/draft/disabled，但仍排除 archived
         where.append(_NODE_ADMIN)
+        # 草稿行同样 `<> 'archived'`，不去重的话运营会在列表里看到同一条数据两行
+        where.append(_NODE_ONE)
 
     where_sql = " AND ".join(where)
     offset = (page - 1) * page_size
@@ -1242,17 +1373,29 @@ def list_nodes(
             except Exception:
                 pending_map = {}
 
+        # 只有草稿边（改了技能构成）的记录，节点行没动，`_node_dict` 拿不到 has_draft，
+        # 这里按**发布单元**口径查一次补上，否则列表上看不出这条数据有未发布改动。
+        # 必须在 `with` 里查：出了这个块，`conn` 已经归还给池了。
+        unit_kinds: dict[str, str] = (
+            unit_draft_kinds([r["id"] for r in rows], conn) if (manage and rows) else {}
+        )
+
     total = int(total or 0)
     total_pages = (total + page_size - 1) // page_size if total else 0
     items = []
     for r in rows:
-        nd = _node_dict(r)
+        nd = _node_dict(r, admin=manage)
         pend = pending_map.get(r["id"])
         if pend:
             # 库内 status 不变（删除/编辑待审期间仍 published，前台照常可见）
             nd["pending_change_id"] = pend["pending_change_id"]
             nd["pending_action"] = pend["pending_action"]
             nd["pending_title"] = pend.get("pending_title")
+        kind = unit_kinds.get(r["id"])
+        if kind:
+            nd["has_draft"] = True
+            nd["record_status"] = "draft"
+            nd["draft_change"] = kind
         items.append(nd)
     return {
         "items": items,
@@ -1285,32 +1428,66 @@ def get_node(
       - `public` —— 仅 published。**学员端 / 诊断 / 测评 / Agent 工具一律用这个**
       - `manage` —— 除 archived 外都可见（含 draft / disabled）。默认值，
         因为按 id 取点的调用点绝大多数在管理台写路径上，管理台确实要看草稿
-      - `any`    —— 不过滤。只给「刚写完再读回来」的场景用
+      - `any`    —— 不过滤状态，草稿优先。「刚写完再读回来」用
         （典型：`archive_node` 把 status 改成 archived 之后要把这行返回给接口）
+      - `online` —— 不过滤状态，但**只看线上行**。发布侧专用：发布/门禁要拿线上行的
+        type / region / skill_key，拿到草稿行就会校到改名后的另一个技能上去
     """
     sc = (scope or "").strip().lower()
     if sc == "public":
-        pred = f" AND {node_published()}"
+        # 前台：status='published' 已经把草稿行排除，另外钉一次线上行是为了
+        # 让「点查」不依赖调用方对 status 的推理 —— 这里出过一次能读到 archived 的 bug
+        pred = f" AND {node_published()} AND {online_only()}"
+    elif sc == "online":
+        pred = f" AND {online_only()}"
     elif sc == "any":
-        pred = ""
+        # 「刚写完读回来」用：管理台写路径写的是草稿行，要读回草稿行
+        pred = f" AND {_NODE_ONE}"
     else:
-        pred = f" AND {node_not_archived()}"
+        pred = f" AND {node_not_archived()} AND {_NODE_ONE}"
     sql = f"SELECT * FROM kg_node WHERE id = %s{pred}"
+    # 只有 public 是前台口径；manage / any 都是管理台或写路径，要带运维元数据
+    admin = sc != "public"
 
+    # 这里**不查**「单元里有没有草稿边」：get_node 是全仓最热的点查（写路径每次都读回），
+    # 多挂两条查询不值当。需要单元口径的地方（管理台详情、四维列表、/v1/node?scope=manage）
+    # 自己调 attach_unit_draft / unit_draft_kinds。
     if conn is not None:
         row = conn.execute(sql, (node_id,)).fetchone()
-        return _node_dict(row) if row else None
+        return _node_dict(row, admin=admin) if row else None
     with connect() as c:
         row = c.execute(sql, (node_id,)).fetchone()
         if not row:
             return None
-        return _node_dict(row)
+        return _node_dict(row, admin=admin)
 
 
-def attach_link_ids(node: dict[str, Any] | None) -> dict[str, Any] | None:
+def attach_unit_draft(node: dict[str, Any] | None, conn: Any | None = None) -> None:
+    """给单个节点按**发布单元**口径补 `has_draft` / `record_status` / `draft_change`。"""
+    if not node:
+        return
+    kind = unit_draft_kinds([node.get("id") or ""], conn).get(node.get("id") or "")
+    if kind:
+        node["has_draft"] = True
+        node["record_status"] = "draft"
+        node["draft_change"] = kind
+
+
+def attach_link_ids(
+    node: dict[str, Any] | None, *, scope: str | None = None
+) -> dict[str, Any] | None:
     """
     为编辑表单附带当前关联 id 列表：
     major → industry_ids；occupation → major_ids；skill_level → occupation_ids。
+
+    分两种口径：
+
+    - 管理台（`scope=manage`）看**草稿视图**：运营刚加的关联要预勾上、刚删的要取消，
+      「待删」的草稿边（`target_status='archived'`）算已删 —— 否则删完再打开编辑页它又在
+    - 其余（前台 `/v1/node?include_links=1` 也会走到这里）只给**已发布**的关联
+
+    这一处必须自己分清口径：link_ids 里全是 id、没有名字，草稿泄漏在这里
+    **不会**被「响应里有没有哨兵名字」那类扫描抓到。
     """
     if not node or not node.get("id"):
         return node
@@ -1321,15 +1498,28 @@ def attach_link_ids(node: dict[str, Any] | None) -> dict[str, Any] | None:
         "major_ids": [],
         "occupation_ids": [],
     }
+    manage = (scope or "").strip().lower() in ("manage", "admin", "all")
+    if manage:
+        _link_edge = f"{_EDGE_ONE} AND {_EDGE_NOT_TOMBSTONE}"
+        _link_i = prefer_draft("i")
+        _link_m = prefer_draft("m")
+        _link_o = prefer_draft("o")
+    else:
+        _link_edge = f"{_EDGE_PUB} AND {online_only_edge('e')}"
+        _link_i = f"{node_published('i')} AND {online_only('i')}"
+        _link_m = f"{node_published('m')} AND {online_only('m')}"
+        _link_o = f"{node_published('o')} AND {online_only('o')}"
     with connect() as conn:
         if ntype == "major":
             rows = conn.execute(
-                """
+                f"""
                 SELECT e.dst_id AS id FROM kg_edge e
                 JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry'
+                     AND {_link_i}
                 WHERE e.src_id = %s AND e.rel_type = 'belongs_to'
                   AND COALESCE(e.status, 'published') NOT IN ('archived')
                   AND COALESCE(i.status, 'published') NOT IN ('archived')
+                  AND {_link_edge}
                 ORDER BY i.name
                 """,
                 (nid,),
@@ -1338,12 +1528,14 @@ def attach_link_ids(node: dict[str, Any] | None) -> dict[str, Any] | None:
             node["industry_ids"] = link_ids["industry_ids"]
         elif ntype == "occupation":
             rows = conn.execute(
-                """
+                f"""
                 SELECT e.src_id AS id FROM kg_edge e
                 JOIN kg_node m ON m.id = e.src_id AND m.type = 'major'
+                     AND {_link_m}
                 WHERE e.dst_id = %s AND e.rel_type = 'prepares_for'
                   AND COALESCE(e.status, 'published') NOT IN ('archived')
                   AND COALESCE(m.status, 'published') NOT IN ('archived')
+                  AND {_link_edge}
                 ORDER BY m.name
                 """,
                 (nid,),
@@ -1352,12 +1544,14 @@ def attach_link_ids(node: dict[str, Any] | None) -> dict[str, Any] | None:
             node["major_ids"] = link_ids["major_ids"]
         elif ntype == "skill_level":
             rows = conn.execute(
-                """
+                f"""
                 SELECT e.src_id AS id FROM kg_edge e
                 JOIN kg_node o ON o.id = e.src_id AND o.type = 'occupation'
+                     AND {_link_o}
                 WHERE e.dst_id = %s AND e.rel_type = 'requires'
                   AND COALESCE(e.status, 'published') NOT IN ('archived')
                   AND COALESCE(o.status, 'published') NOT IN ('archived')
+                  AND {_link_edge}
                 ORDER BY o.name
                 """,
                 (nid,),
@@ -1397,11 +1591,12 @@ def list_neighbors(
       e.confidence, e.evidence, e.source_url,
       n.id AS node_id
     FROM kg_edge e
-    JOIN kg_node n ON n.id = {other_col}
+    JOIN kg_node n ON n.id = {other_col} AND {prefer_draft('n')}
     WHERE {where_col} = %s
       AND (%s::text IS NULL OR e.rel_type = %s)
       AND COALESCE(e.status, 'published') <> 'archived'
       AND COALESCE(n.status, 'published') <> 'archived'
+      AND {_EDGE_ONE}
     ORDER BY e.weight DESC NULLS LAST, n.name
     LIMIT %s
     """
@@ -1420,8 +1615,12 @@ def list_neighbors(
                 "evidence": r.get("evidence"),
                 "source_url": r.get("source_url"),
             }
+            # 点查一点状态都不过滤时，能按 id 读到 archived 的节点（既有 bug），
+            # 草稿态之后还会随机拿到草稿行或线上行（主键两行，fetchone 顺序不保证）
             nrow = conn.execute(
-                "SELECT * FROM kg_node WHERE id = %s", (r["node_id"],)
+                f"SELECT * FROM kg_node WHERE id = %s "
+                f"AND {node_not_archived()} AND {_NODE_ONE}",
+                (r["node_id"],),
             ).fetchone()
             out.append({"edge": edge, "node": _node_dict(nrow) if nrow else None})
         return out
@@ -1443,9 +1642,10 @@ def major_occupations(
                 SELECT o.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence, e.evidence
                 FROM kg_edge e
                 JOIN kg_node o ON o.id = e.dst_id AND o.type = 'occupation'
+                     AND {_ONLINE_O}
                 WHERE e.src_id = %s AND e.rel_type = 'prepares_for' AND {_EDGE_PUB}
-                  AND COALESCE(e.status, 'published') <> 'archived'
-                ORDER BY o.name
+                  AND {_NODE_PUB_O}
+                ORDER BY o.name, o.id
                 LIMIT %s
                 """,
                 (major_id, limit),
@@ -1457,7 +1657,9 @@ def major_occupations(
                 SELECT DISTINCT ON (o.id) o.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence
                 FROM kg_edge e
                 JOIN kg_node m ON m.id = e.src_id AND m.type = 'major'
+                     AND {_ONLINE_M} AND {_NODE_PUB_M}
                 JOIN kg_node o ON o.id = e.dst_id AND o.type = 'occupation'
+                     AND {_ONLINE_O} AND {_NODE_PUB_O}
                 WHERE e.rel_type = 'prepares_for' AND {_EDGE_PUB}
                   AND (%s::text IS NULL OR m.region = %s)
                   AND (%s::text IS NULL OR lower(m.name) LIKE lower(%s))
@@ -1495,9 +1697,10 @@ def occupation_skills(
                 SELECT s.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence, e.evidence
                 FROM kg_edge e
                 JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level'
+                     AND {_ONLINE_S}
                 WHERE e.src_id = %s AND e.rel_type = 'requires' AND {_EDGE_PUB}
-                  AND COALESCE(e.status, 'published') <> 'archived'
-                ORDER BY e.weight DESC NULLS LAST, s.name
+                  AND {_NODE_PUB_S}
+                ORDER BY e.weight DESC NULLS LAST, s.name, s.id
                 LIMIT %s
                 """,
                 (occupation_id, limit),
@@ -1505,15 +1708,17 @@ def occupation_skills(
         else:
             q_like = f"%{q}%" if q else None
             rows = conn.execute(
-                """
+                f"""
                 SELECT s.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence
                 FROM kg_edge e
                 JOIN kg_node o ON o.id = e.src_id AND o.type = 'occupation'
+                     AND {_ONLINE_O} AND {_NODE_PUB_O}
                 JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level'
-                WHERE e.rel_type = 'requires'
+                     AND {_ONLINE_S} AND {_NODE_PUB_S}
+                WHERE e.rel_type = 'requires' AND {_EDGE_PUB}
                   AND (%s::text IS NULL OR o.region = %s)
                   AND (%s::text IS NULL OR lower(o.name) LIKE lower(%s))
-                ORDER BY e.weight DESC NULLS LAST, s.name
+                ORDER BY e.weight DESC NULLS LAST, s.name, s.id
                 LIMIT %s
                 """,
                 (reg, reg, q_like, q_like, limit),
@@ -1537,12 +1742,17 @@ def industry_tree(region: str | None = None, limit: int = 500) -> dict[str, Any]
     reg = _default_region(region)
     with connect() as conn:
         nodes = conn.execute(
-            """
+            f"""
             SELECT * FROM kg_node
             WHERE type = 'industry'
               AND (%s::text IS NULL OR region = %s)
-              AND COALESCE(status, 'published') <> 'archived'
-            ORDER BY name
+              -- 前台口径必须是 `= 'published'`。原来这里写的是管理台口径
+              -- `<> 'archived'`，而本函数挂在「前台 · 图谱检索」下 ——
+              -- 库里那批 status='draft' 的线上行（历史遗留，不追溯改）就这么进了前台。
+              -- 这是草稿态之前就有的洞，与草稿行无关，但同一处必须一起补。
+              AND {_PUBLISHED_SQL}
+              AND {online_only()}
+            ORDER BY name, id
             LIMIT %s
             """,
             (reg, reg, limit),
@@ -1587,9 +1797,10 @@ def industry_occupations(
             SELECT o.*, e.id AS edge_id, e.rel_type, e.weight, e.confidence
             FROM kg_edge e
             JOIN kg_node o ON o.id = e.src_id AND o.type = 'occupation'
+                 AND {_ONLINE_O}
             WHERE e.dst_id = %s AND e.rel_type = 'belongs_to' AND {_EDGE_PUB}
-              AND COALESCE(e.status, 'published') <> 'archived'
-            ORDER BY o.name
+              AND {_NODE_PUB_O}
+            ORDER BY o.name, o.id
             LIMIT %s
             """,
             (industry_id, limit),
@@ -1717,16 +1928,20 @@ def capability_by_major(
         if not root:
             return {"root": None, "industries": [], "occupations": [], "meta": {"matched": 0}}
         mid = root["id"]
+        # 这四条查询原来**只过滤节点、不过滤边**：边一旦多出一行（草稿行是同 id 的
+        # 第二行），同一个行业/岗位/技能就 JOIN 出两条，前台能力全景里项目直接翻倍。
+        # CLAUDE.md 记的是「只过滤节点挡不住边」，这里是同一枚硬币的另一面。
         inds = conn.execute(
             "SELECT n.* FROM kg_edge e JOIN kg_node n ON e.dst_id=n.id "
             "WHERE e.src_id=%s AND e.rel_type='belongs_to' AND n.type='industry' "
-            f"AND {node_pub}",
+            f"AND {node_pub} AND {_EDGE_PUB} AND {_ONLINE_E}",
             (mid,),
         ).fetchall()
         occs = conn.execute(
             "SELECT n.* FROM kg_edge e JOIN kg_node n ON e.dst_id=n.id "
             "WHERE e.src_id=%s AND e.rel_type='prepares_for' AND n.type='occupation' "
-            f"AND {node_pub} ORDER BY n.level NULLS LAST, n.name LIMIT %s",
+            f"AND {node_pub} AND {_EDGE_PUB} AND {_ONLINE_E} "
+            "ORDER BY n.level NULLS LAST, n.name LIMIT %s",
             (mid, limit_occupations),
         ).fetchall()
         occ_ids = [o["id"] for o in occs]
@@ -1739,7 +1954,7 @@ def capability_by_major(
                 "SELECT e.src_id AS _occ, count(*) AS c "
                 "FROM kg_edge e JOIN kg_node n ON e.dst_id=n.id "
                 "WHERE e.src_id = ANY(%s) AND e.rel_type='requires' AND n.type='skill_level' "
-                f"AND {node_pub} GROUP BY e.src_id",
+                f"AND {node_pub} AND {_EDGE_PUB} AND {_ONLINE_E} GROUP BY e.src_id",
                 (occ_ids,),
             ).fetchall():
                 count_by_occ[r["_occ"]] = int(r["c"])
@@ -1750,7 +1965,8 @@ def capability_by_major(
                     f"SELECT e.src_id AS _occ, {SKILL_KEY_SQL} AS _skill_key, n.* "
                     "FROM kg_edge e JOIN kg_node n ON e.dst_id=n.id "
                     "WHERE e.src_id = ANY(%s) AND e.rel_type='requires' "
-                    f"AND n.type='skill_level' AND {node_pub} ORDER BY n.name",
+                    f"AND n.type='skill_level' AND {node_pub} "
+                    f"AND {_EDGE_PUB} AND {_ONLINE_E} ORDER BY n.name",
                     (occ_ids,),
                 ).fetchall()
                 key_occs: dict[str, set[str]] = {}
@@ -1792,8 +2008,8 @@ def capability_by_major(
                        d.name AS to_name,
                        COALESCE(d.level, {lvl_d}) AS to_level
                 FROM kg_edge e
-                JOIN kg_node s ON s.id = e.src_id
-                JOIN kg_node d ON d.id = e.dst_id
+                JOIN kg_node s ON s.id = e.src_id AND NOT s.is_draft
+                JOIN kg_node d ON d.id = e.dst_id AND NOT d.is_draft
                 WHERE e.rel_type = 'advances_to'
                   AND COALESCE(e.status,'published') = 'published'
                   AND (e.src_id = ANY(%s) OR e.dst_id = ANY(%s))

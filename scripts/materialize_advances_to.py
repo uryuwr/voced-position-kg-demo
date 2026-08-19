@@ -133,8 +133,10 @@ def main() -> int:
 
         # 只清本脚本此前以同一 confidence 物化的边，不动其他来源/人工维护的
         deleted = conn.execute(
+            # 不碰草稿边：那是运营还没发布的改动，不该被物化脚本顺手清掉
             "DELETE FROM kg_edge WHERE rel_type='advances_to' "
-            "AND source_system=%s AND region=%s AND confidence=%s",
+            "AND source_system=%s AND region=%s AND confidence=%s "
+            "AND NOT is_draft",
             (SOURCE_SYSTEM, args.region, confidence),
         ).rowcount
 

@@ -63,6 +63,75 @@ def node_not_archived(alias: str = "") -> str:
     return f"COALESCE({col}, 'published') <> '{ARCHIVED_STATUS}'"
 
 
+# ── 草稿态：同表两行（方案 docs/方案-管理台草稿态与发布.md）────────────
+# 一条记录最多两行：线上行 is_draft=false，草稿行 is_draft=true 且 status 恒为 'draft'。
+# 前台按 status='published' 读，草稿自动被挡；管理台口径是 `<> 'archived'`，
+# **两行都满足**，所以管理台的每个查询都要再拼一个 prefer_draft。
+DRAFT_STATUS = "draft"
+
+
+def prefer_draft(alias: str = "") -> str:
+    """【管理台】同一 id 只留一行，有草稿就取草稿行。
+
+    实现是反连接而不是方案里写的 `DISTINCT ON (id) … ORDER BY id, is_draft DESC`：
+    `DISTINCT ON` 要求 ORDER BY 以去重列开头，而这 20 多处读路径全都有自己的排序
+    （created_at DESC / sort_order / name / 权重…）和 GROUP BY，套 DISTINCT ON 就得
+    每处包一层子查询、把原来的 ORDER BY 挪进去。反连接是纯 WHERE 片段，语义等价
+    （草稿存在取草稿，否则取线上行），能原地 AND 进任何一处查询，也走
+    `idx_kg_node_draft` 部分索引。
+
+    **alias 缺省时用表名限定**，不能写成裸 `id`：子查询里 `kg_node __pd` 也有 id 列，
+    内层作用域优先，`__pd.id = id` 会被解析成恒真，去重静默失效。
+    """
+    a = alias or "kg_node"
+    return (
+        f"({a}.is_draft OR NOT EXISTS ("
+        f"SELECT 1 FROM kg_node __pd WHERE __pd.id = {a}.id AND __pd.is_draft))"
+    )
+
+
+def prefer_draft_edge(alias: str = "e") -> str:
+    """【管理台】边的 prefer_draft，见 `prefer_draft`。"""
+    a = alias or "kg_edge"
+    return (
+        f"({a}.is_draft OR NOT EXISTS ("
+        f"SELECT 1 FROM kg_edge __pde WHERE __pde.id = {a}.id AND __pde.is_draft))"
+    )
+
+
+def has_draft_edges(alias: str = "") -> str:
+    """这个节点的**发布单元**里有没有草稿边（`unit_id` 指向它）。
+
+    「这条记录有未发布的改动」不等于「有草稿节点行」：改技能构成只产生草稿**边**。
+    显示口径（`unit_draft_kinds`）与筛选口径（`list_nodes` 的 `status=draft`）
+    必须是同一份判断 —— 上一版显示对了、筛选漏了，运营点「只看草稿」全空。
+    所以这条 EXISTS 是唯一定义，两处都引它。
+    """
+    a = alias or "kg_node"
+    return (
+        f"EXISTS (SELECT 1 FROM kg_edge __de "
+        f"WHERE __de.is_draft AND __de.unit_id = {a}.id)"
+    )
+
+
+def online_only(alias: str = "") -> str:
+    """【前台】只读线上行。
+
+    给「关联查名字」这类**没有状态过滤**的 JOIN 用（`LEFT JOIN kg_node sn ON sn.id=e.src_id`）：
+    这种 JOIN 靠不上 status 不变量，一旦端点节点有草稿行，一条边会 JOIN 出两行 ——
+    列表里同一条边出现两次、total 虚高，而且显示的是草稿里的新名字。
+    这类查询前台与管理台都会走，前台必须钉在线上行上，否则「编辑期间前台逐字节不变」不成立。
+    """
+    a = alias or "kg_node"
+    return f"NOT {a}.is_draft"
+
+
+def online_only_edge(alias: str = "e") -> str:
+    """【前台】边只读线上行，见 `online_only`。"""
+    a = alias or "kg_edge"
+    return f"NOT {a}.is_draft"
+
+
 def learnable_course(alias: str = "n") -> str:
     """【前台】课程节点是否**真的能学** —— 学员端所有资源查询都必须带上这个条件。
 

@@ -87,6 +87,7 @@ from backend.kg.pg_store.config import DEFAULT_REGION
 from backend.kg.pg_store.counts import attach_counts_by_type
 from backend.kg.pg_store.query import (
     attach_link_ids,
+    attach_unit_draft,
     capability_by_major,
     expand_neighbors,
     explore_graph,
@@ -482,9 +483,20 @@ def _node_detail_core(
         if (n.get("status") or "published") != "published":
             raise HTTPException(status_code=404, detail="node not found")
     if include_counts:
-        attach_counts_by_type([n], node_type=n.get("type"))
+        # 计数口径跟着 scope：管理台要看草稿视图的技能数，否则列表/详情/构成页三个数字
+        attach_counts_by_type(
+            [n],
+            node_type=n.get("type"),
+            scope="manage" if _is_manage_scope(scope) else "public",
+        )
     if include_links or _is_manage_scope(scope):
-        attach_link_ids(n)
+        # scope 要透传：link_ids 是 id 列表，前台口径下只能给已发布的关联，
+        # 否则草稿里新加的那个 id 会出现在前台响应里（见 attach_link_ids 的说明）
+        attach_link_ids(n, scope=scope)
+    if _is_manage_scope(scope):
+        # 记录状态按**发布单元**判定：只改了技能构成时没有草稿节点行，
+        # 不补这一下管理台会显示成「已发布」，运营不知道有改动没发出去
+        attach_unit_draft(n)
     return n
 
 
@@ -1160,7 +1172,11 @@ def api_list_nodes(
         scope=scope,
     )
     if include_counts and data.get("items"):
-        attach_counts_by_type(data["items"], node_type=type)
+        attach_counts_by_type(
+            data["items"],
+            node_type=type,
+            scope="manage" if _is_manage_scope(scope) else "public",
+        )
     return NodeListResponse.model_validate(data)
 
 

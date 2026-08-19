@@ -213,7 +213,7 @@ def main() -> int:
                 a["platform_code"] = a["code"]      # 保留原平台码，不丢溯源
             a["code"] = p["new_code"]
             conn.execute(
-                "UPDATE kg_node SET attrs=%s WHERE id=%s",
+                "UPDATE kg_node SET attrs=%s WHERE id=%s AND NOT is_draft",
                 (json.dumps(a, ensure_ascii=False), p["id"]),
             )
             updated += 1

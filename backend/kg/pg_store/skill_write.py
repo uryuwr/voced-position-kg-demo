@@ -10,6 +10,7 @@ import uuid
 from typing import Any
 
 from backend.kg.pg_store.client import connect
+from backend.kg.pg_store.config import prefer_draft
 from backend.kg.pg_store.query import get_node
 from backend.kg.pg_store.skill_aggregate import (
     SKILL_KEY_SQL,
@@ -17,6 +18,9 @@ from backend.kg.pg_store.skill_aggregate import (
     skill_key_from_node,
 )
 from backend.kg.pg_store.write import create_edge, create_node, patch_node
+
+# 复用已有档位节点时要看得到草稿行（方案 §6.2）
+_PD_N = prefer_draft("n")
 
 from backend.kg.pg_store.skill_level_meta import (
     REQUIRED_LEVEL_CODES,
@@ -228,26 +232,58 @@ def _find_existing_nodes_by_skill_key(skill_key: str, region: str = "CN") -> lis
             WHERE n.type = 'skill_level'
               AND (%s::text IS NULL OR n.region = %s)
               AND ({SKILL_KEY_SQL}) = %s
+              -- 草稿优先：同一档已经有草稿行时要复用它的 id，
+              -- 否则第二次编辑会当成"新档"再建一遍
+              AND {_PD_N}
             """,
             (region, region, skill_key),
         ).fetchall()
     from backend.kg.pg_store.query import _node_dict
 
-    return [_node_dict(r) for r in rows]
+    # 技能 bundle 的写路径属于管理台，要能看到 version / updated_by
+    return [_node_dict(r, admin=True) for r in rows]
 
 
-def _delete_requires_into_nodes(node_ids: list[str]) -> None:
+def _clear_requires_into_nodes(
+    node_ids: list[str], *, user_id: str, user_name: str, to_draft: bool = True
+) -> None:
+    """清掉指向这些档位节点的 requires 边（下面会按新的岗链重建）。
+
+    草稿模式下不能真删线上边 —— 那会让「重建岗链」的删一半立刻对前台生效。
+    改成给每条线上边建墓碑草稿（`target_status='archived'`），
+    发布对应岗位时才归档。
+    """
     if not node_ids:
         return
+    if not to_draft:
+        with connect() as conn:
+            conn.execute(
+                """
+                DELETE FROM kg_edge
+                WHERE rel_type = 'requires' AND dst_id = ANY(%s)
+                  AND NOT is_draft
+                """,
+                (node_ids,),
+            )
+            conn.commit()
+        return
+    from backend.kg.pg_store.write import archive_edge
+
     with connect() as conn:
-        conn.execute(
-            """
-            DELETE FROM kg_edge
-            WHERE rel_type = 'requires' AND dst_id = ANY(%s)
-            """,
-            (node_ids,),
-        )
-        conn.commit()
+        ids = [
+            r["id"]
+            for r in conn.execute(
+                """
+                SELECT id FROM kg_edge
+                WHERE rel_type = 'requires' AND dst_id = ANY(%s)
+                  AND COALESCE(status,'published') <> 'archived'
+                  AND COALESCE(target_status,'') <> 'archived'
+                """,
+                (node_ids,),
+            ).fetchall()
+        ]
+    for eid in ids:
+        archive_edge(eid, user_id=user_id, user_name=user_name)
 
 
 def apply_skill_bundle_create(
@@ -255,8 +291,17 @@ def apply_skill_bundle_create(
     *,
     user_id: str,
     user_name: str,
+    to_draft: bool = True,
 ) -> dict[str, Any]:
-    """审核通过：拆 levels 入库 + 建 requires 边（权重在边上）。"""
+    """拆 levels 入库 + 建 requires 边（权重在边上）。
+
+    `to_draft=True`（默认，管理台直接编辑）：L1–L5 节点与 requires 边全部落草稿行，
+    前台在发布前看不到任何变化。**边的发布单元是它的 src（岗位）**，不是这个技能
+    （方案 §3 约定 unit_id = src_id），所以新建技能 + 挂岗位要按序发布：
+    先发技能节点，再发各岗位 —— 反过来会被「端点未发布」拦下（§7 第 4 步、§10.6）。
+
+    `to_draft=False`：审核队列批准后落地，直接写线上行（方案 §4）。
+    """
     skill_key = resolve_skill_key(payload)
     levels = normalize_levels(payload.get("levels"))
     if not levels:
@@ -316,14 +361,18 @@ def apply_skill_bundle_create(
         )
         if code in exist_by_lv:
             body["id"] = exist_by_lv[code]
-        node = create_node(body, user_id=user_id, user_name=user_name)
+        node = create_node(
+            body, user_id=user_id, user_name=user_name, to_draft=to_draft
+        )
         created_nodes.append(node)
         nodes_by_level[code] = node
 
     # 边：每个岗位 × 每个已建档；权重仅写在 required_level（或最高档）
     created_edges: list[dict[str, Any]] = []
     node_ids = [n["id"] for n in created_nodes]
-    _delete_requires_into_nodes(node_ids)
+    _clear_requires_into_nodes(
+        node_ids, user_id=user_id, user_name=user_name, to_draft=to_draft
+    )
 
     max_lv = max((int(c[1]) for c in nodes_by_level), default=1)
     for link in occ_links:
@@ -361,6 +410,7 @@ def apply_skill_bundle_create(
                 },
                 user_id=user_id,
                 user_name=user_name,
+                to_draft=to_draft,
             )
             created_edges.append(edge)
 
@@ -382,6 +432,7 @@ def apply_skill_bundle_update(
     *,
     user_id: str,
     user_name: str,
+    to_draft: bool = True,
 ) -> dict[str, Any]:
     """更新逻辑技能：可增补/改档文案、重建岗链权重。"""
     skill_key = (skill_key or resolve_skill_key(payload)).strip()
@@ -403,7 +454,9 @@ def apply_skill_bundle_update(
                 "description": n.get("description"),
             }
         payload["levels"] = levels
-    return apply_skill_bundle_create(payload, user_id=user_id, user_name=user_name)
+    return apply_skill_bundle_create(
+        payload, user_id=user_id, user_name=user_name, to_draft=to_draft
+    )
 
 
 def preview_skill_bundle(payload: dict[str, Any]) -> dict[str, Any]:

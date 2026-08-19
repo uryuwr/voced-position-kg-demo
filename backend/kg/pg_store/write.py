@@ -1,4 +1,15 @@
-"""KG write path on PostgreSQL (manual create / archive)."""
+"""KG 写路径（管理台新建 / 编辑 / 归档）—— **默认写草稿行，不动线上行**。
+
+草稿态方案见 `docs/方案-管理台草稿态与发布.md`。一条记录最多两行：
+线上行 `is_draft=false`，草稿行 `is_draft=true` 且 `status` 恒为 `'draft'`。
+运营的每个编辑动作都落在草稿行上，线上行只由发布（`draft_publish`）改，
+所以「编辑期间前台逐字节不变」。
+
+`to_draft=False` 是给**发布侧**留的口子，只有三类调用方该用它（方案 §4）：
+`review.py`（审核通过 = 批准发布）、`publish_rules.try_publish_node`、`draft_publish`。
+运营路由一律用默认值。加这个参数而不是复制一套函数，是因为两条路径的字段校验
+（编码唯一、attrs.level、门禁）必须共用同一份，分两份迟早只改一边。
+"""
 from __future__ import annotations
 
 import json
@@ -7,11 +18,66 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend.kg.pg_store.client import connect
+from backend.kg.pg_store.config import prefer_draft_edge
 from backend.kg.pg_store.query import _node_dict, _rel_dict, get_node
+
+# 复制线上行 → 草稿行。**不逐列点名**：这份 SQL 要在「主表加了新列」之后依然正确，
+# 逐列写的话新列会被静默丢掉（影子表方案就是因为这个被否掉，见方案 §1.3）。
+# to_jsonb(n) 拿到整行、覆盖几个控制列、再 populate 回 kg_node 的行类型，
+# 列顺序与表定义一致，所以 INSERT 不用写列名。
+_COPY_NODE_TO_DRAFT = """
+INSERT INTO kg_node
+SELECT (jsonb_populate_record(
+          n,
+          to_jsonb(n) || jsonb_build_object(
+            'is_draft', true,
+            'status', 'draft',
+            'target_status', NULL,
+            'base_version', n.version
+          )
+        )).*
+FROM kg_node n
+WHERE n.id = %s AND NOT n.is_draft
+ON CONFLICT (id, is_draft) DO NOTHING
+"""
+
+_COPY_EDGE_TO_DRAFT = """
+INSERT INTO kg_edge
+SELECT (jsonb_populate_record(
+          e,
+          to_jsonb(e) || jsonb_build_object(
+            'is_draft', true,
+            'status', 'draft',
+            'target_status', %s,
+            'unit_id', e.src_id
+          )
+        )).*
+FROM kg_edge e
+WHERE e.id = %s AND NOT e.is_draft
+ON CONFLICT (id, is_draft) DO NOTHING
+"""
+
+# 发布意图：草稿行的 status 恒为 'draft'，「发布后要变成什么」只能存在 target_status 里。
+# 写进 status 的那一刻草稿就被前台的 `status='published'` 查询命中（方案 §0.2）。
+#
+# **停用 / 启用 / 删除已改成立即生效，不再进草稿**（2026-08-19 需求收窄），
+# 所以 target_status 只剩两个用途，别再往里塞第三种意图：
+#
+#   1. **新建**：只有草稿行的记录，发布时要知道该落成 published 还是 disabled
+#      （请求里带 `status` 时记在这里；NULL = 发布成 published）
+#   2. **边的墓碑**：技能构成/关联里「移除一项」不能真删线上边（那会立刻对前台生效），
+#      落一条 `target_status='archived'` 的草稿边，发布时才归档
+_TARGET_STATUSES = ("published", "disabled", "archived")
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _target_status_of(status: Any) -> str | None:
+    """请求里的 status → 草稿行的 target_status（NULL 表示发布时不改状态）。"""
+    st = str(status or "").strip().lower()
+    return st if st in _TARGET_STATUSES else None
 
 
 def _json_or_none(v: Any) -> str | None:
@@ -77,10 +143,17 @@ def apply_node_links(
     user_id: str,
     user_name: str,
     replace: bool = True,
+    to_draft: bool = True,
 ) -> list[dict[str, Any]]:
     """
     按节点类型自动建边（系统填默认字段）。
-    replace=True 时先删本节点上对应 rel 的旧边再重建（编辑关联时用）。
+    replace=True 时把本节点该 rel 的关联**改成**给定这批（多的删、少的加）。
+
+    草稿态下不能再「先 DELETE 全部再重建」：DELETE 会打掉线上行，前台当场少一批关联；
+    重建出来的又是草稿行，于是「删了立刻生效、加了要等发布」，一半生效一半不生效。
+    所以改成算差集 —— 该加的建草稿边，该删的建一条 `target_status='archived'`
+    的草稿边（墓碑），两边都等发布时才落到线上行。
+    已经对上的关联不动，免得每次保存都刷出一堆无意义的草稿边。
     """
     created: list[dict[str, Any]] = []
     ntype = (node_type or "").lower()
@@ -122,37 +195,73 @@ def apply_node_links(
         plans = []
 
     for peer_type, rel, ids, self_is_src in plans:
-        if replace:
-            with connect() as conn:
-                if self_is_src:
+        if not to_draft:
+            # 发布 / 审核落地侧：保持原来的「清空重建」，写线上行
+            if replace:
+                with connect() as conn:
+                    col = "src_id" if self_is_src else "dst_id"
                     conn.execute(
-                        "DELETE FROM kg_edge WHERE src_id=%s AND rel_type=%s",
+                        f"DELETE FROM kg_edge WHERE {col}=%s AND rel_type=%s "
+                        f"AND NOT is_draft",
                         (node_id, rel),
                     )
-                else:
-                    conn.execute(
-                        "DELETE FROM kg_edge WHERE dst_id=%s AND rel_type=%s",
-                        (node_id, rel),
+                    conn.commit()
+            for peer in ids:
+                _ensure_exists(peer, peer_type)
+                src, dst = (node_id, peer) if self_is_src else (peer, node_id)
+                created.append(
+                    create_edge(
+                        {**base, "src_id": src, "dst_id": dst, "rel_type": rel},
+                        user_id=user_id,
+                        user_name=user_name,
+                        to_draft=False,
                     )
-                conn.commit()
-        for peer in ids:
+                )
+            continue
+
+        current = _current_link_edges(node_id, rel, self_is_src=self_is_src)
+        want = list(dict.fromkeys(ids))
+        for peer in want:
+            if peer in current:
+                continue          # 已经关联着，不必再造一条草稿边
             _ensure_exists(peer, peer_type)
-            if self_is_src:
-                src, dst = node_id, peer
-            else:
-                src, dst = peer, node_id
-            edge = create_edge(
-                {
-                    **base,
-                    "src_id": src,
-                    "dst_id": dst,
-                    "rel_type": rel,
-                },
-                user_id=user_id,
-                user_name=user_name,
+            src, dst = (node_id, peer) if self_is_src else (peer, node_id)
+            created.append(
+                create_edge(
+                    {**base, "src_id": src, "dst_id": dst, "rel_type": rel},
+                    user_id=user_id,
+                    user_name=user_name,
+                )
             )
-            created.append(edge)
+        if replace:
+            for peer, edge_id in current.items():
+                if peer not in want:
+                    archive_edge(edge_id, user_id=user_id, user_name=user_name)
     return created
+
+
+def _current_link_edges(
+    node_id: str, rel: str, *, self_is_src: bool
+) -> dict[str, str]:
+    """本节点该 rel 下**当前有效**的关联：{对方 id: 边 id}。
+
+    「有效」= 草稿优先（运营刚加的算数）+ 墓碑算已删 + 排除 archived。
+    """
+    self_col = "src_id" if self_is_src else "dst_id"
+    peer_col = "dst_id" if self_is_src else "src_id"
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT e.{peer_col} AS peer, e.id AS edge_id
+            FROM kg_edge e
+            WHERE e.{self_col} = %s AND e.rel_type = %s
+              AND COALESCE(e.status, 'published') <> 'archived'
+              AND COALESCE(e.target_status, '') <> 'archived'
+              AND {prefer_draft_edge('e')}
+            """,
+            (node_id, rel),
+        ).fetchall()
+    return {r["peer"]: r["edge_id"] for r in rows}
 
 
 class CodeConflictError(ValueError):
@@ -181,6 +290,10 @@ def find_by_code(
 
     写入前校验用：这样冲突能返回可读的 409，而不是等数据库唯一索引抛
     IntegrityError（那种报错前端无法解释给运营看）。
+
+    **只看线上行**：草稿之间不互斥（唯一索引也排除了草稿），否则「A 改成 X」的草稿
+    会挡住「B 也想改成 X」这种其实还没成立的冲突。真正的互斥在发布事务里再查一次
+    （方案 §7 第 3 步）——那时候它才真的要占这个编码。
     """
     code = (code or "").strip()
     if not code:
@@ -190,6 +303,7 @@ def find_by_code(
         WHERE region = %s AND type = %s
           AND attrs::json->>'code' = %s
           AND COALESCE(status, 'published') <> 'archived'
+          AND NOT is_draft
     """
     params: list[Any] = [region or "CN", node_type, code]
     if exclude_id:
@@ -255,6 +369,7 @@ def create_node(
     *,
     user_id: str,
     user_name: str,
+    to_draft: bool = True,
 ) -> dict[str, Any]:
     link_ids = extract_link_ids(data)
     body = _strip_link_fields(data)
@@ -265,15 +380,23 @@ def create_node(
         body.get("attrs"), body["type"], body.get("region") or "CN", exclude_id=nid
     )
     _assert_attrs_sane(body.get("attrs"), body["type"])
-    # 直写 published 须过 BR 门禁；先落 draft 再在调用方升权，或此处拦截
-    if str(status).lower() == "published":
+    target_status: str | None = None
+    if to_draft:
+        # 新建 = 只有草稿行、没有线上行：前台查 status='published' 查不到它，天然不可见；
+        # 发布时这一行原地 is_draft=false 转正，不需要复制（方案 §5）。
+        # 请求里的 status 是「发布后想变成什么」，存进 target_status，**不能写进 status**。
+        target_status = _target_status_of(status)
+        status = "draft"
+    elif str(status).lower() == "published":
+        # 直写 published 须过 BR 门禁；无边时门禁必败，先落 draft 由外层 promote
         ntype = (body.get("type") or "").lower()
         if ntype in ("major", "occupation", "skill_level", "skill", "skill_bundle"):
-            # 无边时门禁必败；先以 draft 入库，外层再 promote
             status = "draft"
             body["status"] = "draft"
     row = {
         "id": nid,
+        "is_draft": to_draft,
+        "target_status": target_status,
         "region": body.get("region") or "CN",
         "type": body["type"],
         "name": body["name"],
@@ -301,14 +424,16 @@ def create_node(
             INSERT INTO kg_node (
               id, region, type, name, name_en, name_zh, aliases, description, attrs,
               source_system, source_id, source_url, license, fetched_at, confidence,
-              status, updated_by, updated_by_name, owner, owner_name
+              status, updated_by, updated_by_name, owner, owner_name,
+              is_draft, target_status
             ) VALUES (
               %(id)s, %(region)s, %(type)s, %(name)s, %(name_en)s, %(name_zh)s, %(aliases)s,
               %(description)s, %(attrs)s, %(source_system)s, %(source_id)s, %(source_url)s,
               %(license)s, %(fetched_at)s, %(confidence)s, %(status)s, %(updated_by)s,
-              %(updated_by_name)s, %(owner)s, %(owner_name)s
+              %(updated_by_name)s, %(owner)s, %(owner_name)s,
+              %(is_draft)s, %(target_status)s
             )
-            ON CONFLICT (id) DO UPDATE SET
+            ON CONFLICT (id, is_draft) DO UPDATE SET
               name = EXCLUDED.name,
               name_en = EXCLUDED.name_en,
               name_zh = EXCLUDED.name_zh,
@@ -318,6 +443,7 @@ def create_node(
               source_url = EXCLUDED.source_url,
               confidence = EXCLUDED.confidence,
               status = EXCLUDED.status,
+              target_status = EXCLUDED.target_status,
               updated_by = EXCLUDED.updated_by,
               updated_by_name = EXCLUDED.updated_by_name
             """,
@@ -331,6 +457,7 @@ def create_node(
         user_id=user_id,
         user_name=user_name,
         replace=True,
+        to_draft=to_draft,
     )
     node = get_node(nid, scope="any")  # 刚写完读回，可能还是 draft/archived
     assert node is not None
@@ -340,16 +467,160 @@ def create_node(
     return node
 
 
+def ensure_node_draft(node_id: str, conn: Any = None) -> dict[str, Any] | None:
+    """保证 node_id 有草稿行（copy-on-write），返回草稿行；记录不存在返回 None。
+
+    第一次编辑时把线上行整行复制一份、`base_version` 记住当时的 `version` ——
+    发布时拿它和线上行的 version 比，不等就说明「你编辑期间别人发布过」，回 409
+    而不是静默覆盖（方案 §7 第 2 步）。
+    """
+    own = conn is None
+    c = conn or connect()
+    try:
+        c.execute(_COPY_NODE_TO_DRAFT, (node_id,))
+        row = c.execute(
+            "SELECT * FROM kg_node WHERE id = %s AND is_draft", (node_id,)
+        ).fetchone()
+        if own:
+            c.commit()
+    finally:
+        if own:
+            c.close()
+    return dict(row) if row else None
+
+
+def cascade_edge_status_now(
+    node_id: str,
+    status: str,
+    *,
+    user_id: str,
+    user_name: str,
+) -> list[str]:
+    """节点停用/归档/启用时，**立即**把两端连着它的边改成同样的状态，返回被改的边 id。
+
+    修的是一个既有 bug：停用技能节点时没人管指向它的边，于是库里出现
+    「`published` 的 requires 边指向 `disabled` 的技能节点」。后果是同一个岗位
+    前台按节点状态过滤 → 5 项 Σw=0.81，管理台口径 `<> archived` → 6 项 Σw=1.00，
+    运营看到的权重和与学员看到的不是一回事，而且两边都不报错。
+    CLAUDE.md 记的是「只过滤节点挡不住边」，这里是它的反面：边过了、节点被停用了。
+
+    停用/删除是立即生效的动作（不进草稿），所以级联也立即写线上行 ——
+    只改节点不改边，等于把那个 bug 又造一遍。**草稿边不动**：那是别人还没发布的改动。
+    """
+    if status == "published":
+        # **启用要能撤销停用的级联**，否则停用之后再启用就成了死路：
+        # 边还是 disabled → 岗位没有已发布的 requires 边 → BR-03 判「无有效权重」→ 启用 400。
+        # 只捞 disabled 的：archived 是运营明确移除掉的关联，不该被「启用节点」顺手复活。
+        where, params = (
+            "COALESCE(status, 'published') = 'disabled'",
+            (status, user_id, user_name, node_id, node_id),
+        )
+    elif status in ("archived", "disabled"):
+        where, params = (
+            "COALESCE(status, 'published') NOT IN ('archived', %s)",
+            (status, user_id, user_name, node_id, node_id, status),
+        )
+    else:
+        return []
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            UPDATE kg_edge SET status = %s, updated_by = %s, updated_by_name = %s
+            WHERE (src_id = %s OR dst_id = %s)
+              AND NOT is_draft
+              AND {where}
+            RETURNING id
+            """,
+            params,
+        ).fetchall()
+        conn.commit()
+        # 返回 id 而不是条数：启用时要先恢复边再跑门禁，门禁不过得**精确**回滚这批边
+        return [r["id"] for r in rows]
+
+
+def ensure_edge_draft(
+    edge_id: str, conn: Any = None, *, target_status: str | None = "published"
+) -> dict[str, Any] | None:
+    """保证边有草稿行（copy-on-write），返回草稿行；边不存在返回 None。
+
+    改一条已发布的边（典型：技能构成里调权重）走这里：线上那条一个字节都不动，
+    改动落在草稿行上，发布时才替换。
+    """
+    own = conn is None
+    c = conn or connect()
+    try:
+        c.execute(_COPY_EDGE_TO_DRAFT, (target_status, edge_id))
+        row = c.execute(
+            "SELECT * FROM kg_edge WHERE id = %s AND is_draft", (edge_id,)
+        ).fetchone()
+        if own:
+            c.commit()
+    finally:
+        if own:
+            c.close()
+    return dict(row) if row else None
+
+
+def patch_edge_draft(
+    edge_id: str,
+    fields: dict[str, Any],
+    *,
+    user_id: str,
+    user_name: str,
+) -> dict[str, Any] | None:
+    """改一条边的字段（weight / evidence / attrs …），**落在草稿行上**。
+
+    只有 `weight` / `evidence` / `attrs` / `confidence` / `source_url` 可改；
+    改端点等于换一条边，走 create + archive。
+    """
+    sets, params = [], {"id": edge_id}
+    for key in ("weight", "evidence", "confidence", "source_url"):
+        if key in fields:
+            sets.append(f"{key} = %({key})s")
+            params[key] = fields[key]
+    if "attrs" in fields:
+        sets.append("attrs = %(attrs)s")
+        params["attrs"] = _json_or_none(fields["attrs"])
+    with connect() as conn:
+        draft = ensure_edge_draft(edge_id, conn)
+        if draft is None:
+            return None
+        if sets:
+            sets.append("updated_by = %(updated_by)s")
+            sets.append("updated_by_name = %(updated_by_name)s")
+            params["updated_by"] = user_id
+            params["updated_by_name"] = user_name
+            conn.execute(
+                f"UPDATE kg_edge SET {', '.join(sets)} WHERE id = %(id)s AND is_draft",
+                params,
+            )
+        row = conn.execute(
+            "SELECT * FROM kg_edge WHERE id = %s AND is_draft", (edge_id,)
+        ).fetchone()
+        conn.commit()
+    return _rel_dict(row) if row else None
+
+
 def patch_node(
     node_id: str,
     data: dict[str, Any],
     *,
     user_id: str,
     user_name: str,
+    to_draft: bool = True,
 ) -> dict[str, Any] | None:
     link_ids = extract_link_ids(data)
     has_links = any(link_ids.values())
     body = _strip_link_fields(data)
+    if to_draft:
+        return _patch_node_draft(
+            node_id,
+            body,
+            link_ids,
+            has_links=has_links,
+            user_id=user_id,
+            user_name=user_name,
+        )
     # 直写 status=published → BR-08 门禁
     if str(body.get("status") or "").lower() == "published":
         from backend.kg.pg_store.publish_rules import (
@@ -359,7 +630,10 @@ def patch_node(
         from backend.kg.pg_store.query import get_node as _get
         from backend.kg.pg_store.skill_aggregate import skill_key_from_node
 
-        cur = _get(node_id)
+        # 取**线上行**：默认口径是 prefer_draft，会拿到草稿行，
+        # 而这里要用它的 type / region / skill_key 去跑门禁 —— 草稿改过名字的话
+        # skill_key 就变了，门禁会校到另一个技能上去
+        cur = _get(node_id, scope="online")
         if not cur:
             return None
         ntype = cur.get("type")
@@ -415,7 +689,7 @@ def patch_node(
         # 改 code 也要过唯一性校验：排除自身，避免「保存自己」被误判冲突
         from backend.kg.pg_store.query import get_node as _get_node
 
-        _cur = _get_node(node_id, scope="any") or {}
+        _cur = _get_node(node_id, scope="online") or {}
         _assert_code_free(
             body["attrs"],
             _cur.get("type") or body.get("type") or "",
@@ -431,20 +705,117 @@ def patch_node(
             fields.append("version = COALESCE(version, 1) + 1")
         fields.append("updated_by = %(updated_by)s")
         fields.append("updated_by_name = %(updated_by_name)s")
-        sql = f"UPDATE kg_node SET {', '.join(fields)} WHERE id = %(id)s"
+        # **必须钉住 `NOT is_draft`**：主键是 (id, is_draft)，同一 id 有两行，
+        # 裸 `WHERE id=%s` 会把草稿行一起改。给草稿行写 status='published' 直接撞
+        # ck_kg_node_draft_status（实测 500）；就算没有那道 CHECK，也等于把草稿
+        # 悄悄发出去了 —— 这条路径是发布侧，只该动线上行。
+        # rowcount 因此恒为 0 或 1，`== 0` 才是「这条记录没有线上行」的准确判据。
+        sql = f"UPDATE kg_node SET {', '.join(fields)} WHERE id = %(id)s AND NOT is_draft"
         with connect() as conn:
             cur = conn.execute(sql, params)
             if cur.rowcount == 0:
                 return None
             conn.commit()
     elif not has_links:
-        return get_node(node_id, scope="any")
+        return get_node(node_id, scope="online")
     else:
         # 仅改关联
-        if not get_node(node_id, scope="any"):
+        if not get_node(node_id, scope="online"):
             return None
 
-    node = get_node(node_id, scope="any")  # 归档也要能把这行返回给接口
+    # 发布侧读回**线上行**（scope=any 会因为 prefer_draft 拿到草稿行，
+    # 于是「发布成功」的响应里显示的是还没发布的草稿内容）。
+    # scope=online 不带状态过滤，所以归档后的那一行也照样返回得到。
+    node = get_node(node_id, scope="online")
+    if not node:
+        return None
+    edges: list[dict[str, Any]] = []
+    if has_links:
+        edges = apply_node_links(
+            node_id,
+            node.get("type") or "",
+            link_ids,
+            user_id=user_id,
+            user_name=user_name,
+            replace=True,
+            to_draft=False,
+        )
+    out = dict(node)
+    if has_links:
+        out["linked_edges"] = edges
+        out["link_ids"] = link_ids
+    return out
+
+
+def _patch_node_draft(
+    node_id: str,
+    body: dict[str, Any],
+    link_ids: dict[str, list[str]],
+    *,
+    has_links: bool,
+    user_id: str,
+    user_name: str,
+) -> dict[str, Any] | None:
+    """运营编辑：字段全落在草稿行上，线上行一个字节都不动。
+
+    请求里的 `status` 在这里是**发布意图**，写进 `target_status`；草稿行自己的 status
+    恒为 'draft'（方案 §0.2）。传 `status=draft` 表示撤销意图（发布时只更新内容、不改状态）。
+    所以「归档」= 一条 `target_status='archived'` 的草稿，前台在发布前照常展示旧内容。
+    """
+    with connect() as conn:
+        draft = ensure_node_draft(node_id, conn)
+        if draft is None:
+            return None                     # 线上行与草稿行都没有 → 404
+
+        fields: list[str] = []
+        params: dict[str, Any] = {
+            "id": node_id,
+            "updated_by": user_id,
+            "updated_by_name": user_name,
+        }
+        for key in (
+            "name",
+            "name_en",
+            "name_zh",
+            "description",
+            "source_url",
+            "confidence",
+            "region",
+            "owner",
+            "owner_name",
+        ):
+            if key in body and body[key] is not None:
+                fields.append(f"{key} = %({key})s")
+                params[key] = body[key]
+        if body.get("status") is not None:
+            fields.append("target_status = %(target_status)s")
+            params["target_status"] = _target_status_of(body["status"])
+        if "aliases" in body:
+            fields.append("aliases = %(aliases)s")
+            params["aliases"] = _json_or_none(body["aliases"])
+        if "attrs" in body:
+            ntype = draft.get("type") or body.get("type") or ""
+            region = body.get("region") or draft.get("region") or "CN"
+            # 编码唯一性仍在编辑期就查（只查线上行），让运营当场看到 409；
+            # 草稿之间不互斥，发布时再查一次
+            _assert_code_free(
+                body["attrs"], ntype, region, exclude_id=node_id, conn=conn
+            )
+            _assert_attrs_sane(body["attrs"], ntype)
+            fields.append("attrs = %(attrs)s")
+            params["attrs"] = _json_or_none(body["attrs"])
+
+        if fields:
+            fields.append("updated_by = %(updated_by)s")
+            fields.append("updated_by_name = %(updated_by_name)s")
+            conn.execute(
+                f"UPDATE kg_node SET {', '.join(fields)} "
+                f"WHERE id = %(id)s AND is_draft",
+                params,
+            )
+        conn.commit()
+
+    node = get_node(node_id, scope="any")   # prefer_draft → 读回刚写的草稿行
     if not node:
         return None
     edges: list[dict[str, Any]] = []
@@ -469,12 +840,23 @@ def create_edge(
     *,
     user_id: str,
     user_name: str,
+    to_draft: bool = True,
 ) -> dict[str, Any]:
     src, dst, rel = data["src_id"], data["dst_id"], data["rel_type"]
     eid = (data.get("id") or "").strip() or f"edge:{src}|{rel}|{dst}"
     status = data.get("status") or "draft"
+    target_status: str | None = None
+    if to_draft:
+        # 边的默认意图是「发布后就该生效」——运营在编辑页加一条关联，指望的是发布后它在图上
+        target_status = _target_status_of(status) or "published"
+        status = "draft"
     row = {
         "id": eid,
+        "is_draft": to_draft,
+        "target_status": target_status,
+        # 发布单元约定 unit_id = src_id：改岗位 A 的技能构成 = 改若干 A→skill 边，
+        # 发布 A 时这些边要一起生效（方案 §3）
+        "unit_id": src if to_draft else None,
         "src_id": src,
         "dst_id": dst,
         "rel_type": rel,
@@ -493,7 +875,9 @@ def create_edge(
         "updated_by_name": user_name,
     }
     with connect() as conn:
-        # endpoints must exist
+        # 端点必须存在。这里**不限 is_draft**：新建节点只有草稿行，
+        # 「建节点顺手挂边」是常规操作，限死线上行会让新建节点没法连边。
+        # 「发布时两端必须都有线上行」由发布事务把关（方案 §7 第 4 步）。
         for kid in (src, dst):
             if not conn.execute("SELECT 1 FROM kg_node WHERE id = %s", (kid,)).fetchone():
                 raise ValueError(f"node not found: {kid}")
@@ -502,43 +886,145 @@ def create_edge(
             INSERT INTO kg_edge (
               id, src_id, dst_id, rel_type, region, weight, evidence, attrs,
               source_system, source_id, source_url, license, fetched_at, confidence,
-              status, updated_by, updated_by_name
+              status, updated_by, updated_by_name, is_draft, target_status, unit_id
             ) VALUES (
               %(id)s, %(src_id)s, %(dst_id)s, %(rel_type)s, %(region)s, %(weight)s,
               %(evidence)s, %(attrs)s, %(source_system)s, %(source_id)s, %(source_url)s,
               %(license)s, %(fetched_at)s, %(confidence)s, %(status)s,
-              %(updated_by)s, %(updated_by_name)s
+              %(updated_by)s, %(updated_by_name)s, %(is_draft)s, %(target_status)s,
+              %(unit_id)s
             )
-            ON CONFLICT (id) DO UPDATE SET
+            ON CONFLICT (id, is_draft) DO UPDATE SET
               weight = EXCLUDED.weight,
               evidence = EXCLUDED.evidence,
               attrs = EXCLUDED.attrs,
               confidence = EXCLUDED.confidence,
               status = EXCLUDED.status,
+              target_status = EXCLUDED.target_status,
+              unit_id = EXCLUDED.unit_id,
               updated_by = EXCLUDED.updated_by,
               updated_by_name = EXCLUDED.updated_by_name
             """,
             row,
         )
         conn.commit()
-        er = conn.execute("SELECT * FROM kg_edge WHERE id = %s", (eid,)).fetchone()
+        er = conn.execute(
+            "SELECT * FROM kg_edge WHERE id = %s AND is_draft = %s", (eid, to_draft)
+        ).fetchone()
     assert er is not None
     return _rel_dict(er)
 
 
-def archive_node(node_id: str, *, user_id: str, user_name: str) -> dict[str, Any] | None:
-    return patch_node(
-        node_id, {"status": "archived"}, user_id=user_id, user_name=user_name
+def archive_node(
+    node_id: str, *, user_id: str, user_name: str
+) -> dict[str, Any] | None:
+    """归档节点（软删）—— **立即生效，不进草稿**。
+
+    2026-08-19 需求收窄：停用 / 启用 / 删除三个动作点了就生效，草稿只管
+    「内容长什么样」（节点属性、边、技能构成、技能自身属性）。
+    此前实现过「归档落草稿、发布才生效」，已按新范围撤销。
+    """
+    node = set_node_status_now(
+        node_id, "archived", user_id=user_id, user_name=user_name
     )
-
-
-def archive_edge(edge_id: str, *, user_id: str, user_name: str) -> bool:
+    if node is not None:
+        return node
+    # 没有线上行 = 这条记录从没发布过（只有草稿行）。**这时删除就是丢弃草稿** ——
+    # 不这么处理的话「新建一条、还没发布、想删掉」会 404，运营删不掉自己刚建的东西。
     with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM kg_node WHERE id = %s AND is_draft", (node_id,)
+        ).fetchone()
+        if not row:
+            return None
+        conn.execute(
+            "DELETE FROM kg_edge WHERE is_draft AND (unit_id = %s OR src_id = %s "
+            "OR dst_id = %s)",
+            (node_id, node_id, node_id),
+        )
+        conn.execute("DELETE FROM kg_node WHERE id = %s AND is_draft", (node_id,))
+        conn.commit()
+    out = _node_dict(dict(row), admin=True)
+    out["status"] = "archived"          # 对调用方而言这条记录已经没了
+    out["discarded_draft"] = True
+    return out
+
+
+def set_node_status_now(
+    node_id: str,
+    status: str,
+    *,
+    user_id: str,
+    user_name: str,
+) -> dict[str, Any] | None:
+    """停用 / 启用 / 归档：**直接改线上行**，并级联它两端的边。
+
+    级联必须一起做，而且也必须立即：只改节点不改边就会留下
+    「published 的边指向 disabled 的节点」，前台按节点过滤看不到、管理台看得到，
+    同一个岗位两个权重和（见 `cascade_edge_status_now`）。
+    """
+    node = patch_node(
+        node_id,
+        {"status": status},
+        user_id=user_id,
+        user_name=user_name,
+        to_draft=False,
+    )
+    if node and status in ("archived", "disabled", "published"):
+        cascaded = cascade_edge_status_now(
+            node_id, status, user_id=user_id, user_name=user_name
+        )
+        if cascaded:
+            node = dict(node)
+            node["cascaded_edges"] = len(cascaded)
+    return node
+
+
+def archive_edge(
+    edge_id: str, *, user_id: str, user_name: str, to_draft: bool = True
+) -> bool:
+    """归档一条边。草稿态下写的是**墓碑草稿行**，线上那条边发布后才归档。
+
+    三种情形：
+    - 已有草稿行 → 把它标成待归档（`target_status='archived'`）
+    - 只有草稿行、没有线上行（新建后还没发布的边）→ 直接删草稿行，等于「撤销新建」，
+      不留墓碑：一条从未发布的边没有「归档」可言，留着只会在待发布清单里当噪音
+    - 只有线上行 → 复制成草稿行并标待归档
+    """
+    if not to_draft:
+        with connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE kg_edge SET status = 'archived',
+                  updated_by = %s, updated_by_name = %s
+                WHERE id = %s AND NOT is_draft
+                """,
+                (user_id, user_name, edge_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, is_draft FROM kg_edge WHERE id = %s", (edge_id,)
+        ).fetchall()
+        has_draft = any(r["is_draft"] for r in rows)
+        has_online = any(not r["is_draft"] for r in rows)
+        if not rows:
+            return False
+        if has_draft and not has_online:
+            conn.execute(
+                "DELETE FROM kg_edge WHERE id = %s AND is_draft", (edge_id,)
+            )
+            conn.commit()
+            return True
+        if not has_draft:
+            conn.execute(_COPY_EDGE_TO_DRAFT, ("archived", edge_id))
         cur = conn.execute(
             """
-            UPDATE kg_edge SET status = 'archived',
+            UPDATE kg_edge SET target_status = 'archived',
               updated_by = %s, updated_by_name = %s
-            WHERE id = %s
+            WHERE id = %s AND is_draft
             """,
             (user_id, user_name, edge_id),
         )

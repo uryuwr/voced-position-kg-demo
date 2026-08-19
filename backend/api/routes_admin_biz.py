@@ -11,7 +11,11 @@ from backend.api.schemas_admin import (
     AiGatewayOut,
     ChangeApprovedOut,
     ChangeRejectedOut,
+    DraftDiscardedOut,
+    DraftListOut,
     EdgeReviewListOut,
+    PublishBatchOut,
+    PublishNodeOut,
     PrereqDeletedOut,
     PrereqOut,
     PublishDemoteOut,
@@ -336,6 +340,195 @@ def admin_publish_validate_get(
         region=region,
         action=action,
     )
+
+
+# ── 草稿态：待发布清单 / 发布 / 丢弃 ─────────────────────────
+
+
+@router.get(
+    "/drafts",
+    tags=["管理台 · 草稿与发布"],
+    summary="待发布清单（草稿工作台）",
+    description=(
+        "列出所有**未发布的编辑**，一行一个发布单元（节点草稿 + 挂在它上面的草稿边）。\n\n"
+        "管理台的任何编辑动作都只写草稿，前台看到的仍是已发布内容；"
+        "要让前台变，必须来这里发布。\n\n"
+        "`has_node_draft=false` 的行是「只改了关联/技能构成」——节点本身没变，"
+        "但那批边同样要发布才生效。`stale=true` 表示你编辑期间别人发布过，"
+        "直接发布会返回 409。"
+    ),
+    response_model=DraftListOut,
+)
+def admin_list_drafts(
+    type: str | None = Query(
+        None,
+        min_length=1,
+        max_length=32,
+        description="按维度过滤：industry|major|occupation|skill_level；空=全部",
+    ),
+    region: str | None = Query(
+        None, min_length=1, max_length=16, description="区域，默认 CN；all=不限"
+    ),
+    q: str | None = Query(
+        None, min_length=1, max_length=100, description="名称或 id 关键字"
+    ),
+    page: int = Query(1, ge=1, le=10000, description="页码"),
+    page_size: int = Query(20, ge=1, le=200, description="每页条数"),
+    user: AuthUser = Depends(require_auth_user),
+) -> DraftListOut:
+    _ = user
+    from backend.kg.pg_store.draft_publish import list_drafts
+
+    return DraftListOut.model_validate(
+        list_drafts(
+            node_type=type, region=region, q=q, page=page, page_size=page_size
+        )
+    )
+
+
+def _publish_http_error(e: Exception) -> HTTPException:
+    """发布失败 → HTTP。**409 只留给并发与编码冲突**，门禁不过是 400。
+
+    分开是因为前端要给的提示不一样：409 让运营刷新重编辑，400 让他改数据。
+    """
+    from backend.kg.pg_store.draft_publish import (
+        CodeTaken,
+        DraftConflict,
+        DraftNotFound,
+        MissingEndpoints,
+    )
+    from backend.kg.pg_store.publish_rules import PublishGateError
+
+    if isinstance(e, DraftNotFound):
+        return HTTPException(status_code=404, detail="没有待发布的草稿")
+    if isinstance(e, DraftConflict):
+        return HTTPException(
+            status_code=409,
+            detail={
+                "error": "stale_draft",
+                "message": str(e),
+                "base_version": e.base_version,
+                "published_version": e.cur_version,
+            },
+        )
+    if isinstance(e, CodeTaken):
+        return HTTPException(
+            status_code=409,
+            detail={
+                "error": "code_conflict",
+                "message": str(e),
+                "field": "attrs.code",
+                "code": e.code,
+                "existing": e.existing,
+            },
+        )
+    if isinstance(e, MissingEndpoints):
+        return HTTPException(
+            status_code=400,
+            detail={
+                "error": "missing_endpoints",
+                "message": str(e),
+                "missing": e.missing,
+            },
+        )
+    if isinstance(e, PublishGateError):
+        return HTTPException(
+            status_code=400,
+            detail={
+                "error": "gate_failed",
+                "message": str(e),
+                "violations": e.violations,
+            },
+        )
+    return HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/publish/node",
+    tags=["管理台 · 草稿与发布"],
+    summary="发布一个单元（草稿 → 线上）",
+    description=(
+        "把这个节点的草稿内容和它的草稿边一起落到线上行，**一个事务，全成或全不成**。\n\n"
+        "会依次校验：BR 门禁（发布后状态为 published 时）、并发（草稿基于的版本还是不是"
+        "线上版本，不是则 409）、业务编码唯一性（409）、草稿边两端是否都已发布（400）。\n\n"
+        "发布成功后 `version+1`，草稿行随即消失（新建那种是原地转正）。"
+    ),
+    response_model=PublishNodeOut,
+)
+def admin_publish_node(
+    node_id: str = Query(
+        ..., min_length=1, max_length=300, description="发布单元 id（节点 id）"
+    ),
+    user: AuthUser = Depends(require_auth_user),
+) -> PublishNodeOut:
+    from backend.kg.pg_store.draft_publish import publish_node
+
+    try:
+        return PublishNodeOut.model_validate(
+            publish_node(node_id, user_id=user.user_id, user_name=user.user_name)
+        )
+    except Exception as e:  # noqa: BLE001 —— 分类映射到 404/409/400
+        raise _publish_http_error(e) from e
+
+
+class PublishBatchBody(BaseModel):
+    """批量发布。逐个独立事务，一个门禁不过不影响其余。"""
+
+    node_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="要发布的单元 id 列表（自动去重）；上限 200，再多分批",
+    )
+
+
+@router.post(
+    "/publish/batch",
+    tags=["管理台 · 草稿与发布"],
+    summary="批量发布",
+    description=(
+        "逐个发布，**每个单元一个独立事务**：一个门禁不过不该拖垮其余，"
+        "所以本接口整体返回 200，成败看 `items[].ok` 与 `items[].code`。\n\n"
+        "有依赖关系时要自己排顺序（先发布被引用的节点），"
+        "否则被引用方未发布的那一项会返回 `missing_endpoints`。"
+    ),
+    response_model=PublishBatchOut,
+)
+def admin_publish_batch(
+    body: PublishBatchBody,
+    user: AuthUser = Depends(require_auth_user),
+) -> PublishBatchOut:
+    from backend.kg.pg_store.draft_publish import publish_batch
+
+    return PublishBatchOut.model_validate(
+        publish_batch(body.node_ids, user_id=user.user_id, user_name=user.user_name)
+    )
+
+
+@router.delete(
+    "/draft",
+    tags=["管理台 · 草稿与发布"],
+    summary="丢弃草稿（放弃未发布的修改）",
+    description=(
+        "删掉这个单元的节点草稿行与草稿边，线上行不动 —— 前台自始至终没变过。\n\n"
+        "**没有留档，丢了找不回来**（多版本是 P4），前端要二次确认。"
+    ),
+    response_model=DraftDiscardedOut,
+)
+def admin_discard_draft(
+    node_id: str = Query(
+        ..., min_length=1, max_length=300, description="发布单元 id（节点 id）"
+    ),
+    user: AuthUser = Depends(require_auth_user),
+) -> DraftDiscardedOut:
+    from backend.kg.pg_store.draft_publish import DraftNotFound, discard_draft
+
+    try:
+        return DraftDiscardedOut.model_validate(
+            discard_draft(node_id, user_id=user.user_id, user_name=user.user_name)
+        )
+    except DraftNotFound as e:
+        raise HTTPException(status_code=404, detail="没有待发布的草稿") from e
 
 
 class PublishDemoteBody(BaseModel):

@@ -247,10 +247,20 @@ class TestGetNodeScope:
             query.get_node("x", scope=scope, conn=c)
             assert node_not_archived() in c.sql, f"scope={scope!r} 应回落到管理台口径"
 
-    def test_any口径不过滤(self):
+    def test_any口径不过滤状态但仍要定死取哪一行(self):
+        """`any` 的含义是「不按 status 过滤」，不是「什么都不加」。
+
+        草稿态之后同一 id 在库里最多有两行（线上行 + 草稿行），裸 `WHERE id=%s`
+        配 `fetchone()` 会**随机**拿到其中一行 —— `any` 的用途正是「刚写完读回来」，
+        随机取行等于有一半概率读到另一个版本。所以状态谓词一个都不能有，
+        但必须带 `prefer_draft`（草稿优先）把取哪一行定下来。
+        """
+        from backend.kg.pg_store.config import prefer_draft
+
         c = RecordingConn()
         query.get_node("x", scope="any", conn=c)
-        assert c.sql.strip() == "SELECT * FROM kg_node WHERE id = %s"
+        assert "status" not in c.sql, "any 不该有任何状态谓词"
+        assert prefer_draft() in c.sql, "两行存储下必须定死取哪一行"
 
     def test_scope取值大小写与空白不敏感(self):
         from backend.kg.pg_store.config import node_published

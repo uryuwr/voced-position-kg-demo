@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import use_conn
-from backend.kg.pg_store.config import edge_published
+from backend.kg.pg_store.config import edge_published, online_only
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
 # 关联计数不能把归档/草稿边算进去，否则前端显示的关联数虚高
@@ -18,6 +18,12 @@ _PUB_O = "COALESCE(o.status, 'published') = 'published'"
 _PUB_M = "COALESCE(m.status, 'published') = 'published'"
 _PUB_S = "COALESCE(s.status, 'published') = 'published'"
 _PUB_I = "COALESCE(i.status, 'published') = 'published'"
+# 管理台分支（`NOT IN ('archived','disabled')`）会同时命中草稿行 —— 一条边 JOIN 出两行，
+# 关联计数翻倍，而 `industries_for_occupations` 还会把**草稿里的新名字**当成行业名返回，
+# 那是货真价实的前台泄漏（`/v1/node?include_counts=1` 就走这条路）。
+# 计数与关联名看的是**线上现状**，所以钉线上行，不用 prefer_draft。
+_PD_I = online_only("i")
+_PD_M = online_only("m")
 
 
 def _empty_counts() -> dict[str, Any]:
@@ -144,21 +150,29 @@ def counts_for_majors(
 
 
 def counts_for_occupations(
-    ids: list[str], *, conn: object | None = None
+    ids: list[str], *, conn: object | None = None, scope: str = "public"
 ) -> dict[str, dict[str, int]]:
-    """occupation: skill(distinct key), major(逆 prepares_for), industry 数。"""
+    """occupation: skill(distinct key), major(逆 prepares_for), industry 数。
+
+    `scope` 决定技能数与权重和的口径，**与 `entity_skill_composition` 同一份谓词**
+    （`skill_aggregate._composition_pred`）。不共用的后果实测过：管理台列表说 7 项、
+    点进构成页 8 项 —— 同一个 scope 下两个数字。
+    """
     out = {i: _empty_counts() for i in ids}
     if not ids:
         return out
+    from backend.kg.pg_store.skill_aggregate import _composition_pred
+
+    e_pred, s_pred = _composition_pred(scope)
+    # 谓词里用的别名是 e / s，这里的技能节点别名历史上叫 n，统一改名以复用同一份谓词
     with use_conn(conn) as conn:
         rows = conn.execute(
             f"""
-            SELECT e.src_id AS id, count(DISTINCT ({SKILL_KEY_SQL})) AS c
+            SELECT e.src_id AS id, count(DISTINCT ({SKILL_KEY_SQL.replace("n.", "s.")})) AS c
             FROM kg_edge e
-            JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level' AND {_PUB_N}
-            WHERE e.rel_type = 'requires' AND {EP_E}
+            JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level' AND {s_pred}
+            WHERE e.rel_type = 'requires' AND {e_pred}
               AND e.src_id = ANY(%s)
-              AND {_PUB_E}
             GROUP BY e.src_id
             """,
             (ids,),
@@ -172,8 +186,8 @@ def counts_for_occupations(
             f"""
             SELECT e.src_id AS id, COALESCE(sum(e.weight), 0) AS w
             FROM kg_edge e
-            JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level' AND {_PUB_N}
-            WHERE e.rel_type = 'requires' AND {EP_E}
+            JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level' AND {s_pred}
+            WHERE e.rel_type = 'requires' AND {e_pred}
               AND e.src_id = ANY(%s)
             GROUP BY e.src_id
             """,
@@ -205,7 +219,7 @@ def counts_for_occupations(
             SELECT occ_id AS id, count(DISTINCT industry_id) AS c FROM (
               SELECT e.src_id AS occ_id, e.dst_id AS industry_id
               FROM kg_edge e
-              JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry'
+              JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry' AND {_PD_I}
                 AND COALESCE(i.status, 'published') NOT IN ('archived', 'disabled')
               WHERE e.rel_type = 'belongs_to' AND {EP_E}
                 AND e.src_id = ANY(%s)
@@ -213,11 +227,11 @@ def counts_for_occupations(
               UNION
               SELECT pf.dst_id AS occ_id, e.dst_id AS industry_id
               FROM kg_edge pf
-              JOIN kg_node m ON m.id = pf.src_id AND m.type = 'major'
+              JOIN kg_node m ON m.id = pf.src_id AND m.type = 'major' AND {_PD_M}
                 AND COALESCE(m.status, 'published') NOT IN ('archived', 'disabled')
               JOIN kg_edge e ON e.src_id = m.id AND e.rel_type = 'belongs_to' AND {EP_E}
                 AND COALESCE(e.status, 'published') NOT IN ('archived')
-              JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry'
+              JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry' AND {_PD_I}
                 AND COALESCE(i.status, 'published') NOT IN ('archived', 'disabled')
               WHERE pf.rel_type = 'prepares_for' AND {EP_PF}
                 AND pf.dst_id = ANY(%s)
@@ -267,6 +281,7 @@ def industries_for_occupations(
             SELECT e.src_id AS occ_id, i.id, i.name
             FROM kg_edge e
             JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry' AND {i_ok}
+                 AND {_PD_I}
             WHERE e.rel_type = 'belongs_to' AND {EP_E}
               AND e.src_id = ANY(%s)
               AND {e_ok}
@@ -280,8 +295,10 @@ def industries_for_occupations(
             SELECT pf.dst_id AS occ_id, i.id, i.name
             FROM kg_edge pf
             JOIN kg_node m ON m.id = pf.src_id AND m.type = 'major' AND {m_ok}
+                 AND {_PD_M}
             JOIN kg_edge e ON e.src_id = m.id AND e.rel_type = 'belongs_to' AND {EP_E} AND {e_ok}
             JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry' AND {i_ok}
+                 AND {_PD_I}
             WHERE pf.rel_type = 'prepares_for' AND {EP_PF}
               AND pf.dst_id = ANY(%s)
               AND COALESCE(pf.status, 'published') NOT IN ('archived')
@@ -311,8 +328,12 @@ def attach_counts_by_type(
     *,
     node_type: str | None = None,
     conn: object | None = None,
+    scope: str = "public",
 ) -> list[dict[str, Any]]:
-    """就地/拷贝附加 counts（及岗位 industries）。"""
+    """就地/拷贝附加 counts（及岗位 industries）。
+
+    `scope=manage` 时技能数/权重和按草稿视图算，与构成页、详情页同源。
+    """
     if not nodes:
         return nodes
     ntype = node_type or nodes[0].get("type")
@@ -324,7 +345,7 @@ def attach_counts_by_type(
     elif ntype == "major":
         cmap = counts_for_majors(ids, conn=conn)
     elif ntype == "occupation":
-        cmap = counts_for_occupations(ids, conn=conn)
+        cmap = counts_for_occupations(ids, conn=conn, scope=scope)
         ind_map = industries_for_occupations(ids, conn=conn)
     else:
         for n in nodes:

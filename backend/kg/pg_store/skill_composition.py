@@ -19,11 +19,32 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import connect
-from backend.kg.pg_store.config import attrs_level_int, edge_published
+from backend.kg.pg_store.config import (
+    attrs_level_int,
+    edge_not_archived,
+    edge_published,
+    prefer_draft,
+    prefer_draft_edge,
+)
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
 _EP = edge_published("e")
 _LEVEL_N = attrs_level_int("n")
+# 管理台口径（`<> 'archived'`）对草稿行同样成立 —— 每处都要跟 prefer_draft 去重，
+# 否则技能下拉、档位明细、构成列表里同一条数据出现两次（方案 §6.2）。
+_PD = prefer_draft()
+_PD_N = prefer_draft("n")
+
+# 技能构成是**边**不是节点字段，所以它的草稿全是草稿边，unit_id = 本节点 id（方案 §3）：
+# 「改岗位 A 的技能构成」= 改若干 A -requires-> skill 边，发布 A 时一起生效。
+#
+# 构成页要给运营看「改完之后长什么样」，所以读的是**草稿视图**：
+#   管理台口径（含 draft）+ 草稿优先 + 墓碑算已删。
+# 用 edge_published 是错的 —— 草稿边的 status 恒为 'draft'，运营会看不到自己刚改的东西。
+_EDGE_DRAFT_VIEW = (
+    f"{edge_not_archived('e')} AND {prefer_draft_edge('e')} "
+    f"AND COALESCE(e.target_status, '') <> 'archived'"
+)
 
 # 节点类型 → (关系, 该类型是否带权重)
 _REL = {"major": ("covers", False), "occupation": ("requires", True)}
@@ -54,11 +75,18 @@ def _rel_for(node_type: str) -> tuple[str, bool]:
     return _REL[node_type]
 
 
+def _sk_from(node: dict[str, Any]) -> str:
+    """技能节点 → skill_key。口径与 SKILL_KEY_SQL 同源（skill_aggregate 里那一份）。"""
+    from backend.kg.pg_store.skill_aggregate import skill_key_from_node
+
+    return skill_key_from_node(node)
+
+
 def _node(conn, node_id: str) -> dict[str, Any]:
     row = conn.execute(
-        "SELECT id, type, name, region, status, level, attrs, description, "
-        "version, owner_name FROM kg_node WHERE id=%s "
-        "AND COALESCE(status,'published') <> 'archived'",
+        f"SELECT id, type, name, region, status, level, attrs, description, "
+        f"version, owner_name, is_draft, target_status FROM kg_node WHERE id=%s "
+        f"AND COALESCE(status,'published') <> 'archived' AND {_PD}",
         (node_id,),
     ).fetchone()
     if not row:
@@ -82,7 +110,7 @@ def _header(conn, node: dict[str, Any]) -> dict[str, Any]:
 
     industries = conn.execute(
         f"""SELECT n.id, n.name FROM kg_edge e
-            JOIN kg_node n ON n.id=e.dst_id AND n.type='industry'
+            JOIN kg_node n ON n.id=e.dst_id AND n.type='industry' AND {_PD_N}
             WHERE e.src_id=%s AND e.rel_type='belongs_to' AND {_EP}""",
         (nid,),
     ).fetchall()
@@ -90,7 +118,7 @@ def _header(conn, node: dict[str, Any]) -> dict[str, Any]:
     if ntype == "occupation":
         majors = conn.execute(
             f"""SELECT n.id, n.name FROM kg_edge e
-                JOIN kg_node n ON n.id=e.src_id AND n.type='major'
+                JOIN kg_node n ON n.id=e.src_id AND n.type='major' AND {_PD_N}
                 WHERE e.dst_id=%s AND e.rel_type='prepares_for' AND {_EP}""",
             (nid,),
         ).fetchall()
@@ -98,7 +126,7 @@ def _header(conn, node: dict[str, Any]) -> dict[str, Any]:
         if not industries and majors:
             industries = conn.execute(
                 f"""SELECT DISTINCT n.id, n.name FROM kg_edge e
-                    JOIN kg_node n ON n.id=e.dst_id AND n.type='industry'
+                    JOIN kg_node n ON n.id=e.dst_id AND n.type='industry' AND {_PD_N}
                     WHERE e.src_id = ANY(%s) AND e.rel_type='belongs_to' AND {_EP}""",
                 ([m["id"] for m in majors],),
             ).fetchall()
@@ -139,7 +167,7 @@ def _levels_of(conn, keys: list[str], region: str = "CN") -> dict[str, list[dict
                n.attrs, n.description, n.id
         FROM kg_node n
         WHERE n.type='skill_level' AND n.region=%s AND ({SKILL_KEY_SQL}) = ANY(%s)
-          AND COALESCE(n.status,'published') <> 'archived'
+          AND COALESCE(n.status,'published') <> 'archived' AND {_PD_N}
         """,
         (region, keys),
     ).fetchall()
@@ -195,7 +223,7 @@ def list_skill_options(
                    min(n.category) AS category
             FROM kg_node n
             WHERE n.type='skill_level' AND n.region=%s
-              AND COALESCE(n.status,'published') <> 'archived'
+              AND COALESCE(n.status,'published') <> 'archived' AND {_PD_N}
               AND (%s = '%%%%' OR ({SKILL_KEY_SQL}) ILIKE %s)
             GROUP BY 1
             ORDER BY 1
@@ -228,18 +256,28 @@ def get_composition(node_id: str) -> dict[str, Any]:
     with connect() as conn:
         node = _node(conn, node_id)
         rel, weighted = _rel_for(node["type"])
-        rows = conn.execute(
-            f"""
-            SELECT e.id AS edge_id, e.weight, e.dst_id,
-                   ({SKILL_KEY_SQL}) AS skill_key,
-                   n.category, n.attrs, n.name AS skill_node_name
-            FROM kg_edge e
-            JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level'
-            WHERE e.src_id=%s AND e.rel_type=%s AND {_EP}
-            ORDER BY e.weight DESC NULLS LAST, 4
-            """,
-            (node_id, rel),
-        ).fetchall()
+        # 构成页与管理台详情、列表计数必须给同一个答案 → 走唯一实现（scope=manage）。
+        # 这里要的是**逐边**明细（每行带 edge_id 与选中档），所以取 composition_rows
+        # 而不是 bundle 形态。
+        from backend.kg.pg_store.skill_aggregate import composition_rows
+
+        raw = composition_rows(node_id, scope="manage", rel_type=rel, conn=conn)
+        rows = [
+            {
+                "edge_id": (r.get("edge") or {}).get("id"),
+                "weight": (r.get("edge") or {}).get("weight"),
+                "dst_id": r.get("id"),
+                "skill_key": _sk_from(r),
+                "category": r.get("category"),
+                "attrs": r.get("attrs"),
+                "skill_node_name": r.get("name"),
+                # 指向不可见（停用/归档）技能节点的异常边：标出来给运营看，
+                # 前台看不到这条技能，管理台看得到 —— 不标就永远没人发现
+                "dangling": bool(r.get("dangling")),
+                "endpoint_status": r.get("endpoint_status"),
+            }
+            for r in raw
+        ]
 
         keys = [r["skill_key"] for r in rows]
         # 档位明细（含每档要求描述），供前端选档时展示
@@ -260,7 +298,8 @@ def get_composition(node_id: str) -> dict[str, Any]:
     import json as _json
 
     for r in rows:
-        w = float(r["weight"] or 0)
+        raw_w = r["weight"]
+        w = float(raw_w or 0)         # Σ 里 NULL 当 0
         wsum += w
         try:
             _a = _json.loads(r["attrs"]) if isinstance(r["attrs"], str) else (r["attrs"] or {})
@@ -282,8 +321,12 @@ def get_composition(node_id: str) -> dict[str, Any]:
                 "levels": level_detail.get(r["skill_key"], []),
                 # 用户选中的档（边指向哪个等级节点）
                 "selected_level": sel,
-                "weight": w if weighted else None,
+                # 没配权重就是 None，不要显示成 0 —— 详情页（bundle 侧）给的是 None，
+                # 这里给 0 的话「四处一致」就差在这一个字段上
+                "weight": (w if raw_w is not None else None) if weighted else None,
                 "weight_pct": round(w * 100) if weighted and w else None,
+                "dangling": bool(r.get("dangling")),
+                "endpoint_status": r.get("endpoint_status"),
             }
         )
     with connect() as conn:
@@ -345,87 +388,125 @@ def set_skill(
     only_if_absent=True 用于「添加」入口：该技能已在构成中就报错，而不是静默改档。
     改档入口（点档位按钮）保持默认 False。
     """
-    from backend.kg.pg_store.write import create_edge
+    from backend.kg.pg_store.write import archive_edge, create_edge, patch_edge_draft
 
     with connect() as conn:
         node = _node(conn, node_id)
         rel, weighted = _rel_for(node["type"])
-        if only_if_absent:
-            cur = conn.execute(
-                f"""
-                SELECT {_LEVEL_N} AS level
-                FROM kg_edge e
-                JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level'
-                WHERE e.src_id=%s AND e.rel_type=%s AND ({SKILL_KEY_SQL})=%s AND {_EP}
-                ORDER BY 1 DESC NULLS LAST
-                LIMIT 1
-                """,
-                (node_id, rel, skill_key),
-            ).fetchone()
-            if cur:
-                lv = cur["level"]
-                raise SkillExistsError(
-                    f"技能「{skill_key}」已在构成中"
-                    + (f"（当前 L{lv}）" if lv else "")
-                    + "；一个技能只保留一个要求档，如需调整请直接点档位按钮",
-                    skill_key=skill_key,
-                    current_level=lv,
-                )
-        target = _find_level_node(conn, skill_key, level, node["region"] or "CN")
-        # 删掉该 skill_key 下的旧边（可能指向别的等级节点）
-        conn.execute(
-            f"""
-            DELETE FROM kg_edge e
-            WHERE e.src_id=%s AND e.rel_type=%s AND e.dst_id IN (
-              SELECT n.id FROM kg_node n
-              WHERE n.type='skill_level' AND ({SKILL_KEY_SQL})=%s
+        cur_edges = _edges_of_skill(conn, node_id, rel, skill_key)
+        if only_if_absent and cur_edges:
+            lv = cur_edges[0]["level"]
+            raise SkillExistsError(
+                f"技能「{skill_key}」已在构成中"
+                + (f"（当前 L{lv}）" if lv else "")
+                + "；一个技能只保留一个要求档，如需调整请直接点档位按钮",
+                skill_key=skill_key,
+                current_level=lv,
             )
-            """,
-            (node_id, rel, skill_key),
-        )
-        conn.commit()
+        if level is None and cur_edges:
+            # **只改权重时不许动档位。** 管理台的权重输入框失焦后发的是
+            # `PUT {skill_key, weight}`，不带 level；而 `_find_level_node(level=None)`
+            # 的语义是「取该技能最高档」——于是「把权重从 0.2 改成 0.25」会顺手把
+            # 要求档从 L3 跳到 L5。UI 上一点就中，接口单测看不出来（单测都会传 level）。
+            # 已在构成里的技能，level 缺省就是「保持现状」。
+            target = {"id": cur_edges[0]["dst_id"]}
+        else:
+            target = _find_level_node(conn, skill_key, level, node["region"] or "CN")
 
-    create_edge(
-        {
-            "src_id": node_id,
-            "dst_id": target["id"],
-            "rel_type": rel,
-            "region": node["region"] or "CN",
-            # 专业侧不带权重（需求：专业技能不做归一化）
-            "weight": (float(weight) if weight is not None else None) if weighted else None,
-            "status": "published",
-            "confidence": "manual_seed",
-            "source_system": "MANUAL",
-            "source_url": "manual://admin-composition",
-            "evidence": f"管理端技能构成编辑：{node['name']} → {skill_key}",
-        },
-        user_id=user_id,
-        user_name=user_name,
+    if weighted:
+        if weight is not None:
+            w = float(weight)
+        else:
+            # **改档不该丢权重**：管理台点 L4 只发 {skill_key, level}，不带 weight。
+            # 以前这里直接落 None，于是「改一下档位」把该技能的权重清成空，
+            # Σweight 从 1.00 掉到 0.80，BR-03 当场不过 —— UI 上一点就能撞到。
+            w = next(
+                (
+                    float(e["weight"])
+                    for e in cur_edges
+                    if e.get("weight") is not None
+                ),
+                None,
+            )
+    else:
+        w = None                      # 专业 covers 不带权重
+    keep: dict[str, Any] | None = next(
+        (e for e in cur_edges if e["dst_id"] == target["id"]), None
     )
+    # 改档 = 换边的端点：旧档那条建墓碑草稿（线上行留着，发布时才归档），
+    # 新档那条建草稿边。**不能像以前那样裸 DELETE 线上边** —— 那会让「删」立刻
+    # 对前台生效、「加」却要等发布，一个动作一半生效。
+    for e in cur_edges:
+        if keep is not None and e["edge_id"] == keep["edge_id"]:
+            continue
+        archive_edge(e["edge_id"], user_id=user_id, user_name=user_name)
+    if keep is not None:
+        # 档位没变、只调权重：原地改草稿行的 weight
+        patch_edge_draft(
+            keep["edge_id"],
+            {"weight": w} if weighted else {},
+            user_id=user_id,
+            user_name=user_name,
+        )
+    else:
+        create_edge(
+            {
+                "src_id": node_id,
+                "dst_id": target["id"],
+                "rel_type": rel,
+                "region": node["region"] or "CN",
+                # 专业侧不带权重（需求：专业技能不做归一化）
+                "weight": w,
+                # 发布后这条边应当是 published；草稿行自己的 status 恒为 draft
+                "status": "published",
+                "confidence": "manual_seed",
+                "source_system": "MANUAL",
+                "source_url": "manual://admin-composition",
+                "evidence": f"管理端技能构成编辑：{node['name']} → {skill_key}",
+            },
+            user_id=user_id,
+            user_name=user_name,
+        )
     return get_composition(node_id)
+
+
+def _edges_of_skill(
+    conn, node_id: str, rel: str, skill_key: str
+) -> list[dict[str, Any]]:
+    """本节点当前**有效**指向该 skill_key 的边（草稿优先、墓碑算已删），按档降序。"""
+    rows = conn.execute(
+        f"""
+        SELECT e.id AS edge_id, e.dst_id, e.weight, e.is_draft,
+               {_LEVEL_N} AS level
+        FROM kg_edge e
+        JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level' AND {_PD_N}
+        WHERE e.src_id=%s AND e.rel_type=%s AND ({SKILL_KEY_SQL})=%s
+          AND {_EDGE_DRAFT_VIEW}
+        ORDER BY 5 DESC NULLS LAST
+        """,
+        (node_id, rel, skill_key),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def remove_skill(
     node_id: str, skill_key: str, *, user_id: str, user_name: str
 ) -> dict[str, Any]:
-    """移除一项技能（删掉该 skill_key 的所有边，不论指向哪个等级节点）。"""
-    _ = (user_id, user_name)
+    """移除一项技能：该 skill_key 的每条边都建一条待归档的草稿（墓碑）。
+
+    从前这里是**裸 DELETE 线上边**，绕过了 write.py，所以「移除技能」当场对前台生效。
+    现在线上行留着不动，发布该岗位/专业时才归档 —— 这是本需求最初报的那个 bug。
+    """
+    from backend.kg.pg_store.write import archive_edge
+
     with connect() as conn:
         node = _node(conn, node_id)
         rel, _w = _rel_for(node["type"])
-        n = conn.execute(
-            f"""
-            DELETE FROM kg_edge e
-            WHERE e.src_id=%s AND e.rel_type=%s AND e.dst_id IN (
-              SELECT k.id FROM kg_node k
-              WHERE k.type='skill_level' AND ({SKILL_KEY_SQL.replace('n.', 'k.')})=%s
-            )
-            """,
-            (node_id, rel, skill_key),
-        ).rowcount
-        conn.commit()
-    if not n:
+        cur_edges = _edges_of_skill(conn, node_id, rel, skill_key)
+    if not cur_edges:
         raise CompositionError(f"该节点下未找到技能：{skill_key}")
+    for e in cur_edges:
+        archive_edge(e["edge_id"], user_id=user_id, user_name=user_name)
     return get_composition(node_id)
 
 
@@ -435,15 +516,17 @@ def normalize_weights(node_id: str, *, user_id: str, user_name: str) -> dict[str
     等比缩放而非平均分配：保留运营已设定的相对重要性。
     末位吸收舍入误差，确保和精确为 1.00。
     """
-    _ = (user_id, user_name)
+    from backend.kg.pg_store.write import patch_edge_draft
+
     with connect() as conn:
         node = _node(conn, node_id)
         rel, weighted = _rel_for(node["type"])
         if not weighted:
             raise CompositionError("专业技能不带权重，无需归一化")
+        # 按**草稿视图**算：运营刚加/刚删的技能要参与归一，否则归完还是不等于 1
         rows = conn.execute(
             f"""SELECT e.id, e.weight FROM kg_edge e
-                WHERE e.src_id=%s AND e.rel_type=%s AND {_EP}
+                WHERE e.src_id=%s AND e.rel_type=%s AND {_EDGE_DRAFT_VIEW}
                 ORDER BY e.weight DESC NULLS LAST, e.id""",
             (node_id, rel),
         ).fetchall()
@@ -460,12 +543,11 @@ def normalize_weights(node_id: str, *, user_id: str, user_name: str) -> dict[str
             new = [round(float(r["weight"] or 0) / total, 4) for r in rows]
         new[-1] = round(1.0 - sum(new[:-1]), 4)   # 末位吸收舍入误差
 
-        for r, w in zip(rows, new):
-            conn.execute(
-                "UPDATE kg_edge SET weight=%s, updated_by=%s, updated_by_name=%s WHERE id=%s",
-                (w, user_id, user_name, r["id"]),
-            )
-        conn.commit()
+    # 归一化也是编辑动作：逐条落到草稿行，线上权重发布后才变
+    for r, w in zip(rows, new):
+        patch_edge_draft(
+            r["id"], {"weight": w}, user_id=user_id, user_name=user_name
+        )
     out = get_composition(node_id)
     out["normalized_from"] = round(total, 4)
     return out
