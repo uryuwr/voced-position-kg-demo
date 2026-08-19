@@ -120,7 +120,7 @@ PROMPT_ADVANCE = """下面是同一领域内的招聘岗位及其职级判定。
 
 岗位列表（格式：岗位名 | 岗位族 | 职级1-5）：
 {jobs}
-
+{cross}
 做法：对列表里的**每一个**岗位，都想一遍「干这行的人往上走，能走到列表中的哪些岗位」，
 尽量覆盖下面三类方向，有几条写几条（某类没有就跳过，不要硬凑）：
   A 本方向纵深 —— 同领域做深做精（Java → 架构师）
@@ -128,11 +128,14 @@ PROMPT_ADVANCE = """下面是同一领域内的招聘岗位及其职级判定。
   C 跨方向转型 —— 相邻领域的向上流动（测试工程师 → 测试开发）
 
 规则：
-1. from 与 to 都必须是上面列表里**原样出现**的岗位名，不要自造
+1. from 与 to 都必须是上面**两段列表**里原样出现的岗位名，不要自造；
+   from 只能取自第一段（本领域岗位）
 2. from 的职级必须**严格低于** to 的职级；职级相同的一律不要输出
 3. 平行的技术方向**不是**晋升（Java → PHP 不算，Java → Python 不算）
 4. 同一个岗位通常有 2-4 条向上路径，不要只给一条
-5. reason 只写最终结论，**不要写推理过程**，一句话即可
+5. 第二段那些公司高层岗位，只有当它确实是该岗位的自然上升出口时才连
+   （如 大客户销售 → 区域负责人）；基层岗位不要直接连到 CEO
+6. reason 只写最终结论，**不要写推理过程**，一句话即可
 
 只输出 JSON，不要任何解释文字：
 {{"paths": [{{"from": "岗位名", "to": "岗位名", "reason": "一句话依据"}}]}}"""
@@ -559,10 +562,31 @@ def _load_external_occupations(*, exclude: set[str]) -> dict[str, dict]:
             except (TypeError, ValueError):
                 continue
             out[name] = {"id": r["id"], "name": name, "job_level": lv,
-                         "job_family": a.get("job_family"), "l2": a.get("boss_l2")}
+                         "job_family": a.get("job_family"), "l2": a.get("boss_l2"),
+                         "l1": a.get("boss_l1")}
     finally:
         conn.close()
     return out
+
+
+# 公司层面的高层岗位所在门类。BOSS 把「总裁/副总裁/区域负责人」单独归到这里，
+# 于是销售、市场、客服这些门类的清单里最高只到 L3 —— 它们的向上出口在别的清单里，
+# LLM 看不到就永远连不出来（实测指向该门类的晋升边为 0 条）。
+CROSS_L1 = "高级管理"
+
+# 该门类里**不适合当晋升终点**的：助理/秘书是服务性岗位不是上升位，
+# 「高级管理职位」是泛称不是具体岗位，联合创始人也不是升上去的。
+_CROSS_EXCLUDE = ("助理", "秘书", "高级管理职位", "联合创始人")
+
+
+def cross_l1_candidates(ext: dict[str, dict]) -> list[dict]:
+    """可作为任何职能序列向上出口的通用高层岗位。"""
+    out = [
+        v for v in ext.values()
+        if v.get("l1") == CROSS_L1
+        and not any(k in v["name"] for k in _CROSS_EXCLUDE)
+    ]
+    return sorted(out, key=lambda v: (-(v.get("job_level") or 0), v["name"]))
 
 
 # ────────────────────────── stage: advance ──────────────────────────
@@ -585,6 +609,8 @@ def stage_advance(*, l1: str, dry_run: bool, batch: int, sleep: float) -> dict:
     # 永远建不起来 —— 而「转管理」恰恰是最常见的一类向上路径。
     # 所以批次外的名字回库里查一次，查得到就认。
     ext = _load_external_occupations(exclude=set(by_name))
+    # 跑「高级管理」门类自己时不追加第二段，否则等于让它连自己
+    cross_pool = [] if l1 == CROSS_L1 else cross_l1_candidates(ext)
 
     paths, failed = [], []
     for i in range(0, len(items), batch):
@@ -592,8 +618,20 @@ def stage_advance(*, l1: str, dry_run: bool, batch: int, sleep: float) -> dict:
         listing = "\n".join(
             f"- {r['name']} | {r['job_family'] or r['l2']} | L{r['job_level']}" for r in chunk
         )
+        # 第二段：跨门类的公司高层。不给这段的话，销售/市场/客服这些门类的清单里
+        # 最高只到 L3，它们的向上出口（总裁、区域负责人）在别的门类清单里，
+        # 而规则又要求「只能用列表里出现过的名字」—— LLM 看不到就永远连不出来。
+        cross_txt = ""
+        if cross_pool:
+            cross_lines = "\n".join(
+                f"- {v['name']} | {v.get('job_family') or CROSS_L1} | L{v['job_level']}"
+                for v in cross_pool
+            )
+            cross_txt = (
+                "\n\n以下是**其它门类**的公司高层岗位，也可作为向上目标：\n" + cross_lines
+            )
         msg = [("system", "你是职业发展路径专家，只输出 JSON。"),
-               ("user", PROMPT_ADVANCE.format(jobs=listing))]
+               ("user", PROMPT_ADVANCE.format(jobs=listing, cross=cross_txt))]
         try:
             # max_tokens 要够大：提示词改成「逐岗位枚举 2-4 条」后产出量翻了几倍，
             # 一批 40 个岗位就能出 100+ 条含 reason 的路径。给小了会被截断，
