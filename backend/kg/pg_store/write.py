@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from decimal import Decimal
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -420,6 +421,11 @@ def _assert_attrs_sane(attrs: Any, node_type: str) -> None:
     if lv is None or (isinstance(lv, str) and not lv.strip()):
         return
     # 布尔是 int 的子类，True 会被当成 1 混进来，单独挡掉
+    # 只收 int 与纯数字串。**浮点一律拒**（含 `3.0`）——档位本来就没有浮点场景，
+    # 入库口要把它挡在外面，而不是替调用方纠正：纠正等于默许上游继续送浮点，
+    # 库里迟早又冒出 `3.0`。读侧另有容错（`config.as_level` / `attrs_level_int`
+    # 把整数值浮点收成整数），那是给绕过应用层的来路兜底 —— psycopg 把 numeric
+    # 读成 Decimal、历史数据、直连改库 —— 两侧宽严不同是有意的。
     ok = isinstance(lv, int) and not isinstance(lv, bool)
     if not ok and isinstance(lv, str) and lv.strip().isdigit():
         lv, ok = int(lv.strip()), True

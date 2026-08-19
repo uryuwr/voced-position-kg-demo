@@ -414,7 +414,11 @@ class SkillOptionLevel(BaseModel):
 class SkillOptionOut(BaseModel):
     """备选技能（下拉用），按 skill_key 聚合。"""
 
-    skill_key: str = Field(..., description="技能聚合主键")
+    skill_key: str = Field(..., description="技能聚合主键（ASCII code，形如 SK0123456789）")
+    skill_name: str | None = Field(
+        None,
+        description="技能展示名 —— **下拉框里该显示这个**，skill_key 是给接口用的 code",
+    )
     category: str | None = Field(None, description="技能大类")
     available_levels: list[int] = Field(
         default_factory=list, description="已配齐的档位 1–5"

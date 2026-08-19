@@ -404,6 +404,16 @@ def stage_merge(*, l1: str, batch: int, sleep: float) -> dict:
 
 # ────────────────────────── stage: apply ──────────────────────────
 def existing_skill_keys(conn) -> dict[str, dict[int, str]]:
+    """已有技能：**按展示名索引**，不是按 skill_key。
+
+    2026-08-19 起 skill_key 是 SKxxxxxxxxxx（服务端按名字生成）。这里手里只有 LLM
+    吐出来的中文技能名，拿它去和 code 比永远对不上 —— 结果是每次重跑都判定「没有
+    这个技能」，再建一套新节点，同一技能在库里裂成两份。而这类错不报错，只表现为
+    「同一岗位列表算 7 项、详情算 10 项」。
+
+    也**不能反过来按 md5 反推**：技能一旦在管理台改过名，反推就失效。名字才是这里
+    唯一可靠的比对依据（见 backend/kg/skill_key.py 模块说明）。
+    """
     out: dict[str, dict[int, str]] = {}
     for nid, name, attrs in conn.execute(
         "SELECT id, name, attrs FROM nodes WHERE type='skill_level'"
@@ -412,7 +422,13 @@ def existing_skill_keys(conn) -> dict[str, dict[int, str]]:
             a = json.loads(attrs or "{}")
         except Exception:
             a = {}
-        key = a.get("skill_key") or a.get("skill_name") or str(name or "").split(" · ")[0]
+        # 展示名优先；旧数据里 skill_key 存的可能还是中文名，那时它也是名字
+        key = a.get("skill_name") or ""
+        if not key:
+            legacy = str(a.get("skill_key") or "")
+            key = legacy if legacy and not re.fullmatch(r"SK[0-9a-f]{10}", legacy) else ""
+        if not key:
+            key = str(name or "").split(" · ")[0]
         try:
             lv = int(a.get("level"))
         except (TypeError, ValueError):
@@ -468,7 +484,10 @@ def stage_apply(*, l1: str, dry_run: bool) -> dict:
                             "name": f"{key} · L{L}", "name_en": None, "name_zh": f"{key} · L{L}",
                             "aliases": None,
                             "description": f"{key}（产品等级 L{L}）—— 由市场化岗位技能构成推断新增",
-                            "attrs": json.dumps({"skill_key": key, "level": L,
+                            # skill_name 必须显式写：读路径与归一都按它认技能，
+                            # 而 skill_key 交给 normalize_skill_level_node 盖成 code
+                            # （灌库必经，见 backend/kg/level_scale.py）
+                            "attrs": json.dumps({"skill_name": key, "level": L,
                                                  "category": v["category"]}, ensure_ascii=False),
                             "source_system": SRC_SKILL, "source_id": f"{slug(key)}|L{L}",
                             "source_url": SOURCE_URL, "license": LICENSE,

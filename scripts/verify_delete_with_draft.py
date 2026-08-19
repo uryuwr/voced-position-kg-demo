@@ -96,6 +96,22 @@ check(
     f"行={mid}",
 )
 
+# 删除前记下**本来就是 published** 的边：下面只还原这些。
+# 无条件把该节点所有 archived 边刷回 published，会把探针跑之前就已归档的边一起
+# 复活 —— 那是反方向的静默污染，比不还原更难发现。
+with connect() as conn:
+    _pub_edges = [
+        r["id"]
+        for r in conn.execute(
+            """
+            SELECT id FROM kg_edge
+            WHERE (src_id=%s OR dst_id=%s) AND NOT is_draft
+              AND COALESCE(status,'published')='published'
+            """,
+            (nid, nid),
+        ).fetchall()
+    ]
+
 # 删除 —— 这一步在修复前是 500
 dele = cli.delete(f"/v1/kg/nodes/{nid}")
 check(dele.status_code < 500, "删除不 500（修复前撞 ck_kg_node_draft_status）", f"HTTP {dele.status_code}")
@@ -109,8 +125,21 @@ with connect() as conn:
         "UPDATE kg_node SET status='published' WHERE id=%s AND NOT is_draft", (nid,)
     )
     conn.execute("DELETE FROM kg_node WHERE id=%s AND is_draft", (nid,))
+    # **边也要还原**：`archive_node` 会连这个节点的所有边一起归档，只还原节点的话
+    # 这个岗位的技能构成、所属专业、晋升链路全部消失，而页面上它还是「已发布」——
+    # 一次探针跑完就把一个真实岗位打空了（Java 被这么打空过一次，7 条 requires +
+    # 4 条 prepares_for + 2 条 advances_to + 2 条 belongs_to）。
+    restored = (
+        conn.execute(
+            "UPDATE kg_edge SET status='published' "
+            "WHERE id = ANY(%s) AND NOT is_draft",
+            (_pub_edges,),
+        ).rowcount
+        if _pub_edges
+        else 0
+    )
     conn.commit()
-print(f"  已把 {nname} 还原成 published")
+print(f"  已把 {nname} 还原成 published（连同 {restored} 条边）")
 
 # ---------------------------------------------------------------- 场景 2：删技能
 print("\n== 2 编辑过的技能再删除（技能 = L1–L5 一整组）==")

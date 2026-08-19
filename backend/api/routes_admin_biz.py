@@ -730,6 +730,114 @@ def admin_create_skill_bundle(
         raise HTTPException(400, str(e)) from e
 
 
+# ─────────────────────────────────────────────────────────────────────
+# 先修技能的四个路由**必须声明在 `/skills/{skill_key:path}` 之前**。
+#
+# `:path` 转换器是贪婪的、连斜杠一起吃：`GET /v1/admin/skills/X/prerequisites`
+# 会先命中下面那个技能详情路由，参数 skill_key 变成 `"X/prerequisites"`，
+# 于是恒回 404「skill bundle not found」——**保存先修能成功（PUT 没被详情路由
+# 定义，所以命中的是自己），但一次也读不回来**，管理台的「先修」永远显示「无」。
+# Starlette 按注册顺序匹配，所以顺序就是契约的一部分，别按功能分组重排。
+#
+# 为什么不把 `:path` 换成普通 `{skill_key}`：库里有 26 个 skill_key 名字里带
+# 斜杠（`Python/R编程`、`5G/光网技术应用`），普通转换器匹配不到它们。
+# 根因是「用展示名当 URL 主键」，见 docs/分析-skill_key-用名字当主键的代价.md。
+# ─────────────────────────────────────────────────────────────────────
+class PrereqBody(BaseModel):
+    prereq_skill_key: str = Field(..., description="先修逻辑技能 key")
+    evidence: str | None = Field(None, description="判定依据")
+    region: str = Field("CN", description="地区，如 CN")
+
+
+class PrereqSetBody(BaseModel):
+    prereq_skill_keys: list[str] = Field(default_factory=list, description="先修技能的聚合主键列表")
+    region: str = Field("CN", description="地区，如 CN")
+
+@router.get(
+    "/skills/{skill_key:path}/prerequisites",
+    tags=["管理台 · 技能多档"],
+    summary="列出先修技能",
+    response_model=list[PrereqOut],
+)
+def admin_list_prereqs(
+    skill_key: str,
+    region: str = Query("CN"),
+    user: AuthUser = Depends(require_auth_user),
+) -> list[PrereqOut]:
+    _ = user
+    from backend.kg.pg_store.skill_prereq import list_prereqs
+
+    return list_prereqs(skill_key, region=region)
+
+
+@router.post(
+    "/skills/{skill_key:path}/prerequisites",
+    tags=["管理台 · 技能多档"],
+    summary="添加先修（无环校验）",
+    response_model=PrereqOut,
+)
+def admin_add_prereq(
+    skill_key: str,
+    body: PrereqBody,
+    user: AuthUser = Depends(require_auth_user),
+) -> PrereqOut:
+    from backend.kg.pg_store.skill_prereq import add_prereq
+
+    try:
+        return add_prereq(
+            skill_key,
+            body.prereq_skill_key,
+            region=body.region,
+            evidence=body.evidence,
+            created_by=user.user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.put(
+    "/skills/{skill_key:path}/prerequisites",
+    tags=["管理台 · 技能多档"],
+    summary="整体替换先修列表（无环）",
+    response_model=list[PrereqOut],
+)
+def admin_set_prereqs(
+    skill_key: str,
+    body: PrereqSetBody,
+    user: AuthUser = Depends(require_auth_user),
+) -> list[PrereqOut]:
+    from backend.kg.pg_store.skill_prereq import set_prereqs
+
+    try:
+        return set_prereqs(
+            skill_key,
+            body.prereq_skill_keys,
+            region=body.region,
+            created_by=user.user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.delete(
+    "/skills/{skill_key:path}/prerequisites/{prereq_key:path}",
+    tags=["管理台 · 技能多档"],
+    summary="删除一条先修",
+    response_model=PrereqDeletedOut,
+)
+def admin_del_prereq(
+    skill_key: str,
+    prereq_key: str,
+    region: str = Query("CN"),
+    user: AuthUser = Depends(require_auth_user),
+) -> PrereqDeletedOut:
+    _ = user
+    from backend.kg.pg_store.skill_prereq import remove_prereq
+
+    ok = remove_prereq(skill_key, prereq_key, region=region)
+    if not ok:
+        raise HTTPException(404, "prereq not found")
+    return {"deleted": True, "skill_key": skill_key, "prereq_skill_key": prereq_key}
 @router.patch(
     "/skills/{skill_key:path}",
     tags=["管理台 · 技能多档"],
@@ -832,16 +940,6 @@ def admin_get_skill_bundle(
         raise HTTPException(404, "skill bundle not found")
     return b
 
-
-class PrereqBody(BaseModel):
-    prereq_skill_key: str = Field(..., description="先修逻辑技能 key")
-    evidence: str | None = Field(None, description="判定依据")
-    region: str = Field("CN", description="地区，如 CN")
-
-
-class PrereqSetBody(BaseModel):
-    prereq_skill_keys: list[str] = Field(default_factory=list, description="先修技能的聚合主键列表")
-    region: str = Field("CN", description="地区，如 CN")
 
 
 class CompositionSkillBody(BaseModel):
@@ -1074,88 +1172,3 @@ def normalize_skill_composition(
         raise HTTPException(400, str(e)) from e
 
 
-@router.get(
-    "/skills/{skill_key:path}/prerequisites",
-    tags=["管理台 · 技能多档"],
-    summary="列出先修技能",
-    response_model=list[PrereqOut],
-)
-def admin_list_prereqs(
-    skill_key: str,
-    region: str = Query("CN"),
-    user: AuthUser = Depends(require_auth_user),
-) -> list[PrereqOut]:
-    _ = user
-    from backend.kg.pg_store.skill_prereq import list_prereqs
-
-    return list_prereqs(skill_key, region=region)
-
-
-@router.post(
-    "/skills/{skill_key:path}/prerequisites",
-    tags=["管理台 · 技能多档"],
-    summary="添加先修（无环校验）",
-    response_model=PrereqOut,
-)
-def admin_add_prereq(
-    skill_key: str,
-    body: PrereqBody,
-    user: AuthUser = Depends(require_auth_user),
-) -> PrereqOut:
-    from backend.kg.pg_store.skill_prereq import add_prereq
-
-    try:
-        return add_prereq(
-            skill_key,
-            body.prereq_skill_key,
-            region=body.region,
-            evidence=body.evidence,
-            created_by=user.user_id,
-        )
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-
-
-@router.put(
-    "/skills/{skill_key:path}/prerequisites",
-    tags=["管理台 · 技能多档"],
-    summary="整体替换先修列表（无环）",
-    response_model=list[PrereqOut],
-)
-def admin_set_prereqs(
-    skill_key: str,
-    body: PrereqSetBody,
-    user: AuthUser = Depends(require_auth_user),
-) -> list[PrereqOut]:
-    from backend.kg.pg_store.skill_prereq import set_prereqs
-
-    try:
-        return set_prereqs(
-            skill_key,
-            body.prereq_skill_keys,
-            region=body.region,
-            created_by=user.user_id,
-        )
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-
-
-@router.delete(
-    "/skills/{skill_key:path}/prerequisites/{prereq_key:path}",
-    tags=["管理台 · 技能多档"],
-    summary="删除一条先修",
-    response_model=PrereqDeletedOut,
-)
-def admin_del_prereq(
-    skill_key: str,
-    prereq_key: str,
-    region: str = Query("CN"),
-    user: AuthUser = Depends(require_auth_user),
-) -> PrereqDeletedOut:
-    _ = user
-    from backend.kg.pg_store.skill_prereq import remove_prereq
-
-    ok = remove_prereq(skill_key, prereq_key, region=region)
-    if not ok:
-        raise HTTPException(404, "prereq not found")
-    return {"deleted": True, "skill_key": skill_key, "prereq_skill_key": prereq_key}

@@ -43,6 +43,8 @@ import json
 import re
 from typing import Any, MutableMapping
 
+from backend.kg.skill_key import derive_key, is_valid_key
+
 # 国标等级原文名 → 产品档。精确匹配：库里 level_zh 就是这 8 个规范值，
 # 不用子串匹配——「高级」会误伤「高级工」「高级技师」，一个字之差差两档。
 ZH_TO_LEVEL: dict[str, int] = {
@@ -81,16 +83,26 @@ def product_level(level_zh: str | None, level_code: str | None) -> int | None:
     return CODE_TO_LEVEL.get((level_code or "").strip().upper())
 
 
-def skill_key_of(attrs: dict[str, Any], name: str) -> str:
-    """与 `SKILL_KEY_SQL` 一致的技能标识：attrs.skill_key → skill_name → name 首段。
+def skill_name_of(attrs: dict[str, Any], name: str) -> str:
+    """技能**展示名** —— 与 `SKILL_NAME_SQL` 同口径。
 
-    重写 name 时要用它——直接截 name 会把已经归一过的「制备 · L3」再截一次。
+    重写 name 时要用它：直接截 name 会把已经归一过的「制备 · L3」再截一次。
+
+    **不能再优先取 `attrs.skill_key`**（2026-08-19 起它是 SKxxxxxxxxxx）：
+    那样重写出来的节点名会变成「SKabd68031c5 · L3」。只有当 skill_key 还是旧形态
+    （不符合 code 规则，即迁移前写的中文名）时才把它当名字用。
     """
-    for k in ("skill_key", "skill_name"):
-        v = str(attrs.get(k) or "").strip()
-        if v:
-            return v
+    v = str(attrs.get("skill_name") or "").strip()
+    if v:
+        return v
+    legacy = str(attrs.get("skill_key") or "").strip()
+    if legacy and not is_valid_key(legacy):
+        return legacy
     return (name or "").split(" · ")[0].split("·")[0].strip() or (name or "")
+
+
+# 旧名保留，仓库里还有调用方按老名字引它
+skill_key_of = skill_name_of
 
 
 def _as_attrs(v: Any) -> tuple[dict[str, Any], bool]:
@@ -158,7 +170,23 @@ def normalize_skill_level_node(node: MutableMapping[str, Any]) -> str:
         name = f"{key} · L{lv}" if lv else key
         desc = _GRADE_IN_TEXT.sub(f"· L{lv}" if lv else "", desc)
 
-    if not (need_scale or need_text):
+    # —— 主键 ——
+    # `skill_key` 必须在**入库期**就落成 ASCII code，和刻度归一同一个位置：
+    # 这个函数是采集端建节点（ingest_skill_standards）与灌库（migrate）都会经过的
+    # 唯一必经之路。不在这里盖，`link_boss_skill_chain` 那种把中文名直接写进
+    # attrs.skill_key 的采集脚本，一灌库就把中文 key 带回 PG，而读路径「有 key 就
+    # 以它为准」，于是全站又冒出中文主键 —— 且不报错。
+    disp = skill_name_of(attrs, name)
+    need_key = False
+    if disp and not attrs.get("skill_name"):
+        attrs["skill_name"] = disp
+        need_key = True
+    cur_key = str(attrs.get("skill_key") or "").strip()
+    if disp and not is_valid_key(cur_key):
+        attrs["skill_key"] = derive_key(disp)
+        need_key = True
+
+    if not (need_scale or need_text or need_key):
         return "skip"
 
     node["attrs"] = json.dumps(attrs, ensure_ascii=False) if was_str else attrs

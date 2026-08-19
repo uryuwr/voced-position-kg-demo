@@ -217,11 +217,18 @@
 
 **岗位列表**
 
+`q` 岗位名关键词、`industry_id` 具体行业，两者可单用也可叠加（AND）。
+
+行业只按 **id** 筛，不做名字模糊匹配 —— 行业名里带斜杠（「互联网/AI」「电子/通信/半导体」），模糊匹配会串味。前端用法：`GET /v1/student/industries?q=关键词` 出下拉候选，选中后把 id 传进来。
+
+岗位归属行业有两条路径，筛选与列表里回显的 `industries` **口径一致**：直连 `occupation -belongs_to→ industry`，以及经专业两跳 `occupation ←prepares_for- major -belongs_to→ industry`。
+
 **请求参数**
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| `q` | query | string |  |  |
+| `q` | query | string |  | 岗位名关键词，模糊匹配 |
+| `industry_id` | query | string |  | 行业节点 id（精确匹配）；候选见 `GET /v1/student/industries?q=` |
 | `page` | query | integer |  | ≥1，默认 `1` |
 | `page_size` | query | integer |  | ≥1，≤100，默认 `20` |
 | `region` | query | string |  |  |
@@ -1387,7 +1394,7 @@ industry 节点 + parent_of 边（父→子）。
 
 ## 数据模型
 
-共 148 个模型，按名称排序。端点处的类型链接都指向这里。
+共 152 个模型，按名称排序。端点处的类型链接都指向这里。
 
 ### AdminDashboardOut
 
@@ -2759,6 +2766,8 @@ industry 节点 + parent_of 边（父→子）。
 | `industries` | `IndustryRef`[] |  | 归属行业（多选）；原型可取首项 |
 | `industry_id` | string |  | industries[0].id，便于单行业展示 |
 | `industry_name` | string |  | industries[0].name |
+| `progressions` | `ProgressionBrief`[] |  | 成长通道（最多 3 条，按方向去重）。完整多跳链路仍看 `/v1/student/positions/progressions` |
+| `top_skills` | `TopSkillBrief`[] |  | 核心胜任力要求（按权重降序前 4 项）。完整技能构成看 `/v1/student/positions/skill-composition` |
 
 ### PositionProgressionsOut
 
@@ -2806,7 +2815,7 @@ industry 节点 + parent_of 边（父→子）。
 | `prereq_skill_key` | string | 是 | 先修技能的聚合主键 |
 | `region` | string | 是 | 地区，如 CN |
 | `evidence` | string |  | 判定依据 |
-| `confidence` | number |  | 置信度 0–1 |
+| `confidence` | string |  | 来源等级：manual_seed / official / derived / ai_inferred |
 | `created_at` | string |  | 创建时间 ISO8601 |
 
 ### PrereqSetBody
@@ -2866,6 +2875,16 @@ industry 节点 + parent_of 边（父→子）。
 | `answered` | integer | 是 | 已作答题数（≥0.0） |
 | `grading` | integer | 是 | 仍在后台判分的开放题数；结算接口会等它归零（≥0.0） |
 | `target_total` | integer |  | 本场目标题数；进程重启后可能为 null，不要用它判断是否出完 |
+
+### ProgressionBrief
+
+> 岗位卡片上的一条「成长通道」：往哪个方向、最终到哪个岗位。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `direction` | string | 是 | 方向名：本方向纵深 / 管理路线 / 技术纵深 / 跨方向转型 / 向上发展 |
+| `target` | `ProgressionTarget` | 是 | 这条通道的终点岗位 |
+| `depth` | integer | 是 | 要走几跳（≥1.0） |
 
 ### ProgressionHop
 
@@ -2937,6 +2956,16 @@ industry 节点 + parent_of 边（父→子）。
 | `direction` | string | 是 | 首跳的方向，用作 tab 标题的分类 |
 | `depth` | integer | 是 | 跳数（≥1.0） |
 | `hops` | `ProgressionHop`[] | 是 | 逐跳明细 |
+
+### ProgressionTarget
+
+> 成长通道的终点岗位（卡片只需要这三样）。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string |  | 岗位节点 id |
+| `name` | string |  | 岗位名 —— 卡片上显示这个 |
+| `level` | integer |  | 职级 1–5；缺配时为 null，前端别拼成 Lundefined |
 
 ### QuestionOut
 
@@ -3144,8 +3173,6 @@ industry 节点 + parent_of 边（父→子）。
 | `source_url` | string |  | 来源链接 |
 | `confidence` | string |  | 置信度（默认 `manual_seed`） |
 | `attrs` | object |  | 自由属性（无数据库约束的 JSON 列，键随数据来源而异） |
-| `owner` | string |  | 负责人的 UC user_id。不传=不改（更新）/ 不设（新建）；传空串 `""` = 显式清空负责人 |
-| `owner_name` | string |  | 负责人姓名，**可不传**：不传时服务端自己解析 —— ① `owner` 就是当前登录者 → 用 token 里的姓名（来自 UC，不额外发请求）；② 否则查库里该 user_id 已有的姓名（每次写入都留过 `updated_by`/`updated_by_name` 对，等于一份免费的用户名缓存）；③ 都查不到就留空，列表回落显示 user_id。本服务没有「按 user_id 反查姓名」的 UC 接口（`backend/uc/client.py` 只做 token 校验），所以第 ③ 种情况需要前端把姓名一起传上来 |
 
 ### SkillBundleBrief
 
@@ -3350,7 +3377,8 @@ industry 节点 + parent_of 边（父→子）。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `skill_key` | string | 是 | 技能聚合主键 |
+| `skill_key` | string | 是 | 技能聚合主键（ASCII code，形如 SK0123456789） |
+| `skill_name` | string |  | 技能展示名 —— **下拉框里该显示这个**，skill_key 是给接口用的 code |
 | `category` | string |  | 技能大类 |
 | `available_levels` | integer[] |  | 已配齐的档位 1–5 |
 | `levels` | `SkillOptionLevel`[] |  | 各档明细 |
@@ -3394,7 +3422,22 @@ industry 节点 + parent_of 边（父→子）。
 | `available_levels` | integer[] |  | 已配齐的档位 1–5 |
 | `missing_levels` | integer[] |  | 尚缺的档位 1–5 |
 | `counts` | `RelationCounts` |  | 关联计数 |
+| `prerequisites` | `SkillPrereqBrief`[] |  | 先修技能（学这个之前应先具备）。`skill_key` 是**先修技能的** key |
 | `created_at` | string |  | 创建时间 ISO8601，取各档 `created_at` 的最大值；列表默认按它倒序 |
+
+### SkillPrereqBrief
+
+> 技能详情里带的一条先修关系（精简形态，完整形态见 `PrereqOut`）。
+>
+> **`skill_key` 指的是先修技能自己的 key**，不是被查询的那个技能 ——
+> 这是 `get_skill_bundle` 已有的形状（`skill_key = p["prereq_skill_key"]`），
+> 前端按它渲染，这里如实声明，不改名以免动到前端。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string |  | 先修技能的聚合主键 |
+| `name` | string |  | 先修技能展示名（当前等于 skill_key） |
+| `evidence` | string |  | 判定依据 |
 
 ### SkillPrereqLink
 
@@ -3404,7 +3447,7 @@ industry 节点 + parent_of 边（父→子）。
 | --- | --- | --- | --- |
 | `from` | string | 是 | 先修技能的 skill_key |
 | `to` | string | 是 | 后继技能的 skill_key |
-| `confidence` | number \| string |  | 置信度 |
+| `confidence` | string |  | 来源等级：manual_seed / official / derived / ai_inferred |
 | `evidence` | string |  | 判定依据 |
 
 ### SkillsGraphMeta
@@ -3462,6 +3505,17 @@ industry 节点 + parent_of 边（父→子）。
 | --- | --- | --- | --- |
 | `occupation_id` | string |  | 目标岗位节点 id；不传则取当前锁定的学习目标 |
 | `resume_text` | string |  | 简历原文；留空则跳过解析阶段，直接按岗位标准出题 |
+
+### TopSkillBrief
+
+> 岗位卡片上的一项「核心胜任力要求」。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string | 是 | 技能聚合主键（ASCII code） |
+| `skill_name` | string |  | 技能展示名 —— 卡片上显示这个 |
+| `required_level` | integer |  | 要求档 1–5 |
+| `weight` | number |  | 在该岗位技能构成里的权重（0–1） |
 
 ### UserBadgeOut
 

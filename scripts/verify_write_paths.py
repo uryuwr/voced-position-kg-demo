@@ -46,6 +46,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.api.main import app  # noqa: E402
 from backend.kg.pg_store.client import connect  # noqa: E402
+from backend.kg.skill_key import derive_key  # noqa: E402
 
 cli = TestClient(
     app,
@@ -160,6 +161,9 @@ if edge_id:
 # ════════════════════════════════════════════════ 技能：建 / 改 / 删档 / 删
 print("\n== 技能 /v1/admin/skills ==")
 SK = f"写路径探针技能{TAG}"
+# **URL 用 code、body 用名字**：2026-08-19 起 skill_key 是 SKxxxxxxxxxx（服务端按
+# 名字生成），拿中文名去拼路径会 404。这两个变量分开正是为了不再混用。
+SK_K = derive_key(SK)
 sk_body = {
     "skill_key": SK,
     "name": SK,
@@ -175,7 +179,7 @@ no5xx(call("post", "/v1/admin/skills", json=sk_body), "POST /v1/admin/skills")
 
 
 def sk_levels() -> list[str]:
-    d = call("get", f"/v1/admin/skills/{q(SK)}", params={"region": REG},
+    d = call("get", f"/v1/admin/skills/{q(SK_K)}", params={"region": REG},
              _spec="/v1/admin/skills/{skill_key}").json()
     return sorted(str(x["level"]) for x in (d.get("levels") or []))
 
@@ -185,20 +189,20 @@ check(sk_levels() == ["1", "2", "3", "4", "5"], "新建技能五档齐全", str(
 # **清空某一档 = 移除那一档**。前端在 buildBody() 里 `if (desc)` —— 描述被清空的
 # 那档整个不出现在 payload 里，所以「省略」必须被理解成「删掉」。
 # 这条路径以前没有任何自动化走过，运营删 L5 删不掉就是这么漏出去的。
-cur = call("get", f"/v1/admin/skills/{q(SK)}", params={"region": REG},
+cur = call("get", f"/v1/admin/skills/{q(SK_K)}", params={"region": REG},
            _spec="/v1/admin/skills/{skill_key}").json()
 lv = {str(x["level"]): (x.get("description") or "") for x in (cur.get("levels") or [])}
 lv.pop("5", None)
 no5xx(
-    call("patch", f"/v1/admin/skills/{q(SK)}", params={"region": REG},
-         json={"skill_name": SK, "category": "TECH", "levels": lv, "region": REG},
+    call("patch", f"/v1/admin/skills/{q(SK_K)}", params={"region": REG},
+         json={"skill_name": SK, "category": "TECH", "levels": lv, "region": REG, "skill_key": SK_K},
          _spec="/v1/admin/skills/{skill_key}"),
     "PATCH /v1/admin/skills/{skill_key}（清空 L5）",
 )
 check(sk_levels() == ["1", "2", "3", "4"], "清空 L5 后管理台不再返回 L5", str(sk_levels()))
 # 再保存一次不该重复生成墓碑（否则待发布页永远清不掉）
-call("patch", f"/v1/admin/skills/{q(SK)}",
-     json={"skill_name": SK, "category": "TECH", "levels": lv, "region": REG},
+call("patch", f"/v1/admin/skills/{q(SK_K)}",
+     json={"skill_name": SK, "category": "TECH", "levels": lv, "region": REG, "skill_key": SK_K},
      _spec="/v1/admin/skills/{skill_key}")
 with connect() as c:
     tomb = c.execute(
@@ -211,23 +215,24 @@ check(tomb <= 1, "重复保存不会堆积档位墓碑", f"墓碑 {tomb} 条")
 # ════════════════════════════════════════════════ 先修：读 / 加 / 整体替换 / 删 / 成环
 print("\n== 先修 /v1/admin/skills/{key}/prerequisites ==")
 SK2 = f"写路径探针技能B{TAG}"
+SK2_K = derive_key(SK2)
 call("post", "/v1/admin/skills", json={**sk_body, "skill_key": SK2, "name": SK2},
      _spec="/v1/admin/skills")
 
 no5xx(
-    call("get", f"/v1/admin/skills/{q(SK)}/prerequisites", params={"region": REG},
+    call("get", f"/v1/admin/skills/{q(SK_K)}/prerequisites", params={"region": REG},
          _spec="/v1/admin/skills/{skill_key}/prerequisites"),
     "GET  …/prerequisites",
 )
 no5xx(
-    call("post", f"/v1/admin/skills/{q(SK)}/prerequisites",
-         json={"prereq_skill_key": SK2, "region": REG},
+    call("post", f"/v1/admin/skills/{q(SK_K)}/prerequisites",
+         json={"prereq_skill_key": SK2_K, "region": REG},
          _spec="/v1/admin/skills/{skill_key}/prerequisites"),
     "POST …/prerequisites（单条）",
 )
 # PUT 整体替换 —— 这是运营界面「保存先修」按的那个，也是 500 的那个
-r = call("put", f"/v1/admin/skills/{q(SK)}/prerequisites",
-         json={"prereq_skill_keys": [SK2], "region": REG},
+r = call("put", f"/v1/admin/skills/{q(SK_K)}/prerequisites",
+         json={"prereq_skill_keys": [SK2_K], "region": REG},
          _spec="/v1/admin/skills/{skill_key}/prerequisites")
 no5xx(r, "PUT  …/prerequisites（整体替换）")
 if r.status_code == 200:
@@ -240,20 +245,20 @@ if r.status_code == 200:
 
 # 成环必须在**保存时**就拒掉：等到发布门禁（BR-05）才报太晚，
 # 中间这段时间运营以为存好了
-r = call("put", f"/v1/admin/skills/{q(SK2)}/prerequisites",
-         json={"prereq_skill_keys": [SK], "region": REG},
+r = call("put", f"/v1/admin/skills/{q(SK2_K)}/prerequisites",
+         json={"prereq_skill_keys": [SK_K], "region": REG},
          _spec="/v1/admin/skills/{skill_key}/prerequisites")
 check(r.status_code == 400, "反向先修成环被保存时拒掉", f"HTTP {r.status_code}")
 # 而且被拒之后 SK2 原有的先修列表不能被清空（原实现先 DELETE 再逐条 add）
-after = call("get", f"/v1/admin/skills/{q(SK)}/prerequisites", params={"region": REG},
+after = call("get", f"/v1/admin/skills/{q(SK_K)}/prerequisites", params={"region": REG},
              _spec="/v1/admin/skills/{skill_key}/prerequisites").json()
 check(len(after) == 1, "成环被拒后另一侧的先修列表仍在", f"{len(after)} 条")
-r = call("put", f"/v1/admin/skills/{q(SK)}/prerequisites",
-         json={"prereq_skill_keys": [SK], "region": REG},
+r = call("put", f"/v1/admin/skills/{q(SK_K)}/prerequisites",
+         json={"prereq_skill_keys": [SK_K], "region": REG},
          _spec="/v1/admin/skills/{skill_key}/prerequisites")
 check(r.status_code == 400, "自己做自己的先修被拒", f"HTTP {r.status_code}")
 no5xx(
-    call("delete", f"/v1/admin/skills/{q(SK)}/prerequisites/{q(SK2)}",
+    call("delete", f"/v1/admin/skills/{q(SK_K)}/prerequisites/{q(SK2_K)}",
          params={"region": REG},
          _spec="/v1/admin/skills/{skill_key}/prerequisites/{prereq_key}"),
     "DELETE …/prerequisites/{prereq_key}",
@@ -265,7 +270,7 @@ if occ_id:
     no5xx(
         call("put", "/v1/admin/composition",
              params={"node_id": occ_id},
-             json={"items": [{"skill_key": SK, "weight": 1.0, "required_level": 3}]}),
+             json={"items": [{"skill_key": SK_K, "weight": 1.0, "required_level": 3}]}),
         "PUT  /v1/admin/composition",
     )
     no5xx(
@@ -274,7 +279,7 @@ if occ_id:
     )
     no5xx(
         call("delete", "/v1/admin/composition",
-             params={"node_id": occ_id, "skill_key": SK}),
+             params={"node_id": occ_id, "skill_key": SK_K}),
         "DELETE /v1/admin/composition",
     )
 
@@ -312,11 +317,11 @@ no5xx(
 # ════════════════════════════════════════════════ 删除（放最后，顺带当清理）
 print("\n== 删除 ==")
 no5xx(
-    call("delete", f"/v1/admin/skills/{q(SK)}", params={"region": REG},
+    call("delete", f"/v1/admin/skills/{q(SK_K)}", params={"region": REG},
          _spec="/v1/admin/skills/{skill_key}"),
     "DELETE /v1/admin/skills/{skill_key}",
 )
-call("delete", f"/v1/admin/skills/{q(SK2)}", params={"region": REG},
+call("delete", f"/v1/admin/skills/{q(SK2_K)}", params={"region": REG},
      _spec="/v1/admin/skills/{skill_key}")
 for nid in (occ_id, ind_id):
     if nid:

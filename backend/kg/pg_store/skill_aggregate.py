@@ -11,6 +11,8 @@ from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.config import DEFAULT_REGION, online_only, prefer_draft
 from backend.kg.pg_store.config import ENROLL_SOURCES as _CFG_ENROLL_SOURCES
 from backend.kg.pg_store.skill_taxonomy import name_of as _cat_name
+from backend.kg.skill_key import SQL_DERIVE_KEY as _SQL_DERIVE_KEY
+from backend.kg.skill_key import derive_key as _derive_key
 
 # SQL 片段：kg_node 别名 n，attrs 为 TEXT（可能为空）
 _ATTRS_JSON = """(
@@ -20,14 +22,37 @@ _ATTRS_JSON = """(
   END
 )"""
 
-# SQL 片段：kg_node 别名 n，attrs 为 TEXT
-SKILL_KEY_SQL = f"""
+# 展示名（给人看的那个）：attrs.skill_name 优先，其次从节点名剥掉 " · L3" 后缀。
+# 2026-08-19 起这是**唯一**该出现在页面上的技能文案 —— `skill_key` 已经是 ASCII code。
+SKILL_NAME_SQL = f"""
 COALESCE(
-  NULLIF(trim(both FROM ({_ATTRS_JSON}->>'skill_key')), ''),
   NULLIF(trim(both FROM ({_ATTRS_JSON}->>'skill_name')), ''),
   NULLIF(trim(both FROM split_part(n.name, ' · ', 1)), ''),
   NULLIF(trim(both FROM split_part(n.name, '·', 1)), ''),
   n.name
+)
+"""
+
+# 聚合主键：**只会是 ASCII code，绝不回落成技能名**。
+#
+# 原来这条 COALESCE 一路兜到 `n.name`，于是绝大多数技能的 key 就是中文名。而 key
+# 要进 URL（`/v1/admin/skills/{skill_key}`）—— 库里带 `/` 的 26 个、带 `#` `%`
+# 空格 `+` 的各有若干，编码一失误就变成另一个 key。真长出过一个幽灵技能
+# `3D%25E5%259C%25BA…`（二次解码就是「3D场景搭建」），是前端把已编码的串又编了一次。
+#
+# 现在兜底是**现算 code**（与 Python 侧 `skill_key.derive_key` 逐位相同），所以
+# 即使某行还没写 attrs.skill_key（新采集、直连改库、迁移遗漏），读出来也是
+# `SKxxxxxxxxxx`。这个兜底不是可有可无：同一技能的 5 个档位节点要靠它算出**同一个
+# 值**才能聚成一组，而行内唯一共享的东西只有名字 —— 随机 id 在 SQL 里没法兜底。
+#
+# **有 attrs.skill_key 就以它为准，永不重算**：key 按初始名字生成，之后改名不换 key。
+# 否则改个错别字就等于换主键，先修关系与测评题库当场断链。也正因如此，
+# 「按名字反推 key」不能当查找机制用 —— 采集端判断「这技能已经有了吗」要按
+# `attrs.skill_name` 查库（见 `skill_key.py` 模块说明）。
+SKILL_KEY_SQL = f"""
+COALESCE(
+  NULLIF(trim(both FROM ({_ATTRS_JSON}->>'skill_key')), ''),
+  {_SQL_DERIVE_KEY(SKILL_NAME_SQL)}
 )
 """
 
@@ -71,18 +96,37 @@ def _maybe_json(v: Any) -> Any:
     return v
 
 
-def skill_key_from_node(n: dict[str, Any]) -> str:
+def skill_name_from_node(n: dict[str, Any]) -> str:
+    """技能展示名 —— Python 侧的 `SKILL_NAME_SQL`，两边必须同口径。"""
     a = n.get("attrs") if isinstance(n.get("attrs"), dict) else _maybe_json(n.get("attrs")) or {}
     if not isinstance(a, dict):
         a = {}
-    for k in ("skill_key", "skill_name"):
-        v = (a.get(k) or "").strip()
-        if v:
-            return v
+    v = (a.get("skill_name") or "").strip()
+    if v:
+        return v
     name = (n.get("name") or "").strip()
     if "·" in name:
         return name.split("·")[0].strip()
-    return name or (n.get("id") or "")
+    return name
+
+
+def skill_key_from_node(n: dict[str, Any]) -> str:
+    """聚合主键 —— Python 侧的 `SKILL_KEY_SQL`，只会返回 ASCII code。
+
+    存了 key 就用存的（改名不换 key）；没存才按展示名现算。
+    原来这里第二顺位取 `attrs.skill_name`、再退到节点名，等于把中文名当 key。
+    """
+    a = n.get("attrs") if isinstance(n.get("attrs"), dict) else _maybe_json(n.get("attrs")) or {}
+    if not isinstance(a, dict):
+        a = {}
+    v = (a.get("skill_key") or "").strip()
+    if v:
+        return v
+    disp = skill_name_from_node(n)
+    if disp:
+        return _derive_key(disp)
+    # 连名字都没有：退到 id 派生，保证仍是 ASCII 且同一节点稳定
+    return _derive_key(n.get("id") or "unnamed")
 
 
 def level_from_node(n: dict[str, Any]) -> int | None:
@@ -208,13 +252,22 @@ def assemble_bundle(
         counts["occupation"] = occupation_count
     if major_count is not None:
         counts["major"] = major_count
+    # 展示名从节点取，**不再等于 skill_key** —— key 现在是 ASCII code，
+    # 照旧拿它当名字的话页面上全是 SKxxxxxxxxxx。同一 bundle 的各档名字一致，
+    # 取第一个非空；真取不到才退回 key（至少不是 null，页面不会空一格）。
+    disp = ""
+    for n in nodes_sorted:
+        disp = skill_name_from_node(n)
+        if disp:
+            break
+    disp = disp or skill_key
     return {
         "id": bundle_id(reg, skill_key),
         "type": "skill",
         "kg_type": "skill_level",
         "skill_key": skill_key,
-        "skill_name": skill_key,
-        "name": skill_key,
+        "skill_name": disp,
+        "name": disp,
         "region": reg,
         "status": aggregate_bundle_status(nodes_sorted),
         "levels": levels,
@@ -371,8 +424,15 @@ def list_skill_bundles(
         filters = ""
         params_f: list[Any] = []
         if q_like:
-            filters += f" AND (lower({key_expr}) LIKE lower(%s) OR lower(n.name) LIKE lower(%s))"
-            params_f.extend([q_like, q_like])
+            # 三支都要：key 现在是 SKxxxxxxxxxx，只按 key 匹配的话中文一个都搜不到；
+            # 只按 n.name 匹配又会漏掉「attrs.skill_name 已改名、节点 name 还是旧名」的行。
+            # 保留 key 那一支是为了让运营能直接粘贴 code 定位。
+            filters += (
+                f" AND (lower({key_expr}) LIKE lower(%s)"
+                f" OR lower({SKILL_NAME_SQL}) LIKE lower(%s)"
+                f" OR lower(n.name) LIKE lower(%s))"
+            )
+            params_f.extend([q_like, q_like, q_like])
         if has_lv is not None:
             filters += f" AND ({li_expr}) = %s"
             params_f.append(has_lv)
@@ -552,10 +612,29 @@ def get_skill_bundle(
             from backend.kg.pg_store.skill_prereq import list_prereqs
 
             prereqs = list_prereqs(sk, region=reg)
+            # 先修的**展示名要查出来**：`prereq_skill_key` 从 2026-08-19 起是
+            # SKxxxxxxxxxx，原来把它同时塞进 name，页面上就变成一串哈希。
+            # 一条 IN 查询批量取，不要每条先修查一次。
+            pkeys = [p["prereq_skill_key"] for p in prereqs if p.get("prereq_skill_key")]
+            names: dict[str, str] = {}
+            if pkeys:
+                for r in conn.execute(
+                    f"""
+                    SELECT DISTINCT ({key_expr}) AS k, ({SKILL_NAME_SQL}) AS nm
+                    FROM kg_node n
+                    WHERE n.type = 'skill_level'
+                      AND (%s::text IS NULL OR n.region = %s)
+                      AND ({key_expr}) = ANY(%s)
+                    """,
+                    (reg, reg, pkeys),
+                ).fetchall():
+                    if r["k"] and r["nm"]:
+                        names.setdefault(r["k"], r["nm"])
             bundle["prerequisites"] = [
                 {
                     "skill_key": p["prereq_skill_key"],
-                    "name": p["prereq_skill_key"],
+                    # 查不到就退回 key —— 指向已删技能的先修不该让整块塌掉
+                    "name": names.get(p["prereq_skill_key"]) or p["prereq_skill_key"],
                     "evidence": p.get("evidence"),
                 }
                 for p in prereqs

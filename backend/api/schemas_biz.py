@@ -82,6 +82,34 @@ class ProfessionOut(BaseModel):
     )
 
 
+class ProgressionTarget(BaseModel):
+    """成长通道的终点岗位（卡片只需要这三样）。"""
+
+    id: str | None = Field(None, description="岗位节点 id")
+    name: str | None = Field(None, description="岗位名 —— 卡片上显示这个")
+    level: int | None = Field(None, description="职级 1–5；缺配时为 null，前端别拼成 Lundefined")
+
+
+class ProgressionBrief(BaseModel):
+    """岗位卡片上的一条「成长通道」：往哪个方向、最终到哪个岗位。"""
+
+    direction: str = Field(
+        ...,
+        description="方向名：本方向纵深 / 管理路线 / 技术纵深 / 跨方向转型 / 向上发展",
+    )
+    target: ProgressionTarget = Field(..., description="这条通道的终点岗位")
+    depth: int = Field(..., ge=1, description="要走几跳")
+
+
+class TopSkillBrief(BaseModel):
+    """岗位卡片上的一项「核心胜任力要求」。"""
+
+    skill_key: str = Field(..., description="技能聚合主键（ASCII code）")
+    skill_name: str | None = Field(None, description="技能展示名 —— 卡片上显示这个")
+    required_level: int | None = Field(None, ge=1, le=5, description="要求档 1–5")
+    weight: float | None = Field(None, description="在该岗位技能构成里的权重（0–1）")
+
+
 class PositionOut(BaseModel):
     """岗位（产品 position，图侧 occupation）。"""
 
@@ -107,6 +135,16 @@ class PositionOut(BaseModel):
     )
     industry_id: str | None = Field(None, description="industries[0].id，便于单行业展示")
     industry_name: str | None = Field(None, description="industries[0].name")
+    # 卡片直接用这两块，不用再逐个岗位调 /positions/{id} 与 /positions/progressions
+    #（一页 12 张卡原先要 25 个请求）。服务端侧是两条批量 SQL，与页大小无关。
+    progressions: list[ProgressionBrief] = Field(
+        default_factory=list,
+        description="成长通道（最多 3 条，按方向去重）。完整多跳链路仍看 `/v1/student/positions/progressions`",
+    )
+    top_skills: list[TopSkillBrief] = Field(
+        default_factory=list,
+        description="核心胜任力要求（按权重降序前 4 项）。完整技能构成看 `/v1/student/positions/skill-composition`",
+    )
 
 
 class SkillLevelItem(BaseModel):
@@ -116,6 +154,19 @@ class SkillLevelItem(BaseModel):
     description: str | None = Field(None, description="描述")
     status: str | None = Field(None, description="状态")
     weight: float | None = Field(None, description="权重")
+
+
+class SkillPrereqBrief(BaseModel):
+    """技能详情里带的一条先修关系（精简形态，完整形态见 `PrereqOut`）。
+
+    **`skill_key` 指的是先修技能自己的 key**，不是被查询的那个技能 ——
+    这是 `get_skill_bundle` 已有的形状（`skill_key = p["prereq_skill_key"]`），
+    前端按它渲染，这里如实声明，不改名以免动到前端。
+    """
+
+    skill_key: str | None = Field(None, description="先修技能的聚合主键")
+    name: str | None = Field(None, description="先修技能展示名（当前等于 skill_key）")
+    evidence: str | None = Field(None, description="判定依据")
 
 
 class SkillOut(BaseModel):
@@ -198,6 +249,14 @@ class SkillOut(BaseModel):
     available_levels: list[int] = Field(default_factory=list, description="已配齐的档位 1–5")
     missing_levels: list[int] = Field(default_factory=list, description="尚缺的档位 1–5")
     counts: RelationCounts | None = Field(None, description="关联计数")
+    # 又一个「后端一直在算、契约里没有 → 被 Pydantic 静默丢掉」的字段：
+    # `get_skill_bundle` 从 2026 年就在挂 prerequisites 了，而管理台两处消费者
+    # （档位明细弹窗、编辑表单的先修输入框）读到的永远是空，表现是
+    # 「先修保存了但一次也读不回来」。加字段之前它连 /docs 里都看不到。
+    prerequisites: list[SkillPrereqBrief] = Field(
+        default_factory=list,
+        description="先修技能（学这个之前应先具备）。`skill_key` 是**先修技能的** key",
+    )
     # 和 category 一样，这两个字段后端一直在算，只是没进契约 → 被静默丢弃，
     # 管理台列表既显示不了状态徽标，也没法按创建时间给用户看。
     status: str | None = Field(

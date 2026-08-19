@@ -26,7 +26,7 @@ from backend.kg.pg_store.config import (
     prefer_draft,
     prefer_draft_edge,
 )
-from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
+from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL, SKILL_NAME_SQL
 
 _EP = edge_published("e")
 # 管理台口径（draft / disabled 要能看到并编辑，只挡 archived）**不在这里定义**：
@@ -226,16 +226,22 @@ def list_skill_options(
         rows = conn.execute(
             f"""
             SELECT ({SKILL_KEY_SQL}) AS skill_key,
+                   min({SKILL_NAME_SQL}) AS skill_name,
                    min(n.category) AS category
             FROM kg_node n
             WHERE n.type='skill_level' AND n.region=%s
               AND COALESCE(n.status,'published') <> 'archived' AND {_PD_N}
-              AND (%s = '%%%%' OR ({SKILL_KEY_SQL}) ILIKE %s)
+              -- **按展示名搜，不是按 key**：key 已经是 SKxxxxxxxxxx，
+              -- 拿它匹配中文关键词一个都搜不到（下拉框会永远空着）。
+              -- 同时留一支按 key 匹配，方便直接粘 code 定位。
+              AND (%s = '%%%%'
+                   OR ({SKILL_NAME_SQL}) ILIKE %s
+                   OR ({SKILL_KEY_SQL}) ILIKE %s)
             GROUP BY 1
-            ORDER BY 1
+            ORDER BY 2, 1
             LIMIT %s
             """,
-            (region, kw, kw, limit),
+            (region, kw, kw, kw, limit),
         ).fetchall()
         keys = [r["skill_key"] for r in rows]
         detail = _levels_of(conn, keys, region)
@@ -248,6 +254,7 @@ def list_skill_options(
         out.append(
             {
                 "skill_key": r["skill_key"],
+                "skill_name": r["skill_name"],
                 "category": r["category"],
                 "available_levels": plv,
                 "levels": levels,          # 含每档 level_label 与 requirement

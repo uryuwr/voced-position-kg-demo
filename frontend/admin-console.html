@@ -520,7 +520,7 @@
         ? `<div class="cap-root"><b>共享技能</b>
              <span class="muted">（被 ≥2 个岗位共同要求，共 ${shared.length} 项）</span>
              <div style="margin-top:6px">${shared.map((s) =>
-               `<span class="cap-sk">${esc(s.skill_key)} <b>×${s.occ_count}</b></span>`
+               `<span class="cap-sk">${esc(s.skill_name || s.skill_key)} <b>×${s.occ_count}</b></span>`
              ).join("")}</div>
            </div>`
         : "";
@@ -670,7 +670,7 @@
                value="${it.weight != null ? it.weight : ""}" data-w="${esc(it.skill_key)}" />`
           : `<span class="muted">—</span>`;
         return `<tr>
-          <td>${esc(it.skill_key)}<div class="muted">${(it.prereqs || []).length
+          <td>${esc(it.skill_name || it.skill_key)}<div class="muted">${(it.prereqs || []).length
                 ? "先修：" + (it.prereqs || []).map(esc).join("、")
                 : "无先修"}</div></td>
           <td>${btns}${reqLine}</td>
@@ -696,9 +696,11 @@
         <div class="form-row"><label>添加技能</label>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <!-- 可输入即搜索的下拉：input + datalist，边打字边从服务端拉候选 -->
-            <input id="cpSel" list="cpList" placeholder="输入技能名搜索并选择…"
-                   style="min-width:280px" autocomplete="off" />
-            <datalist id="cpList"></datalist>
+            <!-- 关键词框与结果下拉分开：skill_key 已是 SKxxxxxxxxxx，而 datalist
+                 只能把 value 当显示文本，继续用它就会列出一串 code。select 能
+                 「显示名字、提交 code」，所以搜索框只管搜，选择在 select 里做。 -->
+            <input id="cpKw" placeholder="输入关键词搜索…" style="min-width:200px" autocomplete="off" />
+            <select id="cpSel" style="min-width:240px"><option value="">先搜索</option></select>
             <!-- 档位选项随所选技能实时生成，不写死 L1–L5 -->
             <select id="cpLv" style="width:150px">
               <option value="">先选技能</option>
@@ -770,13 +772,16 @@
       let cpTimer = null;
       let cpOpts = [];
       const doSearch = async () => {
-        const q = $("cpSel").value.trim();
+        const q = $("cpKw").value.trim();
         try {
           cpOpts = await api.apiFetch(
             "/v1/admin/composition/options?limit=50" + (q ? "&q=" + encodeURIComponent(q) : ""));
           // datalist 的 option 只能放纯值，档位信息放 label 里提示
-          $("cpList").innerHTML = cpOpts.map((x) =>
-            `<option value="${esc(x.skill_key)}" label="${esc(x.level_completeness)} ${esc(x.category_name || x.category || "")}"></option>`).join("");
+          $("cpSel").innerHTML = (cpOpts.length
+            ? cpOpts.map((x) => `<option value="${esc(x.skill_key)}">${
+                esc(x.skill_name || x.skill_key)} · ${esc(x.level_completeness)}${
+                x.category_name ? " · " + esc(x.category_name) : ""}</option>`).join("")
+            : `<option value="">无匹配</option>`);
           $("cpHint").textContent = cpOpts.length ? `${cpOpts.length} 个匹配` : "无匹配";
         } catch (e) { toast(e.message || e, true); }
       };
@@ -819,7 +824,7 @@
             : "";
         }
       };
-      $("cpSel").oninput = () => {
+      $("cpKw").oninput = () => {
         clearTimeout(cpTimer);
         syncLevels();                                  // 选中候选项时立即刷新档位
         cpTimer = setTimeout(async () => { await doSearch(); syncLevels(); }, 260);
@@ -893,7 +898,7 @@
         const dsk = d.skills || [];
         body += `<h3>技能构成（${dsk.length}）<span class="muted"> · 专业直连技能</span></h3>`;
         body += dsk.length
-          ? dsk.map((sk) => `<span class="cap-sk">${esc(sk.skill_key)}${sk.selected_level ? " L" + sk.selected_level : ""}</span>`).join("")
+          ? dsk.map((sk) => `<span class="cap-sk">${esc(sk.skill_name || sk.skill_key)}${sk.selected_level ? " L" + sk.selected_level : ""}</span>`).join("")
           : `<div class="muted">还没有直连技能</div>`;
       } else if (n.type === "occupation") {
         body += kv("所属行业", (d.industries || []).map((i) => esc(i.name)).join("、") || "—");
@@ -903,7 +908,7 @@
         body += (d.skills || []).length
           ? `<table class="data"><tr><th>技能</th><th>要求等级</th><th>权重</th><th>类别</th><th>先修</th><th>L1–L5</th></tr>` +
             d.skills.map((sk) =>
-              `<tr><td>${esc(sk.skill_key)}${sk.is_core ? ' <span class="tag">核心</span>' : ""}</td>
+              `<tr><td>${esc(sk.skill_name || sk.skill_key)}${sk.is_core ? ' <span class="tag">核心</span>' : ""}</td>
                    <td>L${sk.required_level ?? "-"}</td>
                    <td>${sk.weight_pct != null ? sk.weight_pct + "%" : "—"}</td>
                    <td class="muted">${esc(sk.category_name || sk.category || "待归类")}</td>
@@ -1204,7 +1209,7 @@
               : `<div class="empty">暂无分档节点</div>`;
             const prereqs = detail.prerequisites || [];
             const preHtml = prereqs.length
-              ? `<p class="muted">先修：${prereqs.map((p) => esc(p.skill_key || p.name)).join("、")}</p>`
+              ? `<p class="muted">先修：${prereqs.map((p) => esc(p.name || p.skill_key)).join("、")}</p>`
               : `<p class="muted">先修：无</p>`;
             openModal(`
               <h2>技能档位 · ${esc(detail.name || key)} ${statusTag(recordStatusOf(detail))}</h2>
@@ -1838,15 +1843,23 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
         const lab = it.display_name || it.name || it.id;
         return `<option value="${esc(it.id)}">${esc(lab)}</option>`;
       }).join("");
-      const preList = (detail?.prerequisites || []).map((p) => p.skill_key || p.name).filter(Boolean);
+      // 先修：{key, name} 一起留着 —— key 提交用、name 显示用
+      const preList = (detail?.prerequisites || [])
+        .map((p) => ({ key: p.skill_key, name: p.name || p.skill_key }))
+        .filter((x) => x.key);
       // 编辑时回显原分类；新建默认落兜底类，让人主动去选而不是被塞进某一类
       const curCat = seed.category || detail?.category
         || (cats.find((c) => c.is_fallback) || {}).code || "";
       openModal(`
         <h2>${isEdit ? "编辑" : "新建"}技能 · L1–L5</h2>
         <p class="muted">审核通过后拆成多条 skill_level；岗位<strong>权重写在 requires 边</strong>（非技能节点）。</p>
-        <div class="form-row"><label>技能名 skill_key *</label>
-          <input id="f_skill_key" value="${esc(seed.skill_key || seed.name || detail?.skill_key || "")}" placeholder="如：流量承接" ${isEdit ? "readonly" : ""} />
+        <div class="form-row"><label>技能名 *</label>
+          <input id="f_skill_name" value="${esc(detail?.skill_name || seed.name || seed.skill_name || "")}" placeholder="如：流量承接" />
+          <div class="muted" style="margin-top:4px">
+            聚合主键 <code>skill_key</code> 由服务端按技能名生成（形如 <code>SK0123456789</code>），
+            不用填、也改不了 —— 改名不换 key，所以改错别字不会把先修关系和测评题库弄断。
+            ${isEdit && seed.skill_key ? `当前 key：<code>${esc(seed.skill_key)}</code>` : ""}
+          </div>
         </div>
         <div class="form-row"><label>技能分类 category</label>
           <select id="f_category">
@@ -1860,8 +1873,20 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
         <div class="form-row"><label>能力等级 levels.L* = {}</label>
           ${levelRows}
         </div>
-        <div class="form-row"><label>先修技能（BR-05，逗号分隔 skill_key）</label>
-          <input id="f_prereq" value="${esc(preList.join(", "))}" placeholder="如：精准投放, 内容脚本" />
+        <div class="form-row"><label>先修技能（学这个之前应先具备）</label>
+          <div style="display:grid;gap:8px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input id="f_pre_kw" style="flex:1;min-width:160px" placeholder="输入关键词搜索…" />
+              <select id="f_pre_sel" style="min-width:220px"><option value="">先搜索</option></select>
+              <button class="btn" type="button" id="btnAddPre">添加</button>
+            </div>
+            <div id="f_pre_hint" class="muted"></div>
+            <div id="preLinkList" class="muted">尚未添加先修</div>
+            <div class="muted">
+              先修<strong>立即生效、不进草稿</strong>（存在 kg_skill_prereq 表，没有草稿行）；
+              成环会在保存时当场被拒（不等到发布），报错里会指出是哪一条。
+            </div>
+          </div>
         </div>
         <div class="form-row"><label>关联岗位（技能构成 · 边权重）</label>
           <div style="display:grid;gap:8px">
@@ -1908,6 +1933,58 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
           };
         });
       }
+      // ——— 先修技能：候选走技能构成那个同一个 options 接口，别另开一个 ———
+      const preLinks = preList.map((x) => x.key);
+      // key → 名字：chip 上要显示名字，而 preLinks 里存的是 code
+      const preNames = {};
+      preList.forEach((x) => { preNames[x.key] = x.name; });
+      let preOpts = [];
+      let preTimer = null;
+      function renderPreLinks() {
+        const box = $("preLinkList");
+        if (!preLinks.length) {
+          box.innerHTML = `<span class="muted">尚未添加先修</span>`;
+          return;
+        }
+        const nameOf = (k) => (preOpts.find((x) => x.skill_key === k) || {}).skill_name
+          || preNames[k] || k;
+        box.innerHTML = preLinks.map((k, i) =>
+          `<span class="cap-sk">${esc(nameOf(k))} <button class="btn danger" type="button"
+             data-rmpre="${i}" style="padding:0 6px;margin-left:4px">×</button></span>`).join(" ");
+        box.querySelectorAll("[data-rmpre]").forEach((b) => {
+          b.onclick = () => { preLinks.splice(Number(b.dataset.rmpre), 1); renderPreLinks(); };
+        });
+      }
+      renderPreLinks();
+      const preSearch = async () => {
+        const kw = $("f_pre_kw").value.trim();
+        try {
+          preOpts = await api.apiFetch(
+            "/v1/admin/composition/options?limit=50" + (kw ? "&q=" + encodeURIComponent(kw) : ""));
+          $("f_pre_sel").innerHTML = (preOpts.length
+            ? preOpts.map((x) => `<option value="${esc(x.skill_key)}">${
+                esc(x.skill_name || x.skill_key)}${x.level_completeness ? " · " + esc(x.level_completeness) : ""}</option>`).join("")
+            : `<option value="">无匹配</option>`);
+          $("f_pre_hint").textContent = preOpts.length ? `${preOpts.length} 个匹配` : "无匹配";
+        } catch (e) { $("f_pre_hint").textContent = "候选加载失败: " + (e.message || e); }
+      };
+      $("f_pre_kw").oninput = () => {
+        clearTimeout(preTimer);
+        preTimer = setTimeout(preSearch, 250);
+      };
+      preSearch();
+      $("btnAddPre").onclick = () => {
+        const k = $("f_pre_sel").value.trim();
+        const self = (seed.skill_key || "").trim();
+        if (!k) return;
+        // 自身与重复在这里就挡掉：服务端也会拒，但当场提示比等一次往返清楚
+        if (k === self) { toast("不能以自身为先修", true); return; }
+        if (preLinks.includes(k)) { toast("该先修已添加", true); return; }
+        preLinks.push(k);
+        $("f_pre_sel").value = "";
+        renderPreLinks();
+      };
+
       $("btnAddOcc").onclick = () => {
         const oid = $("f_occ_pick").value;
         if (!oid) return;
@@ -1937,7 +2014,7 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
       }
 
       function buildBody() {
-        const skill_key = $("f_skill_key").value.trim();
+        const skill_name = $("f_skill_name").value.trim();
         const levels = {};
         LEVEL_META.forEach((lv) => {
           const desc = ($("lv_desc_" + lv.code).value || "").trim();
@@ -1952,13 +2029,17 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
           required_level: x.required_level,
         }));
         const category = ($("f_category") || {}).value || undefined;
-        return { skill_key, name: skill_key, levels, occupation_links, category, region: "CN" };
+        // 新建不传 skill_key（服务端按名字生成）；编辑必须原样带上路径里的 code，
+        // 否则改个名字就会被当成另一个技能
+        const out = { name: skill_name, skill_name, levels, occupation_links, category, region: "CN" };
+        if (isEdit && seed.skill_key) out.skill_key = seed.skill_key;
+        return out;
       }
 
       $("f_preview").onclick = async () => {
         try {
           const body = buildBody();
-          if (!body.skill_key) { toast("请填写技能名", true); return; }
+          if (!body.name) { toast("请填写技能名", true); return; }
           if (!Object.keys(body.levels).length) { toast("至少填写一档描述", true); return; }
           const p = await api.apiFetch("/v1/admin/skills/preview", { method: "POST", body });
           toast(`将建 ${p.will_create_nodes} 个节点 · ${p.will_create_edges} 条 requires 边`);
@@ -1968,25 +2049,32 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
       $("f_save").onclick = async () => {
         try {
           const body = buildBody();
-          if (!body.skill_key) { toast("请填写技能名", true); return; }
+          if (!body.name) { toast("请填写技能名", true); return; }
           if (!Object.keys(body.levels).length) { toast("至少填写一档描述", true); return; }
+          // 新建时 key 由服务端生成，客户端事先不知道 —— 从回执里取，
+          // 下面写先修要用它。回执结构是 ChangeOut，key 在 applied 里。
+          let savedKey = seed.skill_key || "";
           if (isEdit) {
-            await api.apiFetch("/v1/admin/skills/" + encodeURIComponent(body.skill_key), {
+            await api.apiFetch("/v1/admin/skills/" + encodeURIComponent(seed.skill_key), {
               method: "PATCH",
               body,
             });
           } else {
-            await api.apiFetch("/v1/admin/skills", { method: "POST", body });
+            const created = await api.apiFetch("/v1/admin/skills", { method: "POST", body });
+            savedKey = (created && (created.applied?.skill_key
+              || created.applied?.skill_bundle?.skill_key
+              || created.target_id)) || savedKey;
           }
-          // 先修：审核外即时写（无环校验）
-          const preRaw = ($("f_prereq").value || "").split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+          // 先修：立即生效（kg_skill_prereq 没有草稿行），与多档分两次请求。
+          // 失败要单独报出来 —— 多档已经存进去了，只有先修没写上，
+          // 合成一句「保存失败」会让运营以为整个都没存、再点一次。
           try {
             await api.apiFetch(
-              "/v1/admin/skills/" + encodeURIComponent(body.skill_key) + "/prerequisites",
-              { method: "PUT", body: { prereq_skill_keys: preRaw, region: "CN" } }
+              "/v1/admin/skills/" + encodeURIComponent(seed.skill_key || savedKey) + "/prerequisites",
+              { method: "PUT", body: { prereq_skill_keys: preLinks, region: "CN" } }
             );
           } catch (pe) {
-            toast("多档已提交；先修写入失败: " + (pe.message || pe), true);
+            toast("多档已保存，但先修没写上：" + (pe.message || pe), true);
           }
           toast(isEdit
             ? actMsg("技能已更新", "技能更新已提交审核")

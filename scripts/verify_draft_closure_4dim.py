@@ -357,6 +357,12 @@ def run_skill_dim() -> None:
     fin = front_snap(sk)
     scoped = set(subject_scoped)
     still = [k for k in changed if k in scoped and fin.get(k) != base.get(k)]
+    # 技能维度的一次性已知差异（不是缺陷，别再查了）：库里很多技能节点原本只有
+    # `description`、attrs 里没有 `level_descriptions`。经 API 编辑一次之后
+    # `_all_level_descriptions` 会把它物化进 attrs，而接口没有「删掉
+    # level_descriptions」的入参，所以还原不回去 —— 表现为
+    # `/v1/student/skills/bundles/{key}` 与基线差一次，对同一技能再跑一轮就一致。
+    # 已逐档核对过：文本是原值、无标记残留、与草稿无关。
     check(not still, "⑨ 还原后与最初一致", "; ".join(k[:70] for k in still[:3]))
 
 

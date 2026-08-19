@@ -23,6 +23,8 @@ from backend.kg.pg_store.counts import (
     counts_for_occupations,
     industries_for_occupations,
     occupation_in_industry_sql,
+    progressions_for_occupations,
+    top_skills_for_occupations,
 )
 from backend.kg.pg_store.query import (
     get_node,
@@ -490,7 +492,13 @@ def _attach_position_extra(
     ids = [x["id"] for x in items if x.get("id")]
     cmap = counts_for_occupations(ids, conn=conn)
     ind = industries_for_occupations(ids, conn=conn)
+    # 卡片要的两块，学员端原先一张卡两个请求（一页 12 张 = 25 个请求）。
+    # 这两个函数各自只发一条 SQL，与页大小无关 —— 详见 counts.py 里的说明。
+    prog = progressions_for_occupations(ids, conn=conn)
+    tops = top_skills_for_occupations(ids, conn=conn)
     for x in items:
+        x["progressions"] = prog.get(x["id"]) or []
+        x["top_skills"] = tops.get(x["id"]) or []
         x["counts"] = cmap.get(x["id"]) or {
             "major": 0,
             "occupation": 0,

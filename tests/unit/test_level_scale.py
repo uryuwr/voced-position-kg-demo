@@ -180,9 +180,18 @@ class Test批量:
 
 
 class Test技能标识:
-    def test_优先取_skill_key_再取_skill_name(self):
-        assert skill_key_of({"skill_key": "A", "skill_name": "B"}, "C · L3") == "A"
+    def test_优先取_skill_name(self):
+        """2026-08-19 起 `skill_key_of` 取的是**展示名**，不再优先看 skill_key。
+
+        因为 skill_key 从这天起是 SKxxxxxxxxxx（服务端按名字生成的 ASCII code）：
+        还按老顺序取的话，归一时重写出来的节点名会变成「SKabd68031c5 · L3」。
+        只有当 skill_key 还是旧形态（不符合 code 规则 = 迁移前写的中文名）
+        才把它当名字用，见 `level_scale.skill_name_of`。
+        """
+        assert skill_key_of({"skill_key": "SKabd68031c5", "skill_name": "B"}, "C · L3") == "B"
         assert skill_key_of({"skill_name": "B"}, "C · L3") == "B"
+        # 旧形态：skill_key 里存的还是中文名，没有 skill_name 时它就是名字
+        assert skill_key_of({"skill_key": "旧中文名"}, "C · L3") == "旧中文名"
 
     def test_兜底取_name_首段(self):
         assert skill_key_of({}, "工件加工 · L3") == "工件加工"

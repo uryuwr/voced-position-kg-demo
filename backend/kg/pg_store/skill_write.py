@@ -14,10 +14,13 @@ from backend.kg.pg_store.config import prefer_draft
 from backend.kg.pg_store.query import get_node
 from backend.kg.pg_store.skill_aggregate import (
     SKILL_KEY_SQL,
+    SKILL_NAME_SQL,
     get_skill_bundle,
     skill_key_from_node,
+    skill_name_from_node,
 )
 from backend.kg.pg_store.skill_taxonomy import to_code
+from backend.kg.skill_key import derive_key, is_valid_key
 from backend.kg.pg_store.write import (
     archive_edge,
     create_edge,
@@ -160,24 +163,85 @@ def normalize_occupation_links(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _strip_level_suffix(s: str) -> str:
+    return re.sub(r"\s*·\s*L[1-5]\s*$", "", str(s or "").strip(), flags=re.I).strip()
+
+
+def resolve_skill_name(payload: dict[str, Any]) -> str:
+    """技能**展示名**（给人看的那个）。
+
+    `skill_key` 也进兜底链，是为了兼容旧调用方：2026-08-19 之前 skill_key 存的
+    就是中文名，老脚本/老前端只传这一个字段。但只在它**不是 code** 时才当名字用，
+    否则新前端传 code 进来会把技能名改成 `SKxxxxxxxxxx`。
+    """
+    for cand in (payload.get("skill_name"), payload.get("name")):
+        v = _strip_level_suffix(cand)
+        if v:
+            return v
+    legacy = str(payload.get("skill_key") or "").strip()
+    if legacy and not is_valid_key(legacy):
+        v = _strip_level_suffix(legacy)
+        if v:
+            return v
+    raise ValueError("需要技能名（skill_name 或 name）")
+
+
 def resolve_skill_key(payload: dict[str, Any]) -> str:
-    key = (
-        payload.get("skill_key")
-        or payload.get("skill_name")
-        or payload.get("name")
-        or ""
-    )
-    key = str(key).strip()
-    # 去掉可能的 · Lx 后缀
-    key = re.sub(r"\s*·\s*L[1-5]\s*$", "", key, flags=re.I).strip()
-    if not key:
-        raise ValueError("需要 skill_key 或 name")
-    return key
+    """技能**聚合主键**，只会是 ASCII code。
+
+    传进来已经是 code 就原样用（PATCH 的路径参数走这条）—— **不重算**：
+    key 按初始名字生成，之后改名不换 key，否则改个错别字就等于换主键，
+    先修关系与测评题库当场断链。没有 code 才按展示名生成一个。
+    """
+    k = str(payload.get("skill_key") or "").strip()
+    if is_valid_key(k):
+        return k
+    return derive_key(resolve_skill_name(payload))
+
+
+def existing_skill_name(skill_key: str, region: str = "CN") -> str:
+    """库里这个 key 对应的展示名（取第一个非空）。"""
+    for n in _find_existing_nodes_by_skill_key(skill_key, region):
+        nm = skill_name_from_node(n)
+        if nm:
+            return nm
+    return ""
+
+
+def _assert_key_free(skill_key: str, skill_name: str, region: str) -> None:
+    """同一个 code 不能落到两个不同的技能名上。
+
+    key 是 md5(名字) 前 10 位（≈1.1e12），5911 个 key 的生日碰撞概率约 1.6e-5 ——
+    小，但不是零，而碰撞的后果是两个技能被静默合成一个（读路径按 key 聚合）。
+    所以生成后显式查一次：撞上就报错让人改名，不覆盖、不合并。
+    """
+    from backend.kg.skill_key import normalize_name
+
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT ({SKILL_NAME_SQL}) AS nm
+            FROM kg_node n
+            WHERE n.type = 'skill_level'
+              AND (%s::text IS NULL OR n.region = %s)
+              AND COALESCE(n.status, 'published') <> 'archived'
+              AND ({SKILL_KEY_SQL}) = %s
+            """,
+            (region, region, skill_key),
+        ).fetchall()
+    mine = normalize_name(skill_name)
+    others = [r["nm"] for r in rows if r["nm"] and normalize_name(r["nm"]) != mine]
+    if others:
+        raise ValueError(
+            f"skill_key 冲突：`{skill_key}` 已被技能「{others[0]}」占用。"
+            f"这是哈希碰撞（概率极低），请把「{skill_name}」改个名字再存"
+        )
 
 
 def build_level_node_body(
     *,
     skill_key: str,
+    skill_name: str,
     level_code: str,
     level_obj: dict[str, Any],
     region: str,
@@ -187,8 +251,10 @@ def build_level_node_body(
     li = int(level_code[1])
     label = level_obj.get("label") or _level_labels().get(li, level_code)
     desc = level_obj.get("description") or level_obj.get("desc")
-    name = f"{skill_key} · {level_code}"
-    # 稳定 id，便于重复提交 upsert
+    # 节点名用**展示名**：`skill_key` 现在是 SKxxxxxxxxxx，拿它拼名字的话
+    # 库里的 name 会变成「SKabd68031c5 · L3」，而 name 是很多兜底路径的最后一根稻草
+    name = f"{skill_name} · {level_code}"
+    # 稳定 id：由 **code** 派生而非名字 —— 改名不换 id，重复提交仍能 upsert 到同一行
     sid = f"{skill_key}|{level_code}"
     nid = base.get("id_prefix") or f"CN:skill_level:MANUAL:{uuid.uuid5(uuid.NAMESPACE_URL, sid).hex[:16]}"
     # 若 payload 指定 id 模板
@@ -199,7 +265,7 @@ def build_level_node_body(
     attrs.update(
         {
             "skill_key": skill_key,
-            "skill_name": skill_key,
+            "skill_name": skill_name,
             # scale 记录数据源使用的原刻度，仅溯源；判定一律用 level
             "scale": base.get("scale") or "l1_l5",
             "level": li,
@@ -317,6 +383,12 @@ def apply_skill_bundle_create(
     `to_draft=False`：审核队列批准后落地，直接写线上行（方案 §4）。
     """
     skill_key = resolve_skill_key(payload)
+    skill_name = resolve_skill_name(payload)
+    # 碰撞校验**只在新建时跑**。更新（含改名）时这个 key 本来就是这条记录的身份，
+    # 照查的话会看到「该 key 已被另一个名字占用」—— 而那个「另一个名字」正是
+    # 改名前的自己，于是任何改名都被 400 拦死。
+    if not payload.get("_is_update"):
+        _assert_key_free(skill_key, skill_name, (payload.get("region") or "CN").strip() or "CN")
     levels = normalize_levels(payload.get("levels"))
     if not levels:
         raise ValueError("levels 至少包含一档（L1–L5 对象或字符串）")
@@ -377,6 +449,7 @@ def apply_skill_bundle_create(
             continue
         body = build_level_node_body(
             skill_key=skill_key,
+            skill_name=skill_name,
             level_code=code,
             level_obj=levels[code],
             region=region,
@@ -516,7 +589,21 @@ def apply_skill_bundle_update(
     """更新逻辑技能：可增补/改档文案、重建岗链权重。"""
     skill_key = (skill_key or resolve_skill_key(payload)).strip()
     region = (payload.get("region") or "CN").strip() or "CN"
-    payload = {**payload, "skill_key": skill_key, "name": payload.get("name") or skill_key}
+    # 展示名：请求里带了就用（这是「改名」），没带就沿用库里已有的。
+    # **不能回落成 skill_key** —— 那是 SKxxxxxxxxxx，一次不带 name 的保存
+    # 就把技能名改成了一串哈希，而且不报错。
+    _existing_name = ""
+    for _n in _find_existing_nodes_by_skill_key(skill_key, region):
+        _existing_name = skill_name_from_node(_n)
+        if _existing_name:
+            break
+    payload = {
+        **payload,
+        "skill_key": skill_key,
+        "name": _strip_level_suffix(payload.get("skill_name") or payload.get("name"))
+        or _existing_name
+        or skill_key,
+    }
     # 若未带 levels，保留现有档的 description，只改边
     if not payload.get("levels"):
         existing = _find_existing_nodes_by_skill_key(skill_key, region)
@@ -534,7 +621,10 @@ def apply_skill_bundle_update(
             }
         payload["levels"] = levels
     return apply_skill_bundle_create(
-        payload, user_id=user_id, user_name=user_name, to_draft=to_draft
+        {**payload, "_is_update": True},
+        user_id=user_id,
+        user_name=user_name,
+        to_draft=to_draft,
     )
 
 
@@ -557,6 +647,16 @@ def preview_skill_bundle(payload: dict[str, Any]) -> dict[str, Any]:
 def prepare_submit_payload(body: dict[str, Any]) -> dict[str, Any]:
     """规范化进审核队列的 payload。"""
     skill_key = resolve_skill_key(body)
+    try:
+        skill_name = resolve_skill_name(body)
+    except ValueError:
+        # PATCH 只带 levels、名字全靠路径参数（code）的调用形态：从库里取现有名字。
+        # 改造前 skill_key 就是名字，所以这类请求以前是能过的，不能因为改造把它打成 400。
+        skill_name = existing_skill_name(
+            skill_key, (body.get("region") or "CN").strip() or "CN"
+        )
+        if not skill_name:
+            raise
     levels = normalize_levels(body.get("levels"))
     if not levels:
         raise ValueError("levels 至少包含一档（L1–L5）")
@@ -566,8 +666,8 @@ def prepare_submit_payload(body: dict[str, Any]) -> dict[str, Any]:
         "type": "skill_level",
         "expand_levels": True,
         "skill_key": skill_key,
-        "skill_name": skill_key,
-        "name": body.get("name") or skill_key,
+        "skill_name": skill_name,
+        "name": body.get("name") or skill_name,
         "region": body.get("region") or "CN",
         "scale": body.get("scale") or "l1_l5",
         "levels": levels,

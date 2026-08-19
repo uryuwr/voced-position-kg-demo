@@ -90,11 +90,17 @@ class TestVisibilityFragments:
 
 
 class TestAttrsLevelInt:
-    def test_只有纯数字才转整数(self):
+    def test_纯数字与整数值浮点才转整数(self):
+        """`3.0` 也要收成 3（BUG-8）：读侧不认它的话，那个岗位会静默变「无基准」。
+
+        真小数仍取 NULL —— 档位是枚举，没有 2.5 档。与 `config.as_level`
+        和写侧 `write._assert_attrs_sane` 的宽严差异是有意的：
+        写侧拒一切浮点（库要干净），读侧容整数值浮点（兜绕过应用层的来路）。
+        """
         sql = attrs_level_int("n")
         assert sql == (
-            "CASE WHEN (n.attrs::json->>'level') ~ '^[0-9]+$' "
-            "THEN (n.attrs::json->>'level')::int END"
+            r"CASE WHEN (n.attrs::json->>'level') ~ '^[0-9]+(\.0+)?$' "
+            "THEN trunc((n.attrs::json->>'level')::numeric)::int END"
         )
 
     def test_默认别名是n(self):
@@ -110,7 +116,10 @@ class TestAttrsLevelInt:
         assert not re.search(r"\bELSE\b", sql, re.I)
 
     def test_正则锚定首尾防止3点5之类混过(self):
-        assert "'^[0-9]+$'" in attrs_level_int("n")
+        sql = attrs_level_int("n")
+        assert r"'^[0-9]+(\.0+)?$'" in sql
+        # 锚定首尾：没有 ^ $ 的话 "2.5abc" 之类也会被部分匹配放过
+        assert "~ '^" in sql and "$'" in sql
 
 
 # ── attrs.level 写侧校验 ──────────────────────────────────────
@@ -223,12 +232,6 @@ class TestAsLevel:
         """bool 是 int 的子类，不特判的话 True 会被当成 L1 混进算分。"""
         assert as_level(b) is None
 
-    @pytest.mark.known_bug
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG-8：整数值浮点档位（3.0 / Decimal('3.0')）被当成「没有要求档」，"
-               "整个岗位静默变成 no_baseline、分数变 null。",
-    )
     @pytest.mark.parametrize("f", [3.0, Decimal("3.0"), "3.0", 1.0, 5.0])
     def test_整数值的浮点档位该收成整数(self, f):
         """`int(str(3.0))` = `int("3.0")` → ValueError → None，于是 3.0 被判成缺失。
@@ -239,7 +242,12 @@ class TestAsLevel:
         而库里明明配了 —— **静默**给出错结论，比抛异常难查得多。
 
         口径：值等于整数的浮点/Decimal/数字串收成该整数（`3.0 → 3`），
-        真小数仍取 None（见下一条）。修法一行：先 `Decimal(str(v))` 再判 `== int(...)`。
+        真小数仍取 None（见下一条）。
+
+        2026-08-19 已修（BUG-8 转正）：`config.as_level` 改成先 `Decimal(str(v))`
+        再判 `== to_integral_value()`；SQL 侧 `attrs_level_int` 与写侧
+        `write._assert_attrs_sane` 同步成同一套规则 —— 三处不一致的话，
+        同一行数据在 SQL 与 Python 两侧会给出不同结论。
         """
         assert as_level(f) == int(float(f))
 

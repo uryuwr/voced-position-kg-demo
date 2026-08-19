@@ -80,6 +80,14 @@ pipelines/  旧路径 shim，勿写新逻辑
 
 **采集跑完必须灌库，否则等于没跑**——`crawlers/` 写的是 SQLite 采集库，PG 才是运行库，两者靠 `python -m backend.kg.pg_store.migrate --region CN` 同步（不带 `--clear` 是增量 upsert）。2026-08-18 那批铺量栽在这：9 个门类进度全是「5 步 OK」、采集库里 4600+ 条 `requires`，而 PG 里除技术与产品全是 0，页面上什么都看不到——每步都成功，链路却是断的。`migrate` 只搬 `attrs`、**不写 `kg_node.category` 列**，而读路径查的是列，所以灌完还要跑 `scripts/migrate_skill_category_to_code.py`（上次少跑一次，12642 个技能显示「待归类」）。这两步已挂进 `scripts/run_full_chain.py` 的 `FINISH_STEPS`，批次末尾自动执行。**另外：铺量跑批期间不要改 `crawlers/` 下的文件**——每步是新起的子进程，改到一半会让后续门类 import 就崩（10 个门类因此整批失败）。
 
+**`skill_key` 是 ASCII code，不是技能名**（2026-08-19 起）——形态 `SK` + md5(NFC 规范化后的名字) 前 10 位，展示名在 `attrs.skill_name`。真源是 `kg/skill_key.py`（`derive_key` 与 `SQL_DERIVE_KEY` 两边逐位一致，实测过）。改之前 key 就是中文名，而 key 要进 URL（`/v1/admin/skills/{skill_key}`）：库里带 `/` 的 26 个、带 `#` `%` 空格 `+` 的各有若干，前端一次双重编码就长出过一个幽灵技能 `3D%25E5%259C%25BA…`（二次解码就是「3D场景搭建」）。三条必守：
+
+- **有 `attrs.skill_key` 就以它为准，永不重算**。key 按初始名字生成，之后**改名不换 key** —— 重算等于改个错别字就换主键，`kg_skill_prereq`（两列）、`biz_assessment_item`、`biz_assessment_question` 当场断链。
+- **「按名字反推 key」不能当查找机制**。采集端判断「这技能已经有了吗」要按 `attrs.skill_name` 查库（`link_boss_skill_chain.existing_skill_keys` 就是这么做的）：技能一旦改过名，md5 反推必然失效，会重复建一套节点，且不报错。
+- **`SKILL_KEY_SQL` 的兜底是现算 code，不是回落到名字**。同一技能的 5 个档位节点要算出同一个值才能聚成一组，行内唯一共享的东西只有名字，所以随机 id 在 SQL 里没法兜底 —— 这也是选 md5 而非 uuid 的唯一理由。入库期由 `level_scale.normalize_skill_level_node` 盖上（采集与灌库的必经之路，与刻度归一同一个位置）。
+- 展示一律用 `skill_name` / `SKILL_NAME_SQL`。搜索也要按名字匹配：`SKILL_KEY_SQL ILIKE` 在改造后**中文一个都搜不到**（下拉框会永远空着）。
+- 存量迁移：`scripts/migrate_skill_key_to_code.py`（幂等，dry-run 默认）；闸门 `scripts/verify_skill_key.py`。
+
 **技能分类存 code，不存名字**——`kg_node.category` 存 `TECH`/`OPERATE` 这类 code，展示名连 `kg_skill_category` 表取（读路径统一走 `skill_taxonomy.name_of()`，出参里叫 `category_name`）。真源是 `kg/pg_store/skill_taxonomy.py`，启动时幂等 upsert 进表（只 upsert 不 delete，管理台自建的分类不会被抹）。11 个实类 + 兜底 `UNSORTED`（待归类），刻意做粗；改名只动表，不动 12000 条技能。管理台查字典用 `GET /v1/kg/skill-categories?q=`。改之前库里并存两套中文口径（国标「操作与加工」11 种 + LLM「技术工程」9 种），且 LLM 那 3135 个**只写了 `attrs.category`、列是空的**，读路径查列，页面上全显示「未分类」。新增分类来源时把中文别名加进 `aliases`，`to_code()` 认不出的一律落兜底，不猜。
 
 **边模型**：岗位 `requires` 技能（带 weight，Σ≈1）；专业 `covers` 技能（无权重、不归一）。本体见 `schemas/graph_schema.yaml`；发布门禁规则 BR-01~BR-08 在 `kg/pg_store/publish_rules.py`。

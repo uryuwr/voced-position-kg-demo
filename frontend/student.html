@@ -64,6 +64,11 @@
     .empty { color:var(--muted); padding:26px; text-align:center; }
     pre { background:#0b1220; border:1px solid var(--line); border-radius:8px; padding:10px;
           font-size:11px; overflow:auto; max-height:240px; }
+    /* 岗位卡片上的「成长通道 / 核心胜任力」两块（跟随深色主题，别用浅底） */
+    .growth { margin-top:8px; padding:8px 10px; border:1px solid var(--line);
+              border-radius:8px; background:#0b1220; }
+    .growth b { color:var(--text); font-size:12px; }
+    .tag.sk { color:#86efac; border-color:#166534; }
   </style>
 </head>
 <body>
@@ -157,6 +162,33 @@
         renderPositions();
       } catch (e) { $("posGrid").innerHTML = `<div class="empty">失败：${esc(e.message || e)}</div>`; }
     }
+    // 成长通道 / 核心胜任力都由**列表接口一次带回**（progressions / top_skills）。
+    // 以前是一张卡两个请求：/positions/{id} 拿技能 + /positions/progressions 拿通道，
+    // 一页 12 张卡 = 25 个请求。服务端侧换成了两条批量 SQL，与页大小无关。
+    function renderGrowth(p) {
+      const gs = p.progressions || [];
+      if (!gs.length) return "";
+      return `<div class="growth">
+        <div class="muted" style="margin-bottom:4px">📈 成长通道（${gs.length} 条路径）</div>
+        ${gs.map((g) => `<div class="row" style="gap:6px">
+          <span class="tag">${esc(g.direction)}</span>
+          <b>${esc((g.target || {}).name || "—")}</b>
+        </div>`).join("")}
+      </div>`;
+    }
+
+    function renderTopSkills(p) {
+      const ss = p.top_skills || [];
+      if (!ss.length) return "";
+      return `<div class="growth">
+        <div class="muted" style="margin-bottom:4px">核心胜任力要求：</div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          ${ss.map((s) => `<span class="tag sk">${esc(s.skill_name || s.skill_key)}${
+            s.required_level ? ` <b>L${s.required_level}</b>` : ""}</span>`).join("")}
+        </div>
+      </div>`;
+    }
+
     function renderPositions() {
       if (!S.positions.length) { $("posGrid").innerHTML = '<div class="empty">无结果</div>'; return; }
       $("posGrid").innerHTML = S.positions.map((p, i) => `
@@ -169,6 +201,8 @@
           </div>
           <h3>${esc(p.name)}</h3>
           <div class="muted">${esc((p.desc || "").slice(0, 60))}</div>
+          ${renderGrowth(p)}
+          ${renderTopSkills(p)}
           <div class="row" style="margin-top:10px">
             <button class="ghost" data-detail="${i}">岗位详情</button>
             <button class="ghost" data-lock="${i}">${S.goal && S.goal.occupation_id === p.id ? "已锁定" : "锁定目标"}</button>

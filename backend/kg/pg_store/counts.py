@@ -4,8 +4,8 @@ from __future__ import annotations
 from typing import Any
 
 from backend.kg.pg_store.client import use_conn
-from backend.kg.pg_store.config import edge_published, online_only
-from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
+from backend.kg.pg_store.config import attrs_level_int, edge_published, online_only
+from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL, SKILL_NAME_SQL
 
 # 关联计数不能把归档/草稿边算进去，否则前端显示的关联数虚高
 EP_E = edge_published("e")
@@ -427,3 +427,163 @@ def counts_for_node(node_id: str, node_type: str | None = None) -> dict[str, Any
         "industry_id": n.get("industry_id"),
         "industry_name": n.get("industry_name"),
     }
+
+
+# ── 岗位卡片的两块：成长通道 + 核心胜任力（批量，禁 N+1）──────────────
+#
+# 学员端岗位列表一页 12 张卡，每张要显示「成长通道」与「核心胜任力要求」。
+# 原来前端是一张卡两个请求：`/positions/{id}` + `/positions/progressions?id=`，
+# 一页 25 个请求。搬到服务端后**服务端自己也不能变成 N+1** ——
+# `progression.occupation_progressions` 是逐节点查出边、逐节点查技能，
+# 单个岗位就要十几次查询，循环 12 次比前端 N+1 更糟。
+#
+# 所以这两个函数都是「一条 SQL 取全，再在内存里分配到各岗位」。
+
+
+def progressions_for_occupations(
+    ids: list[str],
+    *,
+    max_depth: int = 3,
+    max_per_occ: int = 3,
+    conn: object | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """occupation → [{direction, target:{id,name,level}, depth}]，卡片用的精简形态。
+
+    **一次把全库 advances_to 边load 进内存再走图**：这类边全库只有一千多条，
+    比「每个岗位查一次出边、每跳再查一次」便宜得多，也不会随页大小放大。
+    完整多跳链路（含每跳要补的技能）仍走 `progression.occupation_progressions`，
+    那是详情页的事。
+
+    方向名复用 `progression._direction`，不另写一套 —— 卡片上写「管理路线」、
+    详情页写「跨方向转型」的话，同一条边两个说法。
+    """
+    from backend.kg.pg_store.progression import _direction
+
+    out: dict[str, list[dict[str, Any]]] = {i: [] for i in ids}
+    if not ids:
+        return out
+    with use_conn(conn) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT e.src_id, e.dst_id, e.attrs AS edge_attrs,
+                   d.name AS dst_name,
+                   COALESCE(d.level, {attrs_level_int('d')}) AS dst_level
+            FROM kg_edge e
+            JOIN kg_node d ON d.id = e.dst_id AND d.type = 'occupation'
+                 AND COALESCE(d.status, 'published') = 'published'
+                 AND NOT d.is_draft
+            WHERE e.rel_type = 'advances_to' AND {EP_E} AND NOT e.is_draft
+            """
+        ).fetchall()
+
+    adj: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        adj.setdefault(r["src_id"], []).append(r)
+
+    def walk(start: str) -> list[dict[str, Any]]:
+        paths: list[dict[str, Any]] = []
+        seen_dir: set[str] = set()
+
+        def go(cur: str, visited: set[str], first_dir: str | None, depth: int) -> None:
+            if len(paths) >= max_per_occ:
+                return
+            nxts = [n for n in adj.get(cur, []) if n["dst_id"] not in visited]
+            if not nxts or depth >= max_depth:
+                # 走到头：这条路径的终点就是卡片上要显示的目标岗位
+                if first_dir and cur != start and first_dir not in seen_dir:
+                    seen_dir.add(first_dir)
+                    node = last_node.get(cur)
+                    paths.append(
+                        {
+                            "direction": first_dir,
+                            "target": {
+                                "id": cur,
+                                "name": (node or {}).get("dst_name"),
+                                "level": (node or {}).get("dst_level"),
+                            },
+                            "depth": depth,
+                        }
+                    )
+                return
+            for n in nxts:
+                a = _edge_attrs(n.get("edge_attrs"))
+                d = first_dir or _direction(
+                    a.get("from_family"), a.get("to_family"), n["dst_name"]
+                )
+                last_node[n["dst_id"]] = n
+                go(n["dst_id"], visited | {n["dst_id"]}, d, depth + 1)
+
+        last_node: dict[str, dict[str, Any]] = {}
+        go(start, {start}, None, 0)
+        return paths
+
+    for oid in ids:
+        out[oid] = walk(oid)
+    return out
+
+
+def _edge_attrs(v: Any) -> dict[str, Any]:
+    if isinstance(v, dict):
+        return v
+    if isinstance(v, str) and v.strip():
+        import json
+
+        try:
+            d = json.loads(v)
+            return d if isinstance(d, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def top_skills_for_occupations(
+    ids: list[str],
+    *,
+    limit: int = 4,
+    conn: object | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """occupation → 按权重降序的前 N 项技能（卡片「核心胜任力要求」）。
+
+    口径与 `skill_composition.entity_skill_composition` 的 public 分支一致：
+    同一 skill_key 有多档边时取**最高档**、并用那一档的权重。不一致的话，
+    卡片上写 L3、点进详情写 L5，同一岗位两个数字（这个项目已经栽过的形状）。
+
+    一条 SQL 取完所有岗位，`DISTINCT ON` 负责按 (岗位, 技能) 去重取最高档。
+    """
+    out: dict[str, list[dict[str, Any]]] = {i: [] for i in ids}
+    if not ids:
+        return out
+    with use_conn(conn) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT ON (e.src_id, sk)
+                   e.src_id,
+                   ({SKILL_KEY_SQL.replace('n.', 's.')}) AS sk,
+                   ({SKILL_NAME_SQL.replace('n.', 's.')}) AS skill_name,
+                   {attrs_level_int('s')} AS required_level,
+                   e.weight
+            FROM kg_edge e
+            JOIN kg_node s ON s.id = e.dst_id AND s.type = 'skill_level'
+                 AND {_PUB_S} AND NOT s.is_draft
+            WHERE e.rel_type = 'requires' AND {EP_E} AND NOT e.is_draft
+              AND e.src_id = ANY(%s)
+            ORDER BY e.src_id, sk, {attrs_level_int('s')} DESC NULLS LAST
+            """,
+            (ids,),
+        ).fetchall()
+    for r in rows:
+        bucket = out.get(r["src_id"])
+        if bucket is None or not r["sk"]:
+            continue
+        bucket.append(
+            {
+                "skill_key": r["sk"],
+                "skill_name": r["skill_name"],
+                "required_level": r["required_level"],
+                "weight": float(r["weight"]) if r["weight"] is not None else None,
+            }
+        )
+    for oid, lst in out.items():
+        lst.sort(key=lambda x: (x["weight"] is None, -(x["weight"] or 0), x["skill_name"] or ""))
+        out[oid] = lst[:limit]
+    return out

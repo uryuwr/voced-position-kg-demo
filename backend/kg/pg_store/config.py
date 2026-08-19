@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -187,10 +188,17 @@ def attrs_level_int(alias: str = "n") -> str:
 
     写入侧已在 write.py 校验（1–5 的整数），这里是读侧兜底：
     采集脚本、历史数据、直连改库都绕得过应用层校验，读路径必须自己站得住。
+
+    **整数值的浮点（`3.0`）要收成 3**，与 Python 侧 `as_level` 同一套规则。
+    原来的 `^[0-9]+$` 把它判成脏值取 NULL，于是那个岗位的所有技能都成了「无基准」，
+    `match_score` 变 null、页面说「尚未配置能力要求」而库里明明配了（BUG-8）。
+    两边规则不一致更糟：同一行数据 SQL 说没有、Python 说有，两个页面两个结论。
+    真小数（2.5）仍取 NULL —— 档位是枚举，没有 2.5 档。
     """
+    expr = f"({alias}.attrs::json->>'level')"
     return (
-        f"CASE WHEN ({alias}.attrs::json->>'level') ~ '^[0-9]+$' "
-        f"THEN ({alias}.attrs::json->>'level')::int END"
+        f"CASE WHEN {expr} ~ '^[0-9]+(\\.0+)?$' "
+        f"THEN trunc({expr}::numeric)::int END"
     )
 
 
@@ -218,10 +226,23 @@ def as_level(v: Any) -> int | None:
     """
     if v is None or isinstance(v, bool):
         return None
+    # **整数值的浮点要收成整数**（BUG-8）：`int(str(3.0))` = `int("3.0")` → ValueError
+    # → None，于是 `3.0` 被判成「没有要求档」，那个岗位的所有技能都成了「无基准」，
+    # `match_score` 变 null、页面显示「该岗位尚未配置能力要求」，而库里明明配了 ——
+    # 静默给出错结论，比抛异常难查得多。
+    # psycopg 把 numeric 读成 `Decimal` 是常态，JSON 里 `"level": 3.0` 也完全合法。
+    # 真小数（2.5）仍取 None：档位是枚举，没有 2.5 档。
     try:
-        lv = int(str(v).strip())
-    except (TypeError, ValueError):
+        d = Decimal(str(v).strip())
+    except (TypeError, ValueError, ArithmeticError):
         return None
+    # `inf` / `nan` 能被 Decimal 收下，但 to_integral_value / int() 会抛
+    # OverflowError、InvalidOperation —— 而这个函数的契约是**任何输入都不抛错**
+    if not d.is_finite():
+        return None
+    if d != d.to_integral_value():
+        return None
+    lv = int(d)
     return lv if LEVEL_MIN <= lv <= LEVEL_MAX else None
 
 
