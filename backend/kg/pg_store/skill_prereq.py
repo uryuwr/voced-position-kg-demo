@@ -144,6 +144,46 @@ def remove_prereq(
         return cur.rowcount > 0
 
 
+def _cycle_in_replacement(
+    skill_key: str, prereq_keys: list[str], *, region: str
+) -> str | None:
+    """把 `skill_key` 的先修整体换成 `prereq_keys` 后会不会成环。
+
+    不能逐条调 `_would_cycle`：那个函数是**基于库里当前的图**判断「再加一条」，
+    而整体替换时旧边即将消失。先删后逐条校验（原来的做法）能算对，代价是必须
+    先把库改了 —— 中途报错就把运营原有的先修列表毁了（见 `set_prereqs`）。
+    这里在内存里做替换，一次校验全部，库一个字都还没动。
+
+    返回第一个导致成环的先修名（用于报错文案），无环返回 None。
+    """
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT skill_key, prereq_skill_key FROM kg_skill_prereq WHERE region=%s",
+            (region,),
+        ).fetchall()
+    graph: dict[str, list[str]] = defaultdict(list)
+    for r in rows:
+        if r["skill_key"] == skill_key:
+            continue                      # 旧边被这次替换整体覆盖，不参与判断
+        graph[r["skill_key"]].append(r["prereq_skill_key"])
+    graph[skill_key] = list(prereq_keys)
+
+    # 逐个先修单独判：报错要能指名道姓说是哪一个成环，
+    # 只回一句「会成环」运营得自己一条条试。
+    for pk in prereq_keys:
+        q = deque([pk])
+        seen = {pk}
+        while q:
+            cur = q.popleft()
+            if cur == skill_key:
+                return pk
+            for nxt in graph.get(cur, []):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    q.append(nxt)
+    return None
+
+
 def set_prereqs(
     skill_key: str,
     prereq_keys: list[str],
@@ -151,20 +191,60 @@ def set_prereqs(
     region: str | None = None,
     created_by: str | None = None,
 ) -> list[dict[str, Any]]:
-    """整体替换某技能的先修列表（逐条无环校验）。"""
+    """整体替换某技能的先修列表 —— **先全量校验，再一个事务里删+写**。
+
+    原来是「先 DELETE 并 commit，再逐条 add_prereq」，两个问题：
+    - 第 N 条成环时抛异常，而 DELETE 已经提交、前 N-1 条已写入：接口回 400，
+      运营原有的先修列表**已经被清空了**，比单纯保存失败严重得多。
+    - 删和写不在一个事务里，中间有个「先修为空」的时间窗，并发读会读到空列表。
+    """
     reg = region or DEFAULT_REGION
-    sk = skill_key.strip()
+    sk = (skill_key or "").strip()
+    if not sk:
+        raise ValueError("skill_key 必填")
+
+    # 去重 + 去空 + 去自身，保持传入顺序（运营在界面上的排序有意义）
+    seen_pk: set[str] = set()
+    keys: list[str] = []
+    for raw in prereq_keys or []:
+        pk = (raw or "").strip()
+        if not pk or pk in seen_pk:
+            continue
+        if pk == sk:
+            raise ValueError("不能以自身为先修")
+        seen_pk.add(pk)
+        keys.append(pk)
+
+    bad = _cycle_in_replacement(sk, keys, region=reg)
+    if bad:
+        raise ValueError(f"先修会成环：{sk} → {bad} → … → {sk}")
+
     with connect() as conn:
         conn.execute(
             "DELETE FROM kg_skill_prereq WHERE region=%s AND skill_key=%s",
             (reg, sk),
         )
-        conn.commit()
-    out = []
-    for pk in prereq_keys:
-        out.append(
-            add_prereq(
-                sk, pk, region=reg, created_by=created_by, confidence="manual_seed"
+        for pk in keys:
+            conn.execute(
+                """
+                INSERT INTO kg_skill_prereq
+                  (skill_key, prereq_skill_key, region, evidence, confidence, created_by)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (region, skill_key, prereq_skill_key) DO UPDATE SET
+                  evidence = EXCLUDED.evidence,
+                  confidence = EXCLUDED.confidence
+                """,
+                (sk, pk, reg, None, "manual_seed", created_by),
             )
-        )
-    return out
+        conn.commit()
+
+    return [
+        {
+            "skill_key": sk,
+            "prereq_skill_key": pk,
+            "region": reg,
+            "evidence": None,
+            "confidence": "manual_seed",
+        }
+        for pk in keys
+    ]

@@ -18,7 +18,12 @@ from backend.kg.pg_store.skill_aggregate import (
     skill_key_from_node,
 )
 from backend.kg.pg_store.skill_taxonomy import to_code
-from backend.kg.pg_store.write import create_edge, create_node, patch_node
+from backend.kg.pg_store.write import (
+    archive_edge,
+    create_edge,
+    create_node,
+    patch_node,
+)
 
 # 复用已有档位节点时要看得到草稿行（方案 §6.2）
 _PD_N = prefer_draft("n")
@@ -349,6 +354,10 @@ def apply_skill_bundle_create(
     # 若已有同 skill_key 节点，复用 id 做 upsert
     existing = _find_existing_nodes_by_skill_key(skill_key, region)
     exist_by_lv: dict[str, str] = {}
+    # 已经归档 / 已经标了待归档的档位单独记：下面「全量替换」要跳过它们，
+    # 否则每次保存都给同一档再落一条 target_status='archived' 的草稿，
+    # 待发布页上永远清不掉。
+    exist_dead: set[str] = set()
     for n in existing:
         a = n.get("attrs") if isinstance(n.get("attrs"), dict) else {}
         code = (a.get("level_code") or "").upper()
@@ -357,6 +366,11 @@ def apply_skill_bundle_create(
             code = f"L{m.group(1)}" if m else ""
         if code:
             exist_by_lv[code] = n["id"]
+            if "archived" in (
+                str(n.get("status") or ""),
+                str(n.get("target_status") or ""),
+            ):
+                exist_dead.add(code)
 
     for code in _LEVEL_KEYS:
         if code not in levels:
@@ -376,6 +390,50 @@ def apply_skill_bundle_create(
         )
         created_nodes.append(node)
         nodes_by_level[code] = node
+
+    # 提交了 levels 就按**全量替换**处理：没出现在这次提交里的档位要归档。
+    #
+    # 为什么必须这样：管理台的技能编辑是一张**全量表单**，五档各一行输入框，
+    # 前端在 `buildBody()` 里 `if (desc)` —— 描述被清空的那档**整个不出现在
+    # payload 里**。后端若把「未出现」一律当成「保留原档」，就会出现用户报的现象：
+    # 清掉 L5 的描述、保存、再点编辑，L5 还在，而且怎么都删不掉。
+    # 「删掉某一档」在这个接口里本来就没有别的表达方式。
+    #
+    # 归档而不是物理删：与项目其它删除一致（`archived` 是逻辑删除，可恢复），
+    # 而且走草稿 —— 移除一档是内容编辑，前台要到发布后才少一档。
+    # `levels` 为空（只改岗链的那条路，见 apply_skill_bundle_update）不走这里，
+    # 否则「只改技能构成」会把五档全归档。
+    removed_levels: list[str] = []
+    if levels:
+        for code, old_id in sorted(exist_by_lv.items()):
+            if code in levels or code in exist_dead:
+                continue
+            patch_node(
+                old_id,
+                {"status": "archived"},
+                user_id=user_id,
+                user_name=user_name,
+                to_draft=to_draft,
+            )
+            # 边跟着走：节点归档而边还 published 的话，`edge_published()` 拦不住
+            # 那些边，图查询会画出指向不可见节点的断头箭头，按边计数也会比详情多
+            with connect() as conn:
+                eids = [
+                    r["id"]
+                    for r in conn.execute(
+                        """
+                        SELECT id FROM kg_edge
+                        WHERE (src_id = %s OR dst_id = %s) AND NOT is_draft
+                          AND COALESCE(status, 'published') <> 'archived'
+                        """,
+                        (old_id, old_id),
+                    ).fetchall()
+                ]
+            for eid in eids:
+                archive_edge(
+                    eid, user_id=user_id, user_name=user_name, to_draft=to_draft
+                )
+            removed_levels.append(code)
 
     # 边：每个岗位 × 每个已建档；权重仅写在 required_level（或最高档）
     created_edges: list[dict[str, Any]] = []
@@ -441,6 +499,7 @@ def apply_skill_bundle_create(
         "node_ids": node_ids,
         "edges": created_edges,
         "levels": list(nodes_by_level.keys()),
+        "removed_levels": removed_levels,
         "occupation_links": occ_links,
         "bundle": bundle,
     }

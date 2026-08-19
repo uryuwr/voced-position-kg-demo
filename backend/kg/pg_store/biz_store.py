@@ -22,6 +22,7 @@ from backend.kg.pg_store.counts import (
     counts_for_majors,
     counts_for_occupations,
     industries_for_occupations,
+    occupation_in_industry_sql,
 )
 from backend.kg.pg_store.query import (
     get_node,
@@ -591,11 +592,22 @@ def profession_ladder(
 def list_positions(
     *,
     q: str | None = None,
+    industry_id: str | None = None,
     page: int = 1,
     page_size: int = 20,
     region: str | None = None,
     conn: Any | None = None,
 ) -> dict[str, Any]:
+    """岗位列表。`q`（岗位名关键词）与 `industry_id`（具体行业）可单用也可叠加。
+
+    行业只按 **id** 筛，不按名字模糊匹配：行业名重名、含斜杠（「互联网/AI」），
+    模糊匹配会把「电子/通信/半导体」和「电子商务」一起筛出来。前端的用法是
+    `/v1/student/industries?q=关键词` 出下拉候选，选中后把 id 传进来。
+    """
+    iid = (industry_id or "").strip() or None
+    extra_where = occupation_in_industry_sql("kg_node") if iid else None
+    # 片段里两个 EXISTS 各一个占位符，同一个 id 传两次（直连 + 经专业两跳）
+    extra_params = [iid, iid] if iid else None
     # 一条连接跑完 list_nodes + counts_for_occupations + industries_for_occupations
     # （文档第 1 条点名的「一次学员列表 2–4 次连接」就是这里）
     with use_conn(conn) as c:
@@ -606,6 +618,8 @@ def list_positions(
             page=page,
             page_size=page_size,
             published_only=True,
+            extra_where=extra_where,
+            extra_params=extra_params,
             conn=c,
         )
         items = [_node_to_position(n) for n in data["items"]]

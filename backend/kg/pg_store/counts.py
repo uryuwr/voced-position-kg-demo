@@ -251,6 +251,47 @@ def counts_for_occupations(
     return out
 
 
+def occupation_in_industry_sql(alias: str = "kg_node") -> str:
+    """「这个岗位属于某个行业吗」的 SQL 片段，供列表接口按行业筛选。
+
+    返回的片段带 **2 个 `%s` 占位**（同一个 industry_id 传两次），交给
+    `query.list_nodes(extra_where=..., extra_params=[iid, iid])`。
+    industry_id 走占位符，绝不拼进片段 —— 它来自用户输入。
+
+    两条路径必须与 `industries_for_occupations` **完全一致**，否则会出现
+    「列表里这个岗位显示所属行业 X，但按 X 筛却筛不到它」这种最难解释的不一致：
+      1. 直连  occupation -belongs_to→ industry
+      2. 两跳  occupation ←prepares_for- major -belongs_to→ industry
+    所以两个函数放在同一个文件里紧挨着，改一个必须回头看另一个。
+
+    口径用**前台可见**（published）：这个片段目前只服务学员端列表。管理台要用的话
+    得另给一版 published_only=False 的谓词，别直接复用。
+    """
+    a = alias
+    return f"""
+    EXISTS (
+      SELECT 1 FROM kg_edge e
+      JOIN kg_node i ON i.id = e.dst_id AND i.type = 'industry'
+           AND {_PUB_I} AND {_PD_I}
+      WHERE e.src_id = {a}.id AND e.rel_type = 'belongs_to'
+        AND {EP_E} AND {_PUB_E} AND i.id = %s
+    )
+    OR EXISTS (
+      SELECT 1 FROM kg_edge pf
+      JOIN kg_node m ON m.id = pf.src_id AND m.type = 'major'
+           AND {_PUB_M} AND {_PD_M}
+      JOIN kg_edge e2 ON e2.src_id = m.id AND e2.rel_type = 'belongs_to'
+           AND {edge_published("e2")}
+           AND COALESCE(e2.status, 'published') = 'published'
+      JOIN kg_node i ON i.id = e2.dst_id AND i.type = 'industry'
+           AND {_PUB_I} AND {_PD_I}
+      WHERE pf.dst_id = {a}.id AND pf.rel_type = 'prepares_for'
+        AND {EP_PF} AND COALESCE(pf.status, 'published') = 'published'
+        AND i.id = %s
+    )
+    """
+
+
 def industries_for_occupations(
     ids: list[str],
     *,

@@ -1250,6 +1250,7 @@ def list_nodes(
     scope: str | None = None,
     order_by: str | None = None,
     extra_where: str | None = None,
+    extra_params: list[Any] | None = None,
     conn: Any | None = None,
 ) -> dict[str, Any]:
     """
@@ -1284,9 +1285,16 @@ def list_nodes(
         where.append("lower(name) LIKE lower(%s)")
         params.append(q_like)
     if extra_where:
-        # 调用方注入的**无参数** SQL 片段（如 config.learnable_course()）。
-        # 只接受本模块常量拼出的片段，不要把用户输入拼进来。
+        # 调用方注入的 SQL 片段（如 `config.learnable_course()`、
+        # `counts.occupation_in_industry_sql()`）。**片段本身必须是本仓库常量拼出来的**，
+        # 用户输入只能走 `extra_params` 的 `%s` 占位 —— 拼进片段就是 SQL 注入。
+        #
+        # 追加顺序有讲究：where 与 params 是两个平行列表，靠**下标对齐**。
+        # 这里紧跟在 q 的 append 之后，所以 extra_params 也必须在这里追加；
+        # 挪到函数末尾去追加，占位符就会错位到 q 上（不报错，只是查错东西）。
         where.append(f"({extra_where})")
+        if extra_params:
+            params.extend(extra_params)
     if st == ARCHIVED_STATUS:
         # archived 是逻辑删除：任何接口都不返回，恢复只能直接改库
         where.append("1=0")

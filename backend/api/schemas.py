@@ -1100,7 +1100,12 @@ class SkillPrereqLink(BaseModel):
 
     from_: str = Field(..., alias="from", description="先修技能的 skill_key")
     to: str = Field(..., description="后继技能的 skill_key")
-    confidence: float | str | None = Field(None, description="置信度")
+    # 同 PrereqOut.confidence：是来源等级文本，不是分数。原来写成 `float | str`
+    # 「两种都收」看着安全，实际是把类型判断推给了前端 —— 每次读都要先判是数字
+    # 还是字符串。库里存的只有那四个字面量，收窄成 str。
+    confidence: str | None = Field(
+        None, description="来源等级：manual_seed / official / derived / ai_inferred"
+    )
     evidence: str | None = Field(None, description="判定依据")
 
     model_config = ConfigDict(populate_by_name=True)

@@ -46,6 +46,8 @@ cli = TestClient(
 )
 
 MARK = "【草稿闭环探针】"
+# 本轮快照里哪些接口是「主体相关」的（URL 里带被测对象 id）
+subject_scoped: set[str] = set()
 RESULTS: list[tuple[bool, str, str]] = []
 _SPEC = app.openapi()
 
@@ -64,6 +66,7 @@ def front_snap(subject_id: str) -> dict[str, str]:
     """
     q = quote(subject_id, safe="")
     out: dict[str, str] = {}
+    subject_scoped.clear()
     for path, ops in (_SPEC.get("paths") or {}).items():
         op = (ops or {}).get("get")
         if not op or not any(str(t).startswith("前台") for t in (op.get("tags") or [])):
@@ -91,6 +94,14 @@ def front_snap(subject_id: str) -> dict[str, str]:
         r = cli.get(full)
         if r.status_code < 500:
             out[full] = hashlib.sha256(r.content).hexdigest()[:16]
+            # URL 里带被测对象 id 的才算「主体相关」。其余是全局列表
+            # （如无参数的 /v1/graph/explore、/v1/student/skills）——
+            # **8088 是多人共用的**（库里同时有三个人的草稿），别人发布一下
+            # 那些列表就变，拿它们判「还原后一致」会稳定假红。
+            # ④「编辑后前台不变」仍然全都判：那一步的信号是「不该变的变了」，
+            # 别人的改动只会让它更严格，不会放过真泄漏。
+            if q in full:
+                subject_scoped.add(full)
     return out
 
 
@@ -270,7 +281,8 @@ def run_node_dim(label: str, ntype: str) -> None:
     # 只核对「⑦ 里因这次发布而变过的接口」是否回到基线。全量列表类接口
     # （如无参数的 /v1/graph/explore）会因为发布触发 child_count / sort_order
     # 重算而不回退，那是派生展示元数据的正常重算，拿它判还原会稳定假红。
-    still = [k for k in changed if fin.get(k) != base.get(k)]
+    scoped = set(subject_scoped)
+    still = [k for k in changed if k in scoped and fin.get(k) != base.get(k)]
     check(not still, "⑨ 还原后与最初一致", "; ".join(k[:70] for k in still[:3]))
 
 
@@ -343,7 +355,8 @@ def run_skill_dim() -> None:
     if nid:
         publish(nid["id"])
     fin = front_snap(sk)
-    still = [k for k in changed if fin.get(k) != base.get(k)]
+    scoped = set(subject_scoped)
+    still = [k for k in changed if k in scoped and fin.get(k) != base.get(k)]
     check(not still, "⑨ 还原后与最初一致", "; ".join(k[:70] for k in still[:3]))
 
 

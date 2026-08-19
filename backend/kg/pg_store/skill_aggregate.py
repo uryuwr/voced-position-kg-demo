@@ -339,8 +339,13 @@ def list_skill_bundles(
         status_clause = f"AND {_PUB_N}"
         status_params = []
     else:
-        # 管理端：排除归档
-        status_clause = "AND COALESCE(n.status, 'published') NOT IN ('archived')"
+        # 管理端：排除归档，并排掉**待归档的档位墓碑**（清空某档描述 = 移除该档，
+        # 落一条 target_status='archived' 的草稿行）。不排掉的话「等级完整度」
+        # 那五个 chip 会把已删的档继续显示成有，和编辑页对不上。
+        status_clause = (
+            "AND COALESCE(n.status, 'published') NOT IN ('archived') "
+            "AND COALESCE(n.target_status, '') <> 'archived'"
+        )
         status_params = []
 
     with connect() as conn:
@@ -495,11 +500,18 @@ def get_skill_bundle(
     reg = _default_region(region)
     key_expr = SKILL_KEY_SQL
     row_pick = _ONLINE_N if published_only else _PD_N
-    status_sql = (
-        "AND COALESCE(n.status, 'published') = 'published'"
-        if published_only
-        else "AND COALESCE(n.status, 'published') NOT IN ('archived')"
-    )
+    if published_only:
+        status_sql = "AND COALESCE(n.status, 'published') = 'published'"
+    else:
+        # 管理台口径要认**节点墓碑**：清掉某一档的描述 = 移除那一档，落成一条
+        # `target_status='archived'` 的草稿行（见 `skill_write` 的全量替换）。
+        # 不排掉它，运营删完 L5 再点编辑，L5 还在 —— 而且怎么都删不掉，因为
+        # 每次保存又生成同一条墓碑。前台不看这条：墓碑要到发布后才生效，
+        # 发布前学员照常看到 L5（前台只读线上行，它的 target_status 恒为 NULL）。
+        status_sql = (
+            "AND COALESCE(n.status, 'published') NOT IN ('archived') "
+            "AND COALESCE(n.target_status, '') <> 'archived'"
+        )
     with connect() as conn:
         rows = conn.execute(
             f"""

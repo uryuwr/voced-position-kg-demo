@@ -437,7 +437,14 @@ class PrereqOut(BaseModel):
     prereq_skill_key: str = Field(..., description="先修技能的聚合主键")
     region: str = Field(..., description="地区，如 CN")
     evidence: str | None = Field(None, description="判定依据")
-    confidence: float | None = Field(None, description="置信度 0–1")
+    # **是文本不是分数**：这个项目的 confidence 一律是来源等级
+    # （`manual_seed` / `official` / `derived` / `ai_inferred`，见 kg/provenance.py），
+    # 不是 0–1 的置信度。原来声明成 float，于是先修技能一存就 500 ——
+    # 而写库其实已经成功，报错发生在拼响应时，比单纯失败更难查。
+    # 与 `weight_sum` 那次（照着「它应该是个计数」写 int，害整页岗位列表挂掉）同形。
+    confidence: str | None = Field(
+        None, description="来源等级：manual_seed / official / derived / ai_inferred"
+    )
     created_at: str | None = Field(None, description="创建时间 ISO8601")
 
 

@@ -158,9 +158,23 @@ def student_profession_detail(
     tags=["前台 · 岗位探索与详情"],
     response_model=PositionListOut,
     summary="岗位列表",
+    description=(
+        "`q` 岗位名关键词、`industry_id` 具体行业，两者可单用也可叠加（AND）。\n\n"
+        "行业只按 **id** 筛，不做名字模糊匹配 —— 行业名里带斜杠"
+        "（「互联网/AI」「电子/通信/半导体」），模糊匹配会串味。"
+        "前端用法：`GET /v1/student/industries?q=关键词` 出下拉候选，选中后把 id 传进来。\n\n"
+        "岗位归属行业有两条路径，筛选与列表里回显的 `industries` **口径一致**："
+        "直连 `occupation -belongs_to→ industry`，以及经专业两跳 "
+        "`occupation ←prepares_for- major -belongs_to→ industry`。"
+    ),
 )
 def student_positions(
-    q: str | None = Query(None),
+    q: str | None = Query(None, max_length=100, description="岗位名关键词，模糊匹配"),
+    industry_id: str | None = Query(
+        None,
+        max_length=200,
+        description="行业节点 id（精确匹配）；候选见 `GET /v1/student/industries?q=`",
+    ),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     region: str | None = Query(None),
@@ -168,7 +182,13 @@ def student_positions(
 ) -> PositionListOut:
     _ = user
     return PositionListOut.model_validate(
-        biz.list_positions(q=q, page=page, page_size=page_size, region=region)
+        biz.list_positions(
+            q=q,
+            industry_id=industry_id,
+            page=page,
+            page_size=page_size,
+            region=region,
+        )
     )
 
 
