@@ -26,6 +26,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_biz_user_goal_user_occ
 -- 每人至多一个活跃目标
 CREATE UNIQUE INDEX IF NOT EXISTS uq_biz_user_goal_active
   ON biz_user_goal(user_id) WHERE status = 'active';
+-- 绑定的晋升链路。锁定目标时可以顺带选一条向上路径，「下一级目标」就沿它走，
+-- 而不是每次按置信度重新猜（advances_to 是 1:N，同一岗位有多个向上方向）。
+--
+-- 只存**岗位 id 序列**，不存名字与职级：advances_to 由 LLM 推断、重跑采集会变，
+-- 存快照能让用户选的链路不随图漂移；而岗位名/职级读时按 id 查最新的，
+-- 避免展示出过时的名字。形如
+--   {"path": ["CN:occupation:…起点", "CN:occupation:…下一级", …],
+--    "direction": "本方向纵深", "bound_at": "2026-08-19T…"}
+ALTER TABLE biz_user_goal ADD COLUMN IF NOT EXISTS progression_json JSONB;
 
 -- 学员 × 岗位 × 学习计划 的关联。
 -- 学习计划由外部服务生成并返回 plan_id，本库只存关联关系（不存计划内容），

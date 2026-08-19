@@ -14,7 +14,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from backend.api.schemas_assessment import AssessmentReportOut
-from backend.api.schemas_biz import PageMeta, SkillOut
+from backend.api.schemas_biz import (
+    GoalProgressionOut,
+    PageMeta,
+    ProgressionNodeOut,
+    SkillOut,
+)
 
 # ── 岗位匹配度 ───────────────────────────────────────────────
 
@@ -416,7 +421,15 @@ class GoalItem(BaseModel):
     industry_name: str | None = Field(None, description="所属行业名")
     status: str | None = Field(None, description="active=当前活跃目标；archived=历史目标")
     created_at: str | None = Field(None, description="设定时间 ISO8601")
-    updated_at: str | None = Field(None, description="更新时间 ISO8601")
+    updated_at: str | None = Field(None, description="更新时间 ISO8601；也是链路的绑定时间")
+    progression: GoalProgressionOut | None = Field(
+        None,
+        description=(
+            "绑定的晋升链路。锁定目标时可传 `progression_path` 指定，不传则自动绑"
+            "第一条（置信度最高、职级最近的方向一路走到头）；该岗位没有 "
+            "`advances_to` 出边时为 null"
+        ),
+    )
 
 
 class ClearGoalOut(BaseModel):
@@ -456,6 +469,22 @@ class GoalOverviewOut(BaseModel):
     has_goal: bool = Field(..., description="是否已锁定目标；false 时其余字段多为 null")
     goal: GoalItem | None = Field(None, description="当前活跃目标")
     goals: list[GoalItem] = Field(default_factory=list, description="该用户全部目标（含历史）")
+    progression: GoalProgressionOut | None = Field(
+        None,
+        description=(
+            "绑定的晋升链路，与 `goal.progression` 同一份，提到顶层方便前端直接画"
+            "「当前 → 下一级 → …」。`next_target` 即默认的下一目标，"
+            "`next_levels` 已把它排到首位"
+        ),
+    )
+    progression_stale: bool = Field(
+        False,
+        description=(
+            "绑定的下一跳在当前图里已无对应 `advances_to` 边（边被归档或重跑采集改了"
+            "方向）。链路仍按原样返回——用户选过的不该被悄悄改掉——但前端应提示"
+            "「该晋升方向已变更，请重新选择」"
+        ),
+    )
     occupation: "GoalOccupationOut | None" = Field(None, description="目标岗位详情")
     major: "RefOut | None" = Field(None, description="关联专业")
     industry: "RefOut | None" = Field(None, description="所属行业")

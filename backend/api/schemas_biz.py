@@ -260,6 +260,45 @@ class PositionDetailOut(BaseModel):
     skills: list[SkillOut] = Field(default_factory=list, description="岗位技能要求")
 
 
+class ProgressionNodeOut(BaseModel):
+    """绑定晋升链路上的一个岗位。"""
+
+    id: str = Field(..., description="岗位节点 id")
+    name: str | None = Field(None, description="岗位名；节点已归档时为 null")
+    level: int | None = Field(None, description="职级 1–5；未标注为 null")
+    level_code: str | None = Field(None, description="职级代码 L1–L5，由 level 派生")
+    level_name: str | None = Field(None, description="职级名（入门/专员/资深/经理/总监）")
+    is_current: bool = Field(False, description="是否为链路起点，即当前目标岗位")
+    missing: bool = Field(
+        False,
+        description=(
+            "该岗位在图里已找不到（被归档）。**仍占位保留而不是跳过**——"
+            "悄悄少一跳会让「下一目标」凭空前移一级"
+        ),
+    )
+
+
+class GoalProgressionOut(BaseModel):
+    """锁定目标时绑定的晋升链路。
+
+    库里只存**岗位 id 序列**，岗位名与职级是读时按 id 查最新的：`advances_to` 由
+    LLM 推断、重跑采集会变，存 id 让用户选定的路径不随图漂移，而展示信息保持最新。
+    """
+
+    direction: str | None = Field(
+        None,
+        description="`user_selected`=用户显式选的；`default_first`=锁定时未选、自动绑的第一条",
+    )
+    chain: list[ProgressionNodeOut] = Field(
+        default_factory=list, description="链路上的岗位，从当前目标开始，顺序即晋升顺序"
+    )
+    hops: int = Field(0, description="跳数 = chain 长度 - 1")
+    next_target: ProgressionNodeOut | None = Field(
+        None, description="下一目标 = 链路里当前目标之后那一跳；链路只有起点时为 null"
+    )
+    target: ProgressionNodeOut | None = Field(None, description="链路终点岗位")
+
+
 class GoalOut(BaseModel):
     user_id: str = Field(..., description="UC 用户 id")
     user_name: str | None = Field(None, description="用户名（冗余字段，用户中心不在本服务）")
@@ -269,7 +308,14 @@ class GoalOut(BaseModel):
     major_name: str | None = Field(None, description="关联专业名")
     industry_id: str | None = Field(None, description="所属行业 id")
     industry_name: str | None = Field(None, description="所属行业名")
-    updated_at: str | None = Field(None, description="更新时间 ISO8601")
+    updated_at: str | None = Field(None, description="更新时间 ISO8601；也是链路的绑定时间")
+    progression: GoalProgressionOut | None = Field(
+        None,
+        description=(
+            "绑定的晋升链路。锁定时传了 `progression_path` 就是那条，否则是自动绑的"
+            "第一条；该岗位无 `advances_to` 出边时为 null"
+        ),
+    )
 
 
 class GoalPutBody(BaseModel):
@@ -286,6 +332,19 @@ class GoalPutBody(BaseModel):
 
     occupation_id: str = Field(..., description="目标岗位节点 id（必填）")
     major_id: str | None = Field(None, description="可选：关联专业 id")
+    progression_path: list[str] | None = Field(
+        None,
+        max_length=6,
+        description=(
+            "可选：要绑定的晋升链路，岗位 id 序列，**第一个必须是 `occupation_id` 本身**。"
+            "从 `GET /v1/student/positions/progressions?id=` 的某条 path 里取"
+            "（`hops[].from` + 最后一跳的 `to`）。\n\n"
+            "服务端会校验相邻两跳真的存在 published 的 `advances_to` 边，"
+            "并拒绝成环与超长——否则可以拼出任意两个岗位的假晋升关系。\n\n"
+            "不传则自动绑第一条（置信度最高、职级最近的方向）；"
+            "重锁同一岗位而不传时，保留原来绑的那条，不被默认值覆盖。"
+        ),
+    )
 
 
 class SkillLevelMeta(BaseModel):

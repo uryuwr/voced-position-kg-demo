@@ -281,6 +281,13 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
         ).fetchone()
         cur_skills = _skill_keys(conn, occ_id)
         nxts = _next_levels(conn, occ_id)
+        # 绑定了晋升链路就以它为准：把链路的下一跳提到 nxts 最前面。
+        # 不是「只返回这一跳」——其余方向仍要能看到，否则学员想换方向时
+        # 页面上根本没有别的选项可选。绑定只改变**默认展示哪一个**。
+        bound = (goal or {}).get("progression") or {}
+        bound_next = (bound.get("next_target") or {}).get("id") if bound else None
+        if bound_next:
+            nxts.sort(key=lambda x: x["id"] != bound_next)
         nxt = nxts[0] if nxts else None
         report = _latest_report(conn, user_id, occ_id)
         # 优先取推送成功的：失败记录的 plan_id 是空串，按时间排它可能压在最上面，
@@ -332,6 +339,15 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
         # 但下面的岗位信息 / 测评结果 / 学习计划照常返回。
         "has_goal": has_goal,
         "goal": goal,
+        # 绑定的晋升链路（锁定目标时选的那条）。前端据此画「当前 → 下一级 → …」，
+        # 并把 next_target 作为默认的下一目标。
+        "progression": bound or None,
+        # 绑定的下一跳在当前图里已经找不到对应的 advances_to 边 —— 运营归档了那条边
+        # 或重跑采集改了方向。链路照原样返回（用户选过的不该被悄悄改掉），
+        # 但前端应提示「该晋升方向已变更，请重新选择」。
+        "progression_stale": bool(
+            bound_next and bound_next not in {x["id"] for x in nxts}
+        ),
         # 学习计划 id；未生成时为空串。推送失败的记录 plan_id 是空串，
         # 所以这里取到空串既可能是"没生成过"也可能是"推失败了"——
         # 要区分看 GET /goal/learning-plans 的 push_status。

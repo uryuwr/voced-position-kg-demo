@@ -544,6 +544,7 @@ def student_set_goal(
             user.user_name,
             occupation_id=body.occupation_id,
             major_id=body.major_id,
+            progression_path=body.progression_path,
         )
         return GoalOut.model_validate(g)
     except ValueError as e:

@@ -254,11 +254,41 @@
     }
 
     /* ── 目标锁定 ─────────────────────────────── */
+    /** 让用户选一条晋升链路再锁定。
+     *
+     * 只有一条（或没有）时不打扰用户，直接锁 —— 弹一个只有一个选项的框没有意义。
+     * 不传 progression_path 时后端会自动绑第一条，所以取消选择也不会没有链路。
+     */
+    async function pickProgression(occId) {
+      let paths = [];
+      try {
+        const r = await api(`/v1/student/positions/progressions?id=${encodeURIComponent(occId)}`);
+        paths = r.paths || [];
+      } catch (e) { return null; }        // 拿不到链路不该挡住锁定
+      if (paths.length < 2) return null;
+      const lines = paths.map((p, i) => {
+        const names = [p.hops[0].from.name, ...p.hops.map((h) => h.to.name)];
+        return `${i + 1}. ${names.join(" → ")}（${p.direction || "方向未分类"}）`;
+      });
+      const ans = prompt(
+        `该岗位有 ${paths.length} 条晋升方向，选一条绑定（回车=第 1 条）：\n\n` + lines.join("\n"),
+        "1");
+      if (ans === null) return null;
+      const idx = Math.max(1, Math.min(paths.length, parseInt(ans, 10) || 1)) - 1;
+      const p = paths[idx];
+      // 序列必须从目标岗位本身开始，服务端会校验这一点
+      return [p.hops[0].from.id, ...p.hops.map((h) => h.to.id)];
+    }
+
     async function lockGoal(p) {
       if (!p) return;
       try {
-        await api("/v1/student/goal", { method: "PUT", body: { occupation_id: p.id } });
-        await loadGoal(); renderPositions(); toast("已锁定：" + p.name);
+        const path = await pickProgression(p.id);
+        const body = { occupation_id: p.id };
+        if (path) body.progression_path = path;
+        await api("/v1/student/goal", { method: "PUT", body });
+        await loadGoal(); renderPositions();
+        toast("已锁定：" + p.name + (path ? `（晋升链路 ${path.length - 1} 跳）` : ""));
       } catch (e) { toast("锁定失败：" + (e.message || e)); }
     }
     async function loadGoal() {
@@ -736,6 +766,9 @@
       const o = d.occupation || {};
       const nls = d.next_levels || (d.next_level ? [d.next_level] : []);
       const nl = nls[0] || null;
+      // 绑定的晋升链路：锁定目标时选的那条（没选则自动绑第一条）。
+      // 后端已把 progression.next_target 排到 next_levels[0]，所以 nl 就是绑定的下一目标。
+      const prog = d.progression && (d.progression.chain || []).length > 1 ? d.progression : null;
       const goals = d.goals || [];
       const others = goals.filter((g) => g.status !== "active");
       $("goalCard").innerHTML = `
@@ -769,10 +802,29 @@
               历史目标：${others.map((g) => esc(g.occupation_name)).join("、")}（测评结果仍可回看）</div>` : ""}
           </div>
           <div class="card" style="margin:0;background:#0b1220">
+            ${prog ? `
+              <div class="row" style="margin-bottom:6px">
+                <span class="tag" style="color:#a78bfa;border-color:#7c3aed">🔗 已绑定晋升链路</span>
+                ${prog.direction === "user_selected"
+                  ? '<span class="muted" style="font-size:12px">你选定的</span>'
+                  : '<span class="muted" style="font-size:12px">默认第一条</span>'}
+                ${d.progression_stale
+                  ? '<span class="tag" style="color:#f59e0b;border-color:#b45309">方向已变更，建议重选</span>'
+                  : ""}</div>
+              <div class="muted" style="font-size:12px;margin-bottom:10px;white-space:normal">
+                ${(prog.chain || []).map((n, i) => {
+                    const nm = n.missing ? "（岗位已下线）" : (n.name || "—");
+                    const lv = n.level_name ? `<span style="opacity:.7">·${esc(n.level_name)}</span>` : "";
+                    const cur = n.is_current ? "font-weight:600;color:#e5e7eb" : "";
+                    return `<span style="${cur}">${esc(nm)}${lv}</span>`;
+                  }).join(' <span style="opacity:.5">→</span> ')}
+              </div>` : ""}
             ${nl ? `
               <div class="row"><span class="tag">↗ 下一级成长目标</span>
                 <span class="tag">${esc(nl.level_label || "")}</span>
-                ${nls.length > 1 ? `<span class="muted" style="font-size:12px">共 ${nls.length} 个方向</span>` : ""}</div>
+                ${prog && (prog.next_target || {}).id === nl.id
+                  ? '<span class="muted" style="font-size:12px">来自绑定链路</span>'
+                  : (nls.length > 1 ? `<span class="muted" style="font-size:12px">共 ${nls.length} 个方向</span>` : "")}</div>
               <h4 style="margin:8px 0">${esc(nl.name)} ›</h4>
               ${nls.length > 1 ? `<div class="muted" style="font-size:12px;margin:-4px 0 8px">
                 还可以走：${nls.slice(1).map((n) => esc(n.name) + (n.level_label ? "（" + esc(n.level_label) + "）" : "")).join("、")}
@@ -807,8 +859,12 @@
       if (lk) lk.onclick = async () => {
         lk.disabled = true;
         try {
-          await api("/v1/student/goal", { method: "PUT", body: { occupation_id: o.id } });
-          toast("已锁定为学习目标");
+          // 与岗位探索页同一条路径：多个晋升方向时先让用户选一条绑定
+          const path = await pickProgression(o.id);
+          const body = { occupation_id: o.id };
+          if (path) body.progression_path = path;
+          await api("/v1/student/goal", { method: "PUT", body });
+          toast("已锁定为学习目标" + (path ? `（晋升链路 ${path.length - 1} 跳）` : ""));
           loadGoal();                       // 刷新顶部目标条
           loadPathDetail(o.id);             // 重渲染本页，标签变「当前活跃目标」
         } catch (e) {

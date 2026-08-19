@@ -9,9 +9,14 @@ from backend.kg.pg_store.client import connect, ensure_schema, use_conn
 from backend.kg.pg_store.config import (
     as_level,
     as_weight,
+    attrs_level_int,
     degrade_for_baseline_gap,
+    edge_published,
+    node_published,
     weighted_score,
 )
+from backend.kg.pg_store.occupation_level_meta import level_code as occ_level_code
+from backend.kg.pg_store.occupation_level_meta import level_name as occ_level_name
 from backend.kg.pg_store.counts import (
     counts_for_industries,
     counts_for_majors,
@@ -750,6 +755,65 @@ def _row_jsonable(row: Any) -> dict[str, Any]:
     return d
 
 
+def expand_progression(conn, goal_row: dict[str, Any]) -> dict[str, Any] | None:
+    """把 progression_json 里的 id 序列展开成可展示的链路 + 下一目标。
+
+    库里只存 id（见 biz_ddl 注释），岗位名与职级读时查最新的 —— 采集会改名、
+    重定职级，存快照就会展示出过时信息。反过来 **id 序列不随图变化**，用户当初
+    选的那条路径不会因为重跑 LLM 推断而漂移。
+
+    链路上的岗位可能已被归档（运营下线了某个岗位），这时它在 chain 里标
+    `missing=true` 而不是被静默跳过 —— 悄悄少一跳会让「下一目标」凭空前移。
+    """
+    raw = goal_row.get("progression_json")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw or "{}")
+        except json.JSONDecodeError:
+            raw = {}
+    if not isinstance(raw, dict):
+        return None
+    ids = [str(x) for x in (raw.get("path") or []) if x]
+    if len(ids) < 2:
+        return None
+
+    rows = conn.execute(
+        f"""
+        SELECT n.id, n.name, COALESCE(n.level, {attrs_level_int('n')}) AS level,
+               n.description
+        FROM kg_node n WHERE n.id = ANY(%s) AND n.type='occupation' AND {node_published('n')}
+        """,
+        (ids,),
+    ).fetchall()
+    by_id = {r["id"]: dict(r) for r in rows}
+
+    chain = []
+    for i, oid in enumerate(ids):
+        node = by_id.get(oid)
+        lv = (node or {}).get("level")
+        chain.append(
+            {
+                "id": oid,
+                "name": (node or {}).get("name"),
+                "level": lv,
+                "level_code": occ_level_code(lv),
+                "level_name": occ_level_name(lv),
+                "is_current": i == 0,
+                "missing": node is None,
+            }
+        )
+    # 下一目标 = 链路里当前目标之后那一跳。绑定链路的意义就在这：
+    # 不必每次按置信度重新猜一个方向，学员看到的「下一级」始终是他选定的那条。
+    nxt = chain[1] if len(chain) > 1 else None
+    return {
+        "direction": raw.get("direction"),
+        "chain": chain,
+        "hops": len(chain) - 1,
+        "next_target": nxt,
+        "target": chain[-1] if chain else None,
+    }
+
+
 def get_goal(user_id: str, occupation_id: str | None = None) -> dict[str, Any] | None:
     """默认取当前活跃目标；给 occupation_id 则取该岗位那条（含已归档的历史目标）。"""
     with connect() as conn:
@@ -764,9 +828,84 @@ def get_goal(user_id: str, occupation_id: str | None = None) -> dict[str, Any] |
                 "ORDER BY (status='active') DESC, updated_at DESC LIMIT 1",
                 (user_id,),
             ).fetchone()
-    if not row:
-        return None
-    return _row_jsonable(row)
+        if not row:
+            return None
+        d = _row_jsonable(row)
+        # 在同一条连接里展开，别为了拿几个岗位名再开一条
+        d["progression"] = expand_progression(conn, d)
+    return d
+
+
+MAX_PROGRESSION_HOPS = 6
+
+
+def _validate_progression(conn, occupation_id: str, path: list[str]) -> list[str]:
+    """校验绑定的晋升链路，返回规范化后的 id 序列。
+
+    三条都必须挡住，因为 path 是前端传来的：
+
+    1. **首个必须是目标岗位本身** —— 链路是「从我的目标往上走」，起点错了后面
+       算出的「下一级」就跟目标无关。
+    2. **相邻两跳必须真有 published 的 advances_to 边** —— 否则前端可以拼出
+       任意两个岗位的假链路，展示成晋升关系。
+    3. **不能有环、长度有上限** —— advances_to 由 LLM 推断，不保证无环
+       （A→B→A 出现过），环会让「下一级」在两个岗位间来回跳。
+    """
+    ids = [str(x).strip() for x in (path or []) if str(x or "").strip()]
+    if not ids:
+        return []
+    if ids[0] != occupation_id:
+        raise ValueError("晋升链路的第一个岗位必须是目标岗位本身")
+    if len(ids) > MAX_PROGRESSION_HOPS:
+        raise ValueError(f"晋升链路过长（最多 {MAX_PROGRESSION_HOPS} 跳）")
+    if len(set(ids)) != len(ids):
+        raise ValueError("晋升链路存在重复岗位（成环）")
+    for a, b in zip(ids, ids[1:]):
+        hit = conn.execute(
+            f"""
+            SELECT 1 FROM kg_edge e
+            JOIN kg_node n ON n.id = e.dst_id AND n.type='occupation'
+                          AND {node_published('n')}
+            WHERE e.src_id=%s AND e.dst_id=%s AND e.rel_type='advances_to'
+              AND {edge_published('e')}
+            LIMIT 1
+            """,
+            (a, b),
+        ).fetchone()
+        if not hit:
+            raise ValueError(f"晋升链路不存在这一跳：{a} → {b}")
+    return ids
+
+
+def default_progression(conn, occupation_id: str) -> list[str]:
+    """取该岗位的**第一条**晋升链路（沿置信度最高、职级最近的方向一路走到头）。
+
+    给存量目标回填用，也给「锁定目标时没选链路」兜底。排序与
+    `goal_overview._next_levels` 同口径：置信度不能裸排（那是文本列，升序恰好把
+    最不可信的 ai_inferred 排在前），要用显式 CASE 给序。
+    """
+    ids = [occupation_id]
+    cur = occupation_id
+    for _ in range(MAX_PROGRESSION_HOPS - 1):
+        row = conn.execute(
+            f"""
+            SELECT n.id
+            FROM kg_edge e
+            JOIN kg_node n ON n.id = e.dst_id AND n.type='occupation'
+                          AND {node_published('n')}
+            WHERE e.src_id=%s AND e.rel_type='advances_to' AND {edge_published('e')}
+            ORDER BY CASE e.confidence
+                       WHEN 'official' THEN 3 WHEN 'derived' THEN 2 ELSE 1 END DESC,
+                     COALESCE(n.level, 99), n.name
+            LIMIT 1
+            """,
+            (cur,),
+        ).fetchone()
+        if not row or row["id"] in ids:      # 无出边或成环，到此为止
+            break
+        ids.append(row["id"])
+        cur = row["id"]
+    return ids if len(ids) > 1 else []
 
 
 def set_goal(
@@ -775,12 +914,28 @@ def set_goal(
     *,
     occupation_id: str,
     major_id: str | None = None,
+    progression_path: list[str] | None = None,
 ) -> dict[str, Any]:
     occ = get_node(occupation_id, scope="public")
     if not occ:
         raise ValueError("occupation not found")
     major = get_node(major_id, scope="public") if major_id else None
     with connect() as conn:
+        # 没显式选链路就绑第一条，让「下一级目标」始终有据可依；
+        # 该岗位没有任何 advances_to 出边时为空，前端按「暂无晋升方向」展示
+        if progression_path:
+            hops = _validate_progression(conn, occupation_id, progression_path)
+            direction = "user_selected"
+        else:
+            hops = default_progression(conn, occupation_id)
+            direction = "default_first"
+        # bound_at 不在应用侧取时间：updated_at 已由 DB 的 NOW() 写，两处各取
+        # 一次时钟会对不上（尤其容器与库不同时区时）。要绑定时间读 updated_at。
+        prog = (
+            json.dumps({"path": hops, "direction": direction}, ensure_ascii=False)
+            if hops
+            else None
+        )
         # 换目标不删旧目标，只把它降为 archived：旧目标的测评结果与晋升进度仍要可查
         conn.execute(
             "UPDATE biz_user_goal SET status='archived' "
@@ -791,15 +946,22 @@ def set_goal(
             """
             INSERT INTO biz_user_goal (
               user_id, user_name, occupation_id, occupation_name,
-              major_id, major_name, status, updated_at
-            ) VALUES (%s,%s,%s,%s,%s,%s,'active',NOW())
+              major_id, major_name, status, updated_at, progression_json
+            -- progression_json 必须显式 ::jsonb：psycopg 把 str 当 text 传，
+            -- 往 jsonb 列写会 DatatypeMismatch 直接 500
+            ) VALUES (%s,%s,%s,%s,%s,%s,'active',NOW(),%s::jsonb)
             ON CONFLICT (user_id, occupation_id) DO UPDATE SET
               user_name = EXCLUDED.user_name,
               occupation_name = EXCLUDED.occupation_name,
               major_id = EXCLUDED.major_id,
               major_name = EXCLUDED.major_name,
               status = 'active',
-              updated_at = NOW()
+              updated_at = NOW(),
+              -- 重锁同一岗位但没选链路时，保留原来绑的那条：默认链路是「猜」出来的，
+              -- 不该把用户显式选过的覆盖掉
+              progression_json = COALESCE(
+                EXCLUDED.progression_json, biz_user_goal.progression_json
+              )
             """,
             (
                 user_id,
@@ -808,6 +970,7 @@ def set_goal(
                 occ.get("name"),
                 major_id,
                 (major or {}).get("name") if major else None,
+                prog,
             ),
         )
         conn.commit()

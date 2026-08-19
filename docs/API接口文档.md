@@ -1,6 +1,6 @@
 # 职业教育知识图谱 API
 
-版本 0.6.3　·　75 个端点（另有 22 个内部接口未收录）
+版本 0.6.3　·　75 个端点（另有 26 个内部接口未收录）
 
 > 本文由 `scripts/openapi_to_md.py` 从 `/openapi.json` 生成，**不要手工编辑**。
 > 契约的唯一真源是代码里的 Pydantic 模型与路由注解；改代码后重新生成即可。
@@ -1387,7 +1387,7 @@ industry 节点 + parent_of 边（父→子）。
 
 ## 数据模型
 
-共 146 个模型，按名称排序。端点处的类型链接都指向这里。
+共 148 个模型，按名称排序。端点处的类型链接都指向这里。
 
 ### AdminDashboardOut
 
@@ -1466,12 +1466,13 @@ industry 节点 + parent_of 边（父→子）。
 | `linked_edges` | `KgEdge`[] |  | 自动建出的边 |
 | `skill_bundle` | boolean |  | true=走的是技能 bundle 写入路径 |
 | `skill_key` | string |  | 技能聚合主键 |
-| `levels` | string[] |  | 本次建出的档位码，如 `["L1","L3"]`。**曾误声明成 `list[dict]`** —— 写入其实成功了，但响应按模型校验时失败，接口回 400，管理台显示「新建失败」而库里已经有了，人就会重复提交。各档明细在 `nodes` / `bundle` 里 |
+| `levels` | string[] \| object[] |  | 本次建出的档位码，如 `["L1","L3"]`。**曾误声明成 `list[dict]`** —— 写入其实成功了，但响应按模型校验时失败，接口回 400，管理台显示「新建失败」而库里已经有了，人就会重复提交。各档明细在 `nodes` / `bundle` 里。留成联合类型是有意的：这一处窄声明已经踩过一次，多一个分支不会让任何生产方失败，而窄一格就可能重演「写进去了却回 400」 |
 | `bundle` | `SkillBundleBrief` |  | 聚合后的技能 bundle |
 | `status` | string |  | 落库后的状态；draft 表示门禁未过，停在草稿 |
 | `gate` | object |  | 发布门禁结果（同 PublishValidateOut）；仅未通过时出现 |
 | `deleted` | boolean |  | 删除类变更是否已执行。**恒为布尔**——删除的条数看 `delete_result`。  这里曾经在物理删节点时被塞进一个 dict（`{node_id, nodes_deleted, edges_deleted}`），而驳回那条路给的是 `true`，同一字段两种形状，响应模型校验直接把整个删除接口打成 500。 |
 | `delete_result` | `DeleteResult` |  | 删除实际影响的条数；仅物理删除时出现 |
+| `note` | string |  | 人话补充说明。内容类动作（新建/编辑/技能构成）会说明「已存为草稿，发布请走 POST /v1/admin/publish/node」；停用会说明连带停用了几条关联边 |
 
 ### ArchiveEdgeResponse
 
@@ -1768,6 +1769,8 @@ industry 节点 + parent_of 边（父→子）。
 | `selected_level` | integer |  | 当前选中的要求档。改档 = 删旧边建新边，边指向哪档就是要求哪档 |
 | `weight` | number |  | 权重；专业 covers 无权重，此时为 null |
 | `weight_pct` | integer |  | 权重百分比，便于直接展示 |
+| `dangling` | boolean |  | **异常边标记**：这条边指向的技能节点不是 published（停用 / 归档 / 仅草稿）。前台按节点状态过滤看不到这条技能，管理台口径看得到 —— 于是同一个岗位「前台 5 项 Σ0.81 / 管理台 6 项 Σ1.00」。读侧**不会**偷偷把它滤掉（那样运营永远发现不了），而是在这里标出来。存量数据用 `scripts/check_dangling_status_edges.py` 扫（默认 `False`） |
+| `endpoint_status` | string |  | 该边指向的技能节点的实际 status（dangling 时用它解释原因） |
 
 ### CompositionLevelDetail
 
@@ -2038,7 +2041,8 @@ industry 节点 + parent_of 边（父→子）。
 | `industry_name` | string |  | 所属行业名 |
 | `status` | string |  | active=当前活跃目标；archived=历史目标 |
 | `created_at` | string |  | 设定时间 ISO8601 |
-| `updated_at` | string |  | 更新时间 ISO8601 |
+| `updated_at` | string |  | 更新时间 ISO8601；也是链路的绑定时间 |
+| `progression` | `GoalProgressionOut` |  | 绑定的晋升链路。锁定目标时可传 `progression_path` 指定，不传则自动绑第一条（置信度最高、职级最近的方向一路走到头）；该岗位没有 `advances_to` 出边时为 null |
 
 ### GoalOccupationOut
 
@@ -2066,7 +2070,8 @@ industry 节点 + parent_of 边（父→子）。
 | `major_name` | string |  | 关联专业名 |
 | `industry_id` | string |  | 所属行业 id |
 | `industry_name` | string |  | 所属行业名 |
-| `updated_at` | string |  | 更新时间 ISO8601 |
+| `updated_at` | string |  | 更新时间 ISO8601；也是链路的绑定时间 |
+| `progression` | `GoalProgressionOut` |  | 绑定的晋升链路。锁定时传了 `progression_path` 就是那条，否则是自动绑的第一条；该岗位无 `advances_to` 出边时为 null |
 
 ### GoalOverviewOut
 
@@ -2079,6 +2084,8 @@ industry 节点 + parent_of 边（父→子）。
 | `has_goal` | boolean | 是 | 是否已锁定目标；false 时其余字段多为 null |
 | `goal` | `GoalItem` |  | 当前活跃目标 |
 | `goals` | `GoalItem`[] |  | 该用户全部目标（含历史） |
+| `progression` | `GoalProgressionOut` |  | 绑定的晋升链路，与 `goal.progression` 同一份，提到顶层方便前端直接画「当前 → 下一级 → …」。`next_target` 即默认的下一目标，`next_levels` 已把它排到首位 |
+| `progression_stale` | boolean |  | 绑定的下一跳在当前图里已无对应 `advances_to` 边（边被归档或重跑采集改了方向）。链路仍按原样返回——用户选过的不该被悄悄改掉——但前端应提示「该晋升方向已变更，请重新选择」（默认 `False`） |
 | `occupation` | `GoalOccupationOut` |  | 目标岗位详情 |
 | `major` | `RefOut` |  | 关联专业 |
 | `industry` | `RefOut` |  | 所属行业 |
@@ -2089,12 +2096,28 @@ industry 节点 + parent_of 边（父→子）。
 | `learning_plan_id` | string |  | 学习计划 id（学习空间服务的主键）；尚未生成时为空串（默认 ``） |
 | `learning_plan_created_at` | string |  | 学习计划生成时间 ISO8601 |
 
+### GoalProgressionOut
+
+> 锁定目标时绑定的晋升链路。
+>
+> 库里只存**岗位 id 序列**，岗位名与职级是读时按 id 查最新的：`advances_to` 由
+> LLM 推断、重跑采集会变，存 id 让用户选定的路径不随图漂移，而展示信息保持最新。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `direction` | string |  | `user_selected`=用户显式选的；`default_first`=锁定时未选、自动绑的第一条 |
+| `chain` | `ProgressionNodeOut`[] |  | 链路上的岗位，从当前目标开始，顺序即晋升顺序 |
+| `hops` | integer |  | 跳数 = chain 长度 - 1（默认 `0`） |
+| `next_target` | `ProgressionNodeOut` |  | 下一目标 = 链路里当前目标之后那一跳；链路只有起点时为 null |
+| `target` | `ProgressionNodeOut` |  | 链路终点岗位 |
+
 ### GoalPutBody
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `occupation_id` | string | 是 | 目标岗位节点 id（必填） |
 | `major_id` | string |  | 可选：关联专业 id |
+| `progression_path` | string[] |  | 可选：要绑定的晋升链路，岗位 id 序列，**第一个必须是 `occupation_id` 本身**。从 `GET /v1/student/positions/progressions?id=` 的某条 path 里取（`hops[].from` + 最后一跳的 `to`）。  服务端会校验相邻两跳真的存在 published 的 `advances_to` 边，并拒绝成环与超长——否则可以拼出任意两个岗位的假晋升关系。  不传则自动绑第一条（置信度最高、职级最近的方向）；重锁同一岗位而不传时，保留原来绑的那条，不被默认值覆盖。 |
 
 ### GraphCounts
 
@@ -2295,6 +2318,12 @@ industry 节点 + parent_of 边（父→子）。
 | `level` | integer |  | occupation 岗位层级 1..N；skill_level 可复用为 L 序 |
 | `category` | string |  | skill_level 技能大类的 **code**（TECH / OPERATE / SAFETY …），字典见 `GET /v1/kg/skill-categories`。展示请用 `category_name` |
 | `category_name` | string |  | 技能大类展示名，由 code 连 `kg_skill_category` 表取得，**不入库**。前端不要按 code 自己映射中文 —— 改名只动那张表 |
+| `is_draft` | boolean |  | 这一行是不是草稿行。读路径「同一 id 只取一行、草稿优先」 |
+| `has_draft` | boolean |  | 这条记录有没有未发布的草稿。等价于 `is_draft` —— 草稿优先取行之后，「拿到的是草稿行」就等于「有草稿」，不是另一个落库字段 |
+| `record_status` | string |  | **记录状态 = 最新版本的状态**：有草稿就是 `draft`，否则等于线上行的 status。列表上给运营看的就是这个；`status` 仍是本行自己的库内状态。判定按**发布单元**——只改技能构成（草稿边、没有草稿节点行）也算 draft |
+| `draft_change` | string |  | 草稿改的是什么：`node`=节点字段 \| `edges`=仅关联/技能构成 \| `both`=两者。`edges` 那种没有草稿节点行，但同样要发布才生效 |
+| `target_status` | string |  | 仅草稿行有：发布后线上行会变成什么（published\|disabled\|archived），null=只更新内容不改状态。**不要把它写进 status**，那样草稿会泄漏到前台 |
+| `base_version` | integer |  | 仅草稿行有：基于哪个已发布版本改的；发布时与线上 version 不等则 409 |
 | `pending_change_id` | integer |  | 待审变更 id；有值表示有未审完的操作，但生效状态仍以 status 为准 |
 | `pending_action` | string |  | 待审动作 create\|update\|delete\|disable\|enable（通过后才改库） |
 | `pending_title` | string |  | 待审变更的标题 |
@@ -2721,8 +2750,8 @@ industry 节点 + parent_of 边（父→子）。
 | `status` | integer |  | 状态 |
 | `desc` | string |  | 简介 |
 | `tier` | string \| integer |  | 职级/推荐档 |
-| `demand` | string |  | 需求热度 |
-| `salary` | string |  | 薪资区间 |
+| `demand` | string \| integer \| number \| boolean |  | 需求热度（取自 attrs，可能是数字） |
+| `salary` | string \| integer \| number \| boolean |  | 薪资区间（取自 attrs，可能是数字） |
 | `source_url` | string |  | 来源链接 |
 | `attrs` | object |  | 自由属性（无数据库约束的 JSON 列，键随数据来源而异） |
 | `edge` | `backend__api__schemas_biz__EdgeBrief` |  | 与专业/行业的连边摘要 |
@@ -2819,10 +2848,10 @@ industry 节点 + parent_of 边（父→子）。
 | `region` | string |  | 地区，如 CN |
 | `status` | integer |  | 1=已发布 0=草稿 2=停用（映射） |
 | `desc` | string |  | 简介 |
-| `industry` | string |  | 行业/门类提示 |
-| `code` | string |  | 专业代码 |
-| `level` | string |  | 等级 |
-| `level_zh` | string |  | 学历层次中文名 |
+| `industry` | string \| integer \| number \| boolean |  | 行业/门类提示（取自 attrs，类型不受约束） |
+| `code` | string \| integer \| number \| boolean |  | 专业代码（取自 attrs，可能是数字） |
+| `level` | string \| integer \| number \| boolean |  | 层次：专业是 `voc_associate` 这类字符串，但同一个键在别的节点类型上是 int，所以声明成标量联合 |
+| `level_zh` | string \| integer \| number \| boolean |  | 学历层次中文名 |
 | `source_url` | string |  | 来源链接 |
 | `attrs` | object |  | 自由属性（无数据库约束的 JSON 列，键随数据来源而异） |
 | `counts` | `RelationCounts` |  | occupation=对口岗数；skill=关联逻辑技能数 |
@@ -2870,6 +2899,20 @@ industry 节点 + parent_of 边（父→子）。
 | `rel_type` | string |  | 固定 advances_to（默认 `advances_to`） |
 | `confidence` | string |  | 置信度 |
 | `evidence` | string |  | 建边依据 |
+
+### ProgressionNodeOut
+
+> 绑定晋升链路上的一个岗位。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 岗位节点 id |
+| `name` | string |  | 岗位名；节点已归档时为 null |
+| `level` | integer |  | 职级 1–5；未标注为 null |
+| `level_code` | string |  | 职级代码 L1–L5，由 level 派生 |
+| `level_name` | string |  | 职级名（入门/专员/资深/经理/总监） |
+| `is_current` | boolean |  | 是否为链路起点，即当前目标岗位（默认 `False`） |
+| `missing` | boolean |  | 该岗位在图里已找不到（被归档）。**仍占位保留而不是跳过**——悄悄少一跳会让「下一目标」凭空前移一级（默认 `False`） |
 
 ### ProgressionOccBrief
 
@@ -3101,6 +3144,8 @@ industry 节点 + parent_of 边（父→子）。
 | `source_url` | string |  | 来源链接 |
 | `confidence` | string |  | 置信度（默认 `manual_seed`） |
 | `attrs` | object |  | 自由属性（无数据库约束的 JSON 列，键随数据来源而异） |
+| `owner` | string |  | 负责人的 UC user_id。不传=不改（更新）/ 不设（新建）；传空串 `""` = 显式清空负责人 |
+| `owner_name` | string |  | 负责人姓名，**可不传**：不传时服务端自己解析 —— ① `owner` 就是当前登录者 → 用 token 里的姓名（来自 UC，不额外发请求）；② 否则查库里该 user_id 已有的姓名（每次写入都留过 `updated_by`/`updated_by_name` 对，等于一份免费的用户名缓存）；③ 都查不到就留空，列表回落显示 user_id。本服务没有「按 user_id 反查姓名」的 UC 接口（`backend/uc/client.py` 只做 token 校验），所以第 ③ 种情况需要前端把姓名一起传上来 |
 
 ### SkillBundleBrief
 
@@ -3220,6 +3265,7 @@ industry 节点 + parent_of 边（父→子）。
 | `archived_nodes` | integer |  | 归档的档位节点数（L1–L5 里实际存在的）（≥0.0，默认 `0`） |
 | `archived_edges` | integer |  | 一并归档的关联边数（≥0.0，默认 `0`） |
 | `occupations_affected` | integer |  | 删除前还挂着这个技能的岗位数，供前端提示影响面（≥0.0，默认 `0`） |
+| `discarded_drafts` | integer |  | 一并丢弃的未发布草稿行数。留着的话这条已删技能会继续挂在「待发布」页，点发布等于复活它 —— 删除立即生效，不留能撤销它的草稿（≥0.0，默认 `0`） |
 
 ### SkillGapOut
 
@@ -3320,13 +3366,24 @@ industry 节点 + parent_of 边（父→子）。
 | `name` | string |  | 名称 |
 | `skill_name` | string |  | 技能名（去等级后缀） |
 | `skill_key` | string |  | 聚合主键 |
-| `level_label` | string |  | 等级文案或要求档 |
+| `level_label` | string \| integer \| number \| boolean |  | 等级文案或要求档（取自 attrs） |
+| `status` | string |  | 逻辑技能的聚合状态：各档一致时取该值，不一致为 `mixed`（如 L1–L3 已发布、L4 还是草稿）。取值 published / draft / disabled / mixed |
+| `record_status` | string |  | **记录状态 = 最新版本的状态**：任一档有草稿 → `draft`，否则等于 `status`。管理台列表的状态列显示这个（仅管理台口径返回） |
+| `has_draft` | boolean |  | 这个技能有没有未发布的改动（任一档有草稿行即为 true） |
+| `draft_change` | string |  | 草稿改的是什么：node=档位节点字段 \| edges=关联 \| both |
+| `version` | integer |  | 版本号。bundle 没有自己的行，取 L1–L5 线上行的**最大** version。仅管理台口径返回；拿不到时前端应显示「—」，**不要兜底成 V1** —— 那是个看起来像真值的假版本号 |
+| `version_label` | string |  | 版本展示文案，如 `V3` |
+| `owner` | string |  | 业务负责人 user-id（各档第一个非空） |
+| `owner_name` | string |  | 业务负责人姓名 |
+| `updated_by_name` | string |  | 最近修改人姓名 |
 | `type` | string |  | 类型（默认 `skill`） |
 | `kg_type` | string |  | 图侧节点类型 |
 | `region` | string |  | 地区，如 CN |
 | `desc` | string |  | 简介 |
 | `required_level` | integer |  | 岗位要求档 L1–L5（int） |
-| `weight` | number |  | 岗位要求权重 |
+| `weight` | number |  | 岗位要求权重（0–1 小数） |
+| `weight_pct` | integer |  | 权重百分比，直接展示用（学员端岗位详情的「权重」列读的就是这个）。上游一直在算，只是这里没声明 —— 学员判断不出哪个技能更重要 |
+| `is_core` | boolean |  | 核心技能标记（权重 ≥ 30%）；同样是上游已算、这里补声明 |
 | `category` | string |  | 技能大类 **code**（TECH / OPERATE …），字典见 `GET /v1/kg/skill-categories` |
 | `category_name` | string |  | 技能大类展示名，由 code 连字典表取得，**不入库**；前端展示用这个 |
 | `source_url` | string |  | 来源链接 |
@@ -3337,7 +3394,6 @@ industry 节点 + parent_of 边（父→子）。
 | `available_levels` | integer[] |  | 已配齐的档位 1–5 |
 | `missing_levels` | integer[] |  | 尚缺的档位 1–5 |
 | `counts` | `RelationCounts` |  | 关联计数 |
-| `status` | string |  | 逻辑技能的聚合状态：各档一致时取该值，不一致为 `mixed`（如 L1–L3 已发布、L4 还是草稿）。取值 published / draft / disabled / mixed |
 | `created_at` | string |  | 创建时间 ISO8601，取各档 `created_at` 的最大值；列表默认按它倒序 |
 
 ### SkillPrereqLink
