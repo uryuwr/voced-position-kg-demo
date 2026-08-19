@@ -1,0 +1,19 @@
+{
+  "stage": "advance",
+  "l1": "高级管理",
+  "dry_run": false,
+  "llm_paths_proposed": 0,
+  "edges_valid": 0,
+  "cross_l1_targets": 0,
+  "external_pool": 267,
+  "dropped": 0,
+  "dropped_sample": [],
+  "llm_failed": [
+    {
+      "batch": 0,
+      "error": "无 paths 且抢救失败",
+      "raw_tail": "{\"paths\": []}"
+    }
+  ],
+  "sample": []
+}

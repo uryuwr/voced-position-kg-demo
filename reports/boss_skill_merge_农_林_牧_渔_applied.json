@@ -1,0 +1,26 @@
+{
+  "stage": "merge",
+  "l1": "农/林/牧/渔",
+  "input_names": 29,
+  "canon_skills": 24,
+  "merged_groups": 5,
+  "llm_failed": [],
+  "sample_merges": {
+    "养殖数据记录": [
+      "养殖记录填报"
+    ],
+    "养殖环境调控": [
+      "圈舍环境管控"
+    ],
+    "畜禽健康巡检": [
+      "畜禽健康观察"
+    ],
+    "畜禽饲喂管理": [
+      "畜禽饲喂操作"
+    ],
+    "疫病防控操作": [
+      "防疫消毒操作"
+    ]
+  },
+  "canon_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_canon_农_林_牧_渔.json"
+}

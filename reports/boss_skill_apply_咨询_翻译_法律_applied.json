@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "咨询/翻译/法律",
+  "dry_run": false,
+  "occupations": 21,
+  "requires_edges": 142,
+  "new_skill_nodes": 430,
+  "new_logical_skills": 86,
+  "reused_existing_skill_levels": 56,
+  "nodes_upserted": 430,
+  "stale_requires_removed": 0,
+  "edges_upserted": 142,
+  "occupations_patched": 21
+}

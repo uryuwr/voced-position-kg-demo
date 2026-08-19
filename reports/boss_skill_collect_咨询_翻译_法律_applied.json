@@ -1,0 +1,9 @@
+{
+  "stage": "collect",
+  "l1": "咨询/翻译/法律",
+  "occupations": 21,
+  "collected": 21,
+  "llm_failed": [],
+  "distinct_skill_names": 118,
+  "raw_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_raw_咨询_翻译_法律.json"
+}

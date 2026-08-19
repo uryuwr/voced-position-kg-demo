@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "旅游",
+  "dry_run": false,
+  "occupations": 5,
+  "requires_edges": 35,
+  "new_skill_nodes": 130,
+  "new_logical_skills": 26,
+  "reused_existing_skill_levels": 9,
+  "nodes_upserted": 130,
+  "stale_requires_removed": 0,
+  "edges_upserted": 35,
+  "occupations_patched": 5
+}

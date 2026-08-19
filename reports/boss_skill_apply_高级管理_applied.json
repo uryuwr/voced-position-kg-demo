@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "高级管理",
+  "dry_run": false,
+  "occupations": 8,
+  "requires_edges": 55,
+  "new_skill_nodes": 175,
+  "new_logical_skills": 35,
+  "reused_existing_skill_levels": 20,
+  "nodes_upserted": 175,
+  "stale_requires_removed": 0,
+  "edges_upserted": 55,
+  "occupations_patched": 8
+}

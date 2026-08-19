@@ -602,9 +602,10 @@ def _apply(
             # **删除立即执行**（2026-08-19 需求收窄）：不再落「发布时才删」的意图。
             # 顺带把这条记录的草稿一起清掉 —— 记录都没了，留着草稿就是孤儿
             # （`_physical_delete_node` 两行一起删，见它的 docstring）。
-            # `deleted` 恒为 bool，条数放 `delete_result`：这个字段曾经在物理删节点时
-            # 被塞进一个 dict，而驳回那条路返回 True —— 同一字段两种形状，
-            # 响应模型声明的 bool 把整个删除接口打成了 500。
+            # `deleted` 恒为 bool，条数放 `delete_result`。原来这里直接
+            # `{"deleted": _physical_delete_node(tid)}` 返回 dict，而驳回那条路
+            # （:266）返回的是 True —— 同一字段两种形状，响应模型声明的 bool
+            # 直接把整个删除接口打成 500。
             return {"deleted": True, "delete_result": _physical_delete_node(tid)}
         raise ValueError(f"unsupported node action {action}")
 

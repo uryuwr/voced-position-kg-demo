@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "采购/贸易",
+  "dry_run": false,
+  "occupations": 13,
+  "requires_edges": 88,
+  "new_skill_nodes": 225,
+  "new_logical_skills": 45,
+  "reused_existing_skill_levels": 43,
+  "nodes_upserted": 225,
+  "stale_requires_removed": 0,
+  "edges_upserted": 88,
+  "occupations_patched": 13
+}

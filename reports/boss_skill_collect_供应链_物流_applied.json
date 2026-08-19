@@ -1,0 +1,9 @@
+{
+  "stage": "collect",
+  "l1": "供应链/物流",
+  "occupations": 28,
+  "collected": 28,
+  "llm_failed": [],
+  "distinct_skill_names": 154,
+  "raw_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_raw_供应链_物流.json"
+}

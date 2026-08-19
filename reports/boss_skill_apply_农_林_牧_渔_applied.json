@@ -1,0 +1,14 @@
+{
+  "stage": "apply",
+  "l1": "农/林/牧/渔",
+  "dry_run": false,
+  "occupations": 4,
+  "requires_edges": 29,
+  "new_skill_nodes": 115,
+  "new_logical_skills": 23,
+  "reused_existing_skill_levels": 6,
+  "nodes_upserted": 115,
+  "stale_requires_removed": 0,
+  "edges_upserted": 29,
+  "occupations_patched": 4
+}

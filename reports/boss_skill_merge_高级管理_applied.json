@@ -1,0 +1,26 @@
+{
+  "stage": "merge",
+  "l1": "高级管理",
+  "input_names": 47,
+  "canon_skills": 42,
+  "merged_groups": 5,
+  "llm_failed": [],
+  "sample_merges": {
+    "外部资源整合": [
+      "跨方资源整合"
+    ],
+    "核心团队建设": [
+      "核心团队搭建"
+    ],
+    "组织架构设计": [
+      "组织架构搭建"
+    ],
+    "经营业绩管控": [
+      "经营业绩管理"
+    ],
+    "风险合规管控": [
+      "合规风险管控"
+    ]
+  },
+  "canon_path": "D:\\workspace\\职业教育知识图谱\\data\\staging\\boss_skill_canon_高级管理.json"
+}
