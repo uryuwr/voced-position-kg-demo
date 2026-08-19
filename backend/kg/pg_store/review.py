@@ -478,7 +478,11 @@ def _apply(cr: dict[str, Any], *, user_id: str, user_name: str) -> dict[str, Any
                     )
                 except PublishGateError as e:
                     raise ValueError(_gate_error_message(e)) from e
-            return {"deleted": _physical_delete_node(tid)}
+            # `deleted` 恒为 bool，条数放 `delete_result`。
+            # 原来这里直接 `{"deleted": _physical_delete_node(tid)}` 返回 dict，
+            # 而驳回那条路（:266）返回的是 True —— 同一字段两种形状，
+            # 响应模型声明的 bool 直接把整个删除接口打成 500。
+            return {"deleted": True, "delete_result": _physical_delete_node(tid)}
         raise ValueError(f"unsupported node action {action}")
 
     if kind == "edge":
@@ -492,7 +496,7 @@ def _apply(cr: dict[str, Any], *, user_id: str, user_name: str) -> dict[str, Any
         if action == "update":
             return {"edge": _patch_edge(tid, payload, user_id, user_name)}
         if action == "delete":
-            return {"deleted": _physical_delete_edge(tid)}
+            return {"deleted": True, "delete_result": _physical_delete_edge(tid)}
         if action in ("disable", "enable"):
             st = "disabled" if action == "disable" else "published"
             return {"edge": _patch_edge(tid, {"status": st}, user_id, user_name)}
