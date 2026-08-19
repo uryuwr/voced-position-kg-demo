@@ -92,7 +92,14 @@ def _node_dict(row: dict[str, Any]) -> dict[str, Any]:
         "display_name": display_name,
         # code 是业务主键（同 region+type 唯一、可编辑、有唯一性校验），
         # 提到顶层与 level/category 一致；attrs.code 保留不动以兼容既有前端。
-        "code": (attrs or {}).get("code") if isinstance(attrs, dict) else None,
+        # 按职级拆分出来的岗位**不带 code**（否则同族 N 个节点共用一个国标代码，
+        # 撞 uq_kg_node_region_type_code），回落展示族的代码：它确实属于那个
+        # 国标职业，只是不占用代码这个业务主键。
+        "code": (
+            ((attrs or {}).get("code") or (attrs or {}).get("parent_occupation_code"))
+            if isinstance(attrs, dict)
+            else None
+        ),
         "name_en": row.get("name_en"),
         "name_zh": row.get("name_zh"),
         "description": row.get("description"),
