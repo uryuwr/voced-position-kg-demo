@@ -240,12 +240,48 @@ def list_drafts(
 
 
 # ── 发布 ─────────────────────────────────────────────────────
+def _bundle_sibling_draft_ids(node_id: str, *, exclude: str = "") -> list[str]:
+    """一个技能的发布单元是**整组档位**，不是单个等级节点。
+
+    编辑技能走 `PATCH /v1/admin/skills/{skill_key}`，一次改动会给 L1–L5 各留一行
+    草稿。而发布/丢弃接口是按 node_id 收的，只处理传进来那一个 —— 于是列表页点
+    一次「发布」只发掉一档，剩下四档还是旧值，**没有任何报错**：技能就这么半新
+    半旧地上线了，待发布页还剩 4 行运营也不知道该不该点。
+
+    所以这里按 `attrs.skill_key` 把同组还有草稿的档位一并捞出来。返回空列表表示
+    不是技能、或组里没有别的待发布档位。
+    """
+    from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
+
+    with connect() as conn:
+        row = conn.execute(
+            f"SELECT ({SKILL_KEY_SQL}) AS sk, n.region FROM kg_node n "
+            f"WHERE n.id = %s AND n.type = 'skill_level' LIMIT 1",
+            (node_id,),
+        ).fetchone()
+        if not row or not row["sk"]:
+            return []
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT n.id FROM kg_node n
+            WHERE n.type = 'skill_level' AND n.is_draft
+              AND ({SKILL_KEY_SQL}) = %s
+              AND (%s::text IS NULL OR n.region = %s)
+              AND n.id <> %s
+            ORDER BY n.id
+            """,
+            (row["sk"], row["region"], row["region"], exclude or node_id),
+        ).fetchall()
+    return [r["id"] for r in rows]
+
+
 def publish_node(
     node_id: str,
     *,
     user_id: str,
     user_name: str,
     skip_gate: bool = False,
+    _in_bundle: bool = False,
 ) -> dict[str, Any]:
     """发布一个单元。八步全在一个事务里，任一步不过就整体回滚。
 
@@ -417,7 +453,7 @@ def publish_node(
                 raise PublishGateError(gate["failed"])
         conn.commit()
 
-    return {
+    out = {
         "node_id": node_id,
         "status": new_status,
         "version": new_version,
@@ -426,6 +462,39 @@ def publish_node(
         "edges_archived": edges_archived,
         "gate": gate,
     }
+
+    # 技能：把同组其余待发布档位一并发掉，否则就是静默半发布（见
+    # `_bundle_sibling_draft_ids` 的 docstring）。每档各自一个事务 —— 与
+    # `publish_batch` 同口径：一档的门禁不过不该拖垮其余，逐项结果放
+    # `bundle_siblings` 让前端能显示。
+    if ntype == "skill_level" and not _in_bundle:
+        sibs = _bundle_sibling_draft_ids(node_id)
+        if sibs:
+            done: list[dict[str, Any]] = []
+            for sid in sibs:
+                try:
+                    r = publish_node(
+                        sid,
+                        user_id=user_id,
+                        user_name=user_name,
+                        skip_gate=skip_gate,
+                        _in_bundle=True,
+                    )
+                    out["edges_published"] += int(r.get("edges_published") or 0)
+                    out["edges_archived"] += int(r.get("edges_archived") or 0)
+                    done.append({"node_id": sid, "ok": True})
+                except (
+                    DraftNotFound,
+                    DraftConflict,
+                    CodeTaken,
+                    MissingEndpoints,
+                    PublishGateError,
+                ) as e:
+                    done.append({"node_id": sid, "ok": False, "message": str(e)})
+            out["bundle_siblings"] = done
+            out["bundle_levels_published"] = 1 + sum(1 for d in done if d["ok"])
+
+    return out
 
 
 def publish_batch(
@@ -438,7 +507,18 @@ def publish_batch(
     """
     results = []
     ok_c = 0
+    # 技能一次编辑留 5 行草稿，而 `publish_node` 现在会把整组一起发。若不先把
+    # 同组的其余档位从待办里剔掉，它们会在轮到自己时因为草稿已经没了而报
+    # 「没有草稿」，一次「全部发布」显示成「5 项 1 成功 4 失败」，运营以为出错了。
+    # 同组关系必须**发布之前**算，发完草稿行就查不到了。
+    todo: list[str] = []
+    covered: set[str] = set()
     for nid in dict.fromkeys(node_ids):
+        if nid in covered:
+            continue
+        todo.append(nid)
+        covered.update(_bundle_sibling_draft_ids(nid))
+    for nid in todo:
         try:
             r = publish_node(nid, user_id=user_id, user_name=user_name)
             ok_c += 1
@@ -511,6 +591,19 @@ def discard_draft(node_id: str, *, user_id: str, user_name: str) -> dict[str, An
         if not n and not e:
             raise DraftNotFound(node_id)
         conn.commit()
+
+    # 技能同理：丢弃一档会把同组另外四档的草稿留在待发布页，运营以为撤销了、
+    # 其实撤了五分之一（发布侧的对称问题，见 `_bundle_sibling_draft_ids`）
+    for sid in _bundle_sibling_draft_ids(node_id):
+        with connect() as conn:
+            n += conn.execute(
+                "DELETE FROM kg_node WHERE id = %s AND is_draft", (sid,)
+            ).rowcount
+            e += conn.execute(
+                "DELETE FROM kg_edge WHERE is_draft AND unit_id = %s", (sid,)
+            ).rowcount
+            conn.commit()
+
     return {
         "node_id": node_id,
         "nodes_discarded": int(n or 0),

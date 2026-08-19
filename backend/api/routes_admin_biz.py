@@ -743,6 +743,14 @@ def admin_patch_skill_bundle(
 ) -> ChangeOut:
     try:
         raw = body.model_dump(exclude_none=True)
+        # `occupation_links` / `occupation_ids` 有 default_factory=list，
+        # `model_dump()` 之后「没传」与「传了空数组」长得一模一样。而写路径要用这个
+        # 区别决定「不动技能构成」还是「清空技能构成」—— 分不出来就只能按清空处理，
+        # 于是「只改描述/负责人」的一次 PATCH 会把技能从所有岗位里摘掉。
+        # `model_fields_set` 才是「请求体里真的出现过哪些字段」。
+        for k in ("occupation_links", "occupation_ids", "links"):
+            if k not in body.model_fields_set:
+                raw.pop(k, None)
         raw["skill_key"] = skill_key
         lv = {}
         for k, v in (raw.get("levels") or {}).items():

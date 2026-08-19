@@ -212,7 +212,7 @@ def build_level_node_body(
     cat = to_code(base.get("category"))
     attrs["category"] = cat
 
-    return {
+    out = {
         "id": nid,
         "type": "skill_level",
         "region": region,
@@ -225,9 +225,11 @@ def build_level_node_body(
         "source_url": base.get("source_url") or "manual://admin-skill-bundle",
         "confidence": base.get("confidence") or "manual_seed",
         "status": status,
-        # 不在 create_node 里建默认边
-        "occupation_ids": [],
+        # **不要写 `"occupation_ids": []`**：那不是「这里不管边」，而是
+        # 「把这个技能的岗位关联全清掉」（`apply_node_links` replace 语义）。
+        # 岗位关联在下面按 occ_links 单独处理，这里让这个键缺席。
     }
+    return out
 
 
 def _find_existing_nodes_by_skill_key(skill_key: str, region: str = "CN") -> list[dict[str, Any]]:
@@ -378,9 +380,19 @@ def apply_skill_bundle_create(
     # 边：每个岗位 × 每个已建档；权重仅写在 required_level（或最高档）
     created_edges: list[dict[str, Any]] = []
     node_ids = [n["id"] for n in created_nodes]
-    _clear_requires_into_nodes(
-        node_ids, user_id=user_id, user_name=user_name, to_draft=to_draft
+    # **省略 occupation_links ≠ 清空**。这里原来无条件先清后建，于是任何一次
+    # 「只改技能自身属性」的 PATCH（改描述、改分类、改负责人）都会把这个技能
+    # 从所有岗位的技能构成里摘掉 —— 草稿态下表现为一堆 target_status='archived'
+    # 的墓碑草稿，运营发布时才发现岗位少了技能、Σweight 也不足 1。
+    # 与 `levels` 的语义对齐：字段没出现 = 不动；出现且为空列表 = 清空。
+    _links_given = any(
+        k in payload and payload[k] is not None
+        for k in ("occupation_links", "links", "occupation_ids")
     )
+    if _links_given:
+        _clear_requires_into_nodes(
+            node_ids, user_id=user_id, user_name=user_name, to_draft=to_draft
+        )
 
     max_lv = max((int(c[1]) for c in nodes_by_level), default=1)
     for link in occ_links:
@@ -500,8 +512,19 @@ def prepare_submit_payload(body: dict[str, Any]) -> dict[str, Any]:
         "region": body.get("region") or "CN",
         "scale": body.get("scale") or "l1_l5",
         "levels": levels,
-        "occupation_links": occ_links,
-        "occupation_ids": [x["occupation_id"] for x in occ_links],
+        # 与路由层保持一致：请求里没出现这两个键就别塞进来，否则
+        # `apply_skill_bundle_create` 判不出「不动技能构成」，会按清空处理
+        **(
+            {
+                "occupation_links": occ_links,
+                "occupation_ids": [x["occupation_id"] for x in occ_links],
+            }
+            if any(
+                k in body and body[k] is not None
+                for k in ("occupation_links", "links", "occupation_ids")
+            )
+            else {}
+        ),
         # 分类一律归一成 code 再进队列。管理台传 code、脚本可能传中文名、
         # 外部调用可能什么都不传 —— 三条路都收敛到同一套 code，认不出的落兜底，
         # 不猜也不硬塞（`to_code` 是唯一的映射处）。

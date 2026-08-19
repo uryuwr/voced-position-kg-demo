@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -20,6 +21,8 @@ from typing import Any
 from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.config import prefer_draft_edge
 from backend.kg.pg_store.query import _node_dict, _rel_dict, get_node
+
+logger = logging.getLogger(__name__)
 
 # 复制线上行 → 草稿行。**不逐列点名**：这份 SQL 要在「主表加了新列」之后依然正确，
 # 逐列写的话新列会被静默丢掉（影子表方案就是因为这个被否掉，见方案 §1.3）。
@@ -80,6 +83,59 @@ def _target_status_of(status: Any) -> str | None:
     return st if st in _TARGET_STATUSES else None
 
 
+def resolve_owner_name(
+    owner: str | None,
+    owner_name: str | None,
+    *,
+    caller_id: str = "",
+    caller_name: str = "",
+) -> str | None:
+    """负责人姓名：前端没传就由服务端解析。
+
+    前端只需要传 `owner`（UC user_id），姓名这里补。三级，越靠前越可信：
+
+    1. **前端传了就用它** —— 前端手里有 UC 的人员选择器，它给的名字最新。
+    2. `owner` 就是当前登录者 → 用 token 里的姓名。这个名字本身来自 UC
+       （`uc/client.py` 校验 token 时带回来的），所以不算「猜」，也不用多发请求。
+       实际场景里「把负责人设成我自己」占绝大多数，这一级就够了。
+    3. 查库里这个 user_id 已经留下过的姓名 —— 每次写入都会记
+       `updated_by`/`updated_by_name` 与 `owner`/`owner_name` 两对，等于一份免费
+       的用户名缓存。取最近一条。
+
+    都没有就返回 None（列留空），读路径回落显示 user_id。**不编 UC 的接口**：
+    本服务的 `uc/client.py` 只有「校验 MAC token」一个能力，没有「按 user_id 反查
+    姓名」的接口，`UC_API_HOST` 在默认配置里还是占位符。凭空拼一个 URL 会变成
+    干净镜像里静默走降级分支的那类问题 —— 真要支持任意用户，得先有那个接口。
+    """
+    if owner_name is not None and str(owner_name).strip():
+        return str(owner_name).strip()
+    oid = str(owner or "").strip()
+    if not oid:
+        return None
+    if oid == str(caller_id or "").strip() and str(caller_name or "").strip():
+        return str(caller_name).strip()
+    try:
+        with connect() as conn:
+            row = conn.execute(
+                """
+                SELECT name FROM (
+                  SELECT owner_name AS name, created_at FROM kg_node
+                   WHERE owner = %s AND COALESCE(owner_name, '') <> ''
+                  UNION ALL
+                  SELECT updated_by_name AS name, created_at FROM kg_node
+                   WHERE updated_by = %s AND COALESCE(updated_by_name, '') <> ''
+                ) t
+                ORDER BY created_at DESC NULLS LAST
+                LIMIT 1
+                """,
+                (oid, oid),
+            ).fetchone()
+        return str(row["name"]).strip() if row and row.get("name") else None
+    except Exception:            # 解析姓名失败不该让写入失败
+        logger.warning("负责人姓名解析失败，owner=%s，姓名留空", oid, exc_info=True)
+        return None
+
+
 def _json_or_none(v: Any) -> str | None:
     if v is None:
         return None
@@ -120,19 +176,25 @@ def extract_link_ids(data: dict[str, Any]) -> dict[str, list[str]]:
       major_ids     — 岗位←专业（prepares_for 方向：专业→岗位）
       occupation_ids— 技能←岗位（requires 方向：岗位→技能）
     也可放在 payload.links / payload.link 下。
+
+    **只返回请求里真的出现过的键。** 这个区别是有语义的，`replace=True` 下：
+    键缺席 = 这次不管这类关联；键在但是空列表 = 把这类关联清空。
+
+    原来无条件返回三个键（缺的填 `[]`），于是「只改节点自身字段」的保存
+    也会被当成「关联清空」，给每条已有关联建一条 `target_status='archived'`
+    的墓碑草稿。技能那条路最明显：改一次描述/负责人，这个技能就从所有岗位的
+    技能构成里消失了，而且要到发布时才看得出来。
     """
     links = data.get("links") or data.get("link") or {}
     if not isinstance(links, dict):
         links = {}
-    return {
-        "industry_ids": _normalize_id_list(
-            data.get("industry_ids") or links.get("industry_ids")
-        ),
-        "major_ids": _normalize_id_list(data.get("major_ids") or links.get("major_ids")),
-        "occupation_ids": _normalize_id_list(
-            data.get("occupation_ids") or links.get("occupation_ids")
-        ),
-    }
+    out: dict[str, list[str]] = {}
+    for key in ("industry_ids", "major_ids", "occupation_ids"):
+        if data.get(key) is not None:
+            out[key] = _normalize_id_list(data[key])
+        elif links.get(key) is not None:
+            out[key] = _normalize_id_list(links[key])
+    return out
 
 
 def apply_node_links(
@@ -179,17 +241,21 @@ def apply_node_links(
 
     # 定义：本节点类型 → (对方类型, rel, 方向 from_self_as_src)
     plans: list[tuple[str, str, list[str], bool]] = []
+    # 只给**请求里出现过的**那类关联排计划。键缺席就不进 plans ——
+    # 否则 replace=True 会拿一个空列表去和现存关联算差集，把它们全标成待归档
+    # （见 `extract_link_ids` 的 docstring）。
     if ntype == "major":
         # major -belongs_to→ industry
-        plans.append(("industry", "belongs_to", link_ids.get("industry_ids") or [], True))
+        if "industry_ids" in link_ids:
+            plans.append(("industry", "belongs_to", link_ids["industry_ids"], True))
     elif ntype == "occupation":
         # major -prepares_for→ occupation  （对方是 src）
-        plans.append(("major", "prepares_for", link_ids.get("major_ids") or [], False))
+        if "major_ids" in link_ids:
+            plans.append(("major", "prepares_for", link_ids["major_ids"], False))
     elif ntype == "skill_level":
         # occupation -requires→ skill
-        plans.append(
-            ("occupation", "requires", link_ids.get("occupation_ids") or [], False)
-        )
+        if "occupation_ids" in link_ids:
+            plans.append(("occupation", "requires", link_ids["occupation_ids"], False))
     elif ntype == "industry":
         # 行业暂不强制反向挂边
         plans = []
@@ -393,6 +459,22 @@ def create_node(
         if ntype in ("major", "occupation", "skill_level", "skill", "skill_bundle"):
             status = "draft"
             body["status"] = "draft"
+    _owner_in = body.get("owner")
+    if _owner_in is None:
+        _owner_val: str | None = None
+        _owner_name_val: str | None = None
+    else:
+        _owner_val = str(_owner_in).strip()
+        _owner_name_val = (
+            ""                      # 清空负责人时姓名一起清，否则列表还挂着前任的名字
+            if not _owner_val
+            else resolve_owner_name(
+                _owner_val,
+                body.get("owner_name"),
+                caller_id=user_id,
+                caller_name=user_name,
+            )
+        )
     row = {
         "id": nid,
         "is_draft": to_draft,
@@ -414,9 +496,16 @@ def create_node(
         "status": status,
         "updated_by": user_id,
         "updated_by_name": user_name,
-        # 负责人默认取创建人（原型「负责人」列），可在编辑页改
-        "owner": body.get("owner") or user_id,
-        "owner_name": body.get("owner_name") or user_name,
+        # 负责人（原型「负责人」列）。三种语义分清，全靠 NULL 与空串的区别：
+        #   不传（None）  = 本次不改；这一行是新建的话回落到创建人
+        #   传了 user_id  = 改成这个人，姓名没给就 `resolve_owner_name` 解析
+        #   传空串        = 显式清空
+        # 不能像原来那样写 `body.get("owner") or user_id` —— 那样「不传」和
+        # 「传空」都变成「改成当前操作人」，运营改一次描述就把别人的负责人抢走了。
+        "owner": _owner_val,
+        "owner_name": _owner_name_val,
+        "owner_default": user_id,
+        "owner_name_default": user_name,
         # 技能大类。这一列以前不在 INSERT 里 —— 上层把 category 放进 body 也白搭，
         # 静默丢掉，新建的技能一律「待归类」。
         "category": body.get("category"),
@@ -433,7 +522,10 @@ def create_node(
               %(id)s, %(region)s, %(type)s, %(name)s, %(name_en)s, %(name_zh)s, %(aliases)s,
               %(description)s, %(attrs)s, %(source_system)s, %(source_id)s, %(source_url)s,
               %(license)s, %(fetched_at)s, %(confidence)s, %(status)s, %(updated_by)s,
-              %(updated_by_name)s, %(owner)s, %(owner_name)s, %(category)s,
+              %(updated_by_name)s,
+              COALESCE(%(owner)s, %(owner_default)s),
+              COALESCE(%(owner_name)s, %(owner_name_default)s),
+              %(category)s,
               %(is_draft)s, %(target_status)s
             )
             ON CONFLICT (id, is_draft) DO UPDATE SET
@@ -451,7 +543,12 @@ def create_node(
               updated_by_name = EXCLUDED.updated_by_name,
               -- 只在传了值时覆盖：重复提交/其它 type 的节点不带 category，
               -- 无条件赋值会把已有分类抹成 NULL
-              category = COALESCE(EXCLUDED.category, kg_node.category)
+              category = COALESCE(EXCLUDED.category, kg_node.category),
+              -- 负责人同理，但**不能用 EXCLUDED** —— EXCLUDED.owner 已经被上面的
+              -- COALESCE 兜成了创建人，拿它判「有没有传」永远是「传了」，于是每次
+              -- 编辑都把负责人改成操作人。这里直接引原始参数（NULL = 没传）。
+              owner = COALESCE(%(owner)s, kg_node.owner),
+              owner_name = COALESCE(%(owner_name)s, kg_node.owner_name)
             """,
             row,
         )
@@ -688,6 +785,15 @@ def patch_node(
         if key in body and body[key] is not None:
             fields.append(f"{key} = %({key})s")
             params[key] = body[key]
+    # 只改了 owner、没给 owner_name：解析一次，否则名字会停在上一任负责人身上 ——
+    # 列表「负责人」列显示的是 owner_name，看起来就像没改成功。
+    if "owner" in body and body["owner"] is not None and not body.get("owner_name"):
+        nm = resolve_owner_name(
+            body["owner"], None, caller_id=user_id, caller_name=user_name
+        )
+        if nm:
+            fields.append("owner_name = %(owner_name)s")
+            params["owner_name"] = nm
     if "aliases" in body:
         fields.append("aliases = %(aliases)s")
         params["aliases"] = _json_or_none(body["aliases"])

@@ -22,6 +22,9 @@ from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL, skill_key_from_no
 from backend.kg.pg_store.skill_level_meta import REQUIRED_LEVEL_CODES
 
 WEIGHT_TOLERANCE = 0.01
+# 门禁提示语里给运营看的状态中文名。只在报错文案里用，不参与任何判定 ——
+# 判定一律走 config 的 node_published / edge_published 那套谓词。
+_STATUS_ZH = {"disabled": "已停用", "draft": "草稿", "archived": "已删除"}
 _PUB_N = "COALESCE(n.status, 'published') = 'published'"
 _PUB_E = "COALESCE(e.status, 'published') = 'published'"
 _PUB_O = "COALESCE(o.status, 'published') = 'published'"
@@ -86,7 +89,31 @@ def check_br03_occupation(
             JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level' AND {_PUB_N}
             WHERE e.src_id = %s AND e.rel_type = 'requires' AND {_PUB_E}
               AND e.weight IS NOT NULL
+              AND NOT e.is_draft
             GROUP BY 1
+            """,
+            (occupation_id,),
+        ).fetchall()
+        # 被排除的技能单独查一次，**只为把话说清**。这里连着栽过：运营在页面上
+        # 看到「权重和 1.00」（管理台列表口径含 disabled）、点发布却被告知
+        # Σweight=0.8500，而 0.85 这个数字页面上任何地方都没有，也无从知道是哪
+        # 一项被扣掉了。差额的来源只有一种：边指向的技能节点不是 published
+        # （停用或已删）—— 那档技能对学员不可见，它的权重是真的丢了，所以门禁
+        # 扣掉它是对的，缺的是解释。
+        excluded = conn.execute(
+            f"""
+            SELECT ({SKILL_KEY_SQL}) AS skill_key,
+                   COALESCE(n.status, 'published') AS skill_status,
+                   max(e.weight) AS w
+            FROM kg_edge e
+            JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level'
+              AND NOT n.is_draft
+              AND COALESCE(n.status, 'published') NOT IN ('published', 'archived')
+            WHERE e.src_id = %s AND e.rel_type = 'requires' AND {_PUB_E}
+              AND e.weight IS NOT NULL
+              AND NOT e.is_draft
+            GROUP BY 1, 2
+            ORDER BY 3 DESC
             """,
             (occupation_id,),
         ).fetchall()
@@ -106,6 +133,29 @@ def check_br03_occupation(
         except (TypeError, ValueError):
             pass
     ok = abs(total - 1.0) <= WEIGHT_TOLERANCE
+    ex_items = [
+        {
+            "skill_key": str(r["skill_key"]),
+            "status": str(r["skill_status"]),
+            "weight": round(float(r["w"] or 0), 4),
+        }
+        for r in excluded
+        if r["skill_key"]
+    ]
+    ex_sum = round(sum(i["weight"] for i in ex_items), 4)
+    ex_note = ""
+    if not ok and ex_items:
+        names = "、".join(
+            f"{i['skill_key']}（{_STATUS_ZH.get(i['status'], i['status'])}，权重"
+            f"{i['weight']:g}）"
+            for i in ex_items[:4]
+        )
+        more = f" 等 {len(ex_items)} 项" if len(ex_items) > 4 else ""
+        ex_note = (
+            f"。已排除 {len(ex_items)} 项非发布态技能{more}，合计 {ex_sum:g}："
+            f"{names} —— 这些技能对学员不可见，权重不计入。"
+            f"请把它们启用，或从技能构成里移除并把权重补回 1"
+        )
     return [
         {
             "rule": "BR-03",
@@ -113,11 +163,14 @@ def check_br03_occupation(
             "message": (
                 f"岗位权重归一：Σweight={total:.4f}"
                 + ("" if ok else f"（须在 1±{WEIGHT_TOLERANCE} 内）")
+                + ex_note
             ),
             "detail": {
                 "weight_sum": round(total, 4),
                 "skill_count": len(rows),
                 "tolerance": WEIGHT_TOLERANCE,
+                "excluded_skills": ex_items,
+                "excluded_weight_sum": ex_sum,
             },
         }
     ]
@@ -129,10 +182,20 @@ def _level_descriptions_for_skill_key(
     with use_conn(conn) as conn:
         rows = conn.execute(
             f"""
+            -- **不能排除 disabled**：门禁评判的是「发布出去以后长什么样」，而发布
+            -- 一个技能就是把它 L1–L5 全置为 published（`_set_skill_key_status`）。
+            -- 把 disabled 挡在外面 = 门禁看不见自己要评判的那些行，于是对一个五档
+            -- 描述齐全的已停用技能报「缺少 L1, L2, L3, L4, L5」，运营对着档位明细
+            -- 里明明存在的五条描述无从下手。只排除 archived（逻辑删除，发布不会
+            -- 把它捞回来）。
+            -- `NOT n.is_draft` 是为了确定性：同一 id 有线上行与草稿行两行，下面
+            -- 用 setdefault 收集，不钉住就变成「谁先被扫到算谁」。改状态的
+            -- `_set_skill_key_status` 也只动线上行，两边口径一致。
             SELECT n.name, n.description, n.attrs
             FROM kg_node n
             WHERE n.type = 'skill_level'
-              AND COALESCE(n.status, 'published') NOT IN ('archived', 'disabled')
+              AND COALESCE(n.status, 'published') <> 'archived'
+              AND NOT n.is_draft
               AND (%s::text IS NULL OR n.region = %s)
               AND ({SKILL_KEY_SQL}) = %s
             """,
@@ -687,7 +750,14 @@ def try_publish_node(
     user_name: str,
     region: str = "CN",
 ) -> dict[str, Any]:
-    """尝试将节点/逻辑技能置为 published；失败则保持/置 draft 并返回 failed。"""
+    """尝试将节点/逻辑技能置为 published；**门禁不过则原样不动**，只回 gate。
+
+    2026-08-19 改：失败时不再把记录降成 `draft`。原来那样做有两个坏处 ——
+    一是点一次失败的「发布」就会把一条 `disabled`（已停用）记录变成草稿，运营
+    丢掉了停用状态而且没被告知；二是 `status` 从此兼任「上次发布试过但没过」的
+    标记，而草稿态方案里 `status` 只表达可见性，是否有待发布内容看
+    `is_draft` 那一行。失败原因回在 `gate.failed` 里，前端照原样显示即可。
+    """
     from backend.kg.pg_store.query import get_node
     from backend.kg.pg_store.write import patch_node
 
@@ -701,8 +771,8 @@ def try_publish_node(
             node_type="skill_bundle", skill_key=sk, region=region, action="enable"
         )
         if not gate["ok"]:
-            _set_skill_key_status(sk, "draft", region=region)
-            return {"status": "draft", "gate": gate, "skill_key": sk}
+            return {"status": str(n.get("status") or "draft"), "gate": gate,
+                    "skill_key": sk}
         _set_skill_key_status(sk, "published", region=region)
         return {"status": "published", "gate": gate, "skill_key": sk}
 
@@ -710,14 +780,8 @@ def try_publish_node(
         node_type=ntype, node_id=node_id, region=region, action="enable"
     )
     if not gate["ok"]:
-        patch_node(
-            node_id,
-            {"status": "draft"},
-            user_id=user_id,
-            user_name=user_name,
-            to_draft=False,      # 发布侧：直接改线上行的 status（方案 §4）
-        )
-        return {"status": "draft", "gate": gate, "node_id": node_id}
+        return {"status": str(n.get("status") or "draft"), "gate": gate,
+                "node_id": node_id}
     patch_node(
         node_id,
         {"status": "published"},
