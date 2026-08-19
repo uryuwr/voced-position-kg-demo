@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -98,7 +99,11 @@ def _type_of(sch: dict, spec: dict, depth: int = 0) -> str:
             return f"map<string, {_type_of(ap, spec, depth)}>"
         return "object"
     if sch.get("enum"):
-        return " \\| ".join(f"`{v}`" for v in sch["enum"])
+        # 这里**不要**预转义成 " \\| "：转义统一由 _cell() 在写表格单元格时做。
+        # 预转义过一次、_cell 再转一次，结果是 `\\|`，飞书渲染出一个多余的反斜杠
+        # （`pending \| graded`）。而本函数的返回值还用在非表格处（`**响应**：…`），
+        # 那里根本不该有转义。
+        return " | ".join(f"`{v}`" for v in sch["enum"])
     if sch.get("const") is not None:
         return f"`{sch['const']}`"
     return t or "any"
@@ -164,6 +169,49 @@ def _anchor(name: str) -> str:
     return f"`{name}`"
 
 
+def _cell(text: object) -> str:
+    """表格单元格内容：压掉换行、转义 `|`。
+
+    **类型列也必须过这里。** 联合类型渲染成 `integer | string`、
+    `map<string, integer | number>` 这种，未转义的 `|` 会被当成单元格分隔符 ——
+    该行的 cell 数超出表头列数，超出的部分（正好是最后的「说明」列）被吞掉。
+    实测飞书上有 14 行字段说明因此完全不可见（`answer`、`auth_bypass`、
+    `level`、`output` 等），本地 md 用宽松解析器看不出问题，所以一直没被发现。
+    """
+    return str(text or "").replace("\n", " ").replace("|", "\\|")
+
+
+_SETEXT = re.compile(r"^\s*[-=]{3,}\s*$")
+
+
+def _quote_lines(text: str) -> list[str]:
+    """把多行说明转成引用块，并**中和 setext 标题**。
+
+    Pydantic docstring 里习惯写
+
+        前端接入须知
+        ------------
+
+    这种 setext 标题。逐行加 `> ` 后，下划线在 Markdown 里优先级高于引用块，
+    飞书会把它解析成**顶层 h2**、直接跳出引用块 —— 文档目录里于是凭空多出
+    「前端接入须知」这类平级章节。docstring 用 setext 是 Python 惯例，不该为了
+    导出格式去改它，所以在这里把「标题行 + 下划线」压成一行加粗。
+    """
+    lines = [ln.rstrip() for ln in text.strip().split("\n")]
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        cur = lines[i]
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        if cur.strip() and _SETEXT.match(nxt):
+            out.append(f"> **{cur.strip()}**")
+            i += 2
+            continue
+        out.append(f"> {cur}" if cur.strip() else ">")
+        i += 1
+    return out
+
+
 def _model_link(sch: dict, spec: dict) -> str:
     """类型描述，遇到已注册模型就换成锚点链接。"""
     schemas = (spec.get("components") or {}).get("schemas") or {}
@@ -188,8 +236,8 @@ def _field_table(name: str, spec: dict, out: list[str]) -> None:
     required = set(sch.get("required") or [])
 
     if sch.get("description"):
-        for ln in str(sch["description"]).strip().split("\n"):
-            out.append(f"> {ln}" if ln.strip() else ">")
+        for ln in _quote_lines(str(sch["description"])):
+            out.append(ln)
         out.append("")
 
     out.append("| 字段 | 类型 | 必填 | 说明 |")
@@ -197,12 +245,12 @@ def _field_table(name: str, spec: dict, out: list[str]) -> None:
     for fname, fsch in props.items():
         if not isinstance(fsch, dict):
             continue
-        desc = (fsch.get("description") or "").replace("\n", " ").replace("|", "\\|")
+        desc = _cell(fsch.get("description"))
         cons = _constraints(fsch)
         if cons:
             desc = f"{desc}（{cons}）" if desc else cons
         out.append(
-            f"| `{fname}` | {_model_link(fsch, spec)} | "
+            f"| `{fname}` | {_cell(_model_link(fsch, spec))} | "
             f"{'是' if fname in required else ''} | {desc} |"
         )
     out.append("")
@@ -313,12 +361,13 @@ def build(spec: dict) -> str:
                 out.append("| --- | --- | --- | --- | --- |")
                 for p in params:
                     psch = p.get("schema") or {}
-                    desc = (p.get("description") or "").replace("\n", " ").replace("|", "\\|")
+                    desc = _cell(p.get("description"))
                     cons = _constraints(psch)
                     if cons:
                         desc = f"{desc}（{cons}）" if desc else cons
                     out.append(
-                        f"| `{p.get('name')}` | {p.get('in')} | {_type_of(psch, spec)} | "
+                        f"| `{p.get('name')}` | {p.get('in')} | "
+                        f"{_cell(_type_of(psch, spec))} | "
                         f"{'是' if p.get('required') else ''} | {desc} |"
                     )
                 out.append("")

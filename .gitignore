@@ -100,3 +100,8 @@ docs/.lark_api_doc
 # SQLite 备份：现有 data/graph/*.sqlite-* 匹配不到 `.sqlite.bak-split` 这种命名
 # （要求 .sqlite 后紧跟连字符），而它有 163M，误提交一次就永远留在历史里
 data/graph/*.sqlite.bak*
+
+# 同步 docs/API接口文档.md 到飞书时的分块中间产物（001.md、002.md…）。
+# 那份 md 有 10 万字符，整篇写不进飞书 API，得按二级标题切块逐块写，
+# 切出来的块是纯中间态 —— 真源是 openapi.json，块随时可重新生成。
+/.lark_sync_tmp/
