@@ -108,12 +108,18 @@ def main() -> None:
 
         if not args.dry_run and ids:
             # 边先于节点：节点不可见但边仍 published 时，图查询会画断头箭头
+            # NOT is_draft：草稿行的 status 恒为 'draft'（CHECK 钉住），往它写
+            # archived/published 会直接报 CheckViolation，整批回滚
             cur.execute(
-                "UPDATE kg_edge SET status = %s WHERE src_id = ANY(%s) OR dst_id = ANY(%s)",
+                "UPDATE kg_edge SET status = %s "
+                "WHERE (src_id = ANY(%s) OR dst_id = ANY(%s)) AND NOT is_draft",
                 (new_status, ids, ids),
             )
             print(f"  PG 边已{verb}: {cur.rowcount}")
-            cur.execute("UPDATE kg_node SET status = %s WHERE id = ANY(%s)", (new_status, ids))
+            cur.execute(
+                "UPDATE kg_node SET status = %s WHERE id = ANY(%s) AND NOT is_draft",
+                (new_status, ids),
+            )
             print(f"  PG 节点已{verb}: {cur.rowcount}")
 
     # SQLite：采集库没有 status 列，用 attrs 打标记，供后续 migrate/采集脚本识别

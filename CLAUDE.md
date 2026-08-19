@@ -54,6 +54,14 @@ pipelines/  旧路径 shim，勿写新逻辑
 
 ## 必须遵守的约定
 
+**`kg_node` / `kg_edge` 的主键是 `(id, is_draft)`，同一 id 有两行**（2026-08-19 起）——管理台的内容编辑先落草稿行（`is_draft=true`，`status` 恒为 `'draft'`，DB 级 CHECK `ck_kg_node_draft_status` 钉住），发布才写回线上行。方案见 `docs/方案-管理台草稿态与发布.md`。三条必守：
+
+- **写路径每条 `UPDATE`/`DELETE` 都要钉 `is_draft`**。漏了就同时打中两行：写 `status` 会撞 CHECK 报 500（吵，好查），写别的列则**静默改坏线上数据**（不吵，最难查）。已经踩过三次：发布 500、删技能 500、删除留下能"复活已删记录"的孤儿草稿。
+- **`ON CONFLICT (id)` 一律失效**，要写 `ON CONFLICT (id, is_draft)`。不匹配的 `ON CONFLICT` 会当成普通插入或直接报唯一冲突——**直连改库的脚本和采集脚本绕不过这条**，写批量数据前先确认。
+- **读路径分两套口径**：管理台用 `config.prefer_draft(alias)`（草稿优先，实现是 anti-join 而非 `DISTINCT ON`，因为 20+ 处读路径各有自己的 ORDER BY/GROUP BY），前台只读线上行。给前台的 SQL 错加 `prefer_draft` = 草稿泄漏到学员端（`list_skill_bundles` 踩过）。闸门：`scripts/verify_draft_leak.py`、`verify_draft_closure.py`、`verify_delete_with_draft.py`。
+
+另外 PostgreSQL 的外键引用不了部分唯一索引，所以 `kg_edge` 指向 `kg_node` 的两个外键**已删除**，两端存在性不再由库保证——靠 `scripts/check_orphan_edges.py` 兜。
+
 **状态可见性**（`kg/pg_store/config.py`）—— 这里漏过好几次 bug。`archived` 是逻辑删除、任何接口都不返回；`draft`/`disabled` 仅管理台可见；`published` 前后台都可见。**每个 `kg_edge` 查询都要拼 `edge_published(alias)` 或 `edge_not_archived(alias)`**，只过滤节点挡不住边（如两端节点都正常的 `parent_of`）。节点同理用 `node_published`/`node_not_archived`。
 
 **中间件顺序**（`api/main.py`）—— Starlette 中「后 add = 更靠外」。CORS 必须最后 add 包在鉴权外层，否则预检 OPTIONS 被 401、且 401 响应缺 CORS 头，浏览器只报跨域看不到真实原因。`CORS_ORIGINS=*` 时用 `allow_origin_regex` 而非 `allow_origins=["*"]`（后者与 `allow_credentials` 冲突）。

@@ -89,7 +89,11 @@ def main() -> int:
             a2 = dict(a)
             a2["code"] = code
             blob = json.dumps(a2, ensure_ascii=False)
-            pg.execute("UPDATE kg_node SET attrs=%s WHERE id=%s", (blob, nid))
+            # NOT is_draft：不钉住会连运营未发布的草稿行一起覆盖（attrs 不是
+            # status，撞不到 CHECK，静默生效）
+            pg.execute(
+                "UPDATE kg_node SET attrs=%s WHERE id=%s AND NOT is_draft", (blob, nid)
+            )
             n_pg += 1
             cur = sq.execute("UPDATE nodes SET attrs=? WHERE id=?", (blob, nid))
             n_sq += cur.rowcount

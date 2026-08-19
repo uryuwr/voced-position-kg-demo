@@ -171,7 +171,10 @@ def apply_to_db(by_file: list[dict], *, dry_run: bool) -> dict:
                         WHEN confidence IN ('official','derived') THEN confidence
                         ELSE 'derived'
                       END
-                    WHERE id = %s
+                    -- NOT is_draft：主键是 (id, is_draft)，同一 id 有两行。采集回填
+                    -- 只该动线上行；漏了会把运营尚未发布的草稿一起覆盖，而
+                    -- description/attrs 不是 status、撞不到 CHECK，所以静默生效
+                    WHERE id = %s AND NOT is_draft
                     """,
                     (
                         should_write_desc,

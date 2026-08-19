@@ -161,7 +161,8 @@ def main() -> int:
         # 先清空这些岗位的 requires：PG 归档留痕，sqlite 物理删（源库无 status 列）
         occs = list(per)
         pg.execute("""UPDATE kg_edge SET status='archived'
-                      WHERE src_id=ANY(%s) AND rel_type='requires'""", (occs,))
+                      WHERE src_id=ANY(%s) AND rel_type='requires'
+                        AND NOT is_draft""", (occs,))
         q = ",".join("?" * len(occs))
         sq.execute(f"DELETE FROM edges WHERE rel_type='requires' AND src_id IN ({q})", occs)
 
@@ -176,11 +177,16 @@ def main() -> int:
                              "base_level": BASE_LEVEL}, ensure_ascii=False)
             pg.execute("""
                 INSERT INTO kg_edge (id,src_id,dst_id,rel_type,region,weight,evidence,attrs,
-                    source_system,source_id,source_url,license,fetched_at,confidence,status)
+                    source_system,source_id,source_url,license,fetched_at,confidence,
+                    status,is_draft)
                 SELECT %s,%s,%s,'requires','CN',%s,%s,%s,'MOHRSS_CN',%s,
-                       o.source_url,'MOHRSS-public',o.fetched_at,'official','published'
-                FROM kg_node o WHERE o.id=%s
-                ON CONFLICT (id) DO UPDATE SET weight=EXCLUDED.weight,
+                       o.source_url,'MOHRSS-public',o.fetched_at,'official',
+                       'published',false
+                -- `AND NOT o.is_draft` 不能省：主键是 (id, is_draft)，同一 id 可能有
+                -- 两行，取到两行就插两条（其中一条撞冲突），而且草稿行的 source_url /
+                -- fetched_at 是运营改过的中间态，不该被灌进线上边的溯源字段。
+                FROM kg_node o WHERE o.id=%s AND NOT o.is_draft
+                ON CONFLICT (id,is_draft) DO UPDATE SET weight=EXCLUDED.weight,
                     status='published', evidence=EXCLUDED.evidence, attrs=EXCLUDED.attrs
             """, (eid, k["occ"], k["dst"], k["w"], ev, at, f"{k['occ']}#{k['sk']}", k["occ"]))
             src = sq.execute("SELECT source_url, fetched_at FROM nodes WHERE id=?",

@@ -148,9 +148,12 @@ def main() -> int:
                 INSERT INTO kg_edge
                   (id, src_id, dst_id, rel_type, region, evidence,
                    source_system, source_url, license, fetched_at,
-                   confidence, status, structure_layer)
-                VALUES (%s,%s,%s,'advances_to',%s,%s,%s,%s,%s,%s,%s,'published','chain')
-                ON CONFLICT (id) DO UPDATE SET
+                   confidence, status, structure_layer, is_draft)
+                VALUES (%s,%s,%s,'advances_to',%s,%s,%s,%s,%s,%s,%s,
+                        'published','chain',false)
+                -- 主键是 (id, is_draft)：只写 ON CONFLICT (id) 会直接报「没有匹配的
+                -- 唯一约束」。离线脚本一律写线上行，冲突目标也要带上 is_draft。
+                ON CONFLICT (id,is_draft) DO UPDATE SET
                   evidence = EXCLUDED.evidence,
                   fetched_at = EXCLUDED.fetched_at,
                   confidence = EXCLUDED.confidence,

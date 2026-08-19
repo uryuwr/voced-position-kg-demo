@@ -113,8 +113,16 @@ def main() -> None:
 
     with session() as c, c.cursor() as cur:
         for w, eid in reweight:
-            cur.execute("UPDATE kg_edge SET weight=%s WHERE id=%s", (round(w, 4), eid))
-        cur.execute("UPDATE kg_edge SET status='archived' WHERE id = ANY(%s)", (drop_ids,))
+            # 两条都要 NOT is_draft：改 weight 漏了是**静默**覆盖运营未发布的草稿，
+            # 改 status 漏了则直接撞 ck_kg_edge_draft_status 报错回滚
+            cur.execute(
+                "UPDATE kg_edge SET weight=%s WHERE id=%s AND NOT is_draft",
+                (round(w, 4), eid),
+            )
+        cur.execute(
+            "UPDATE kg_edge SET status='archived' WHERE id = ANY(%s) AND NOT is_draft",
+            (drop_ids,),
+        )
         print("PG 已归档:", cur.rowcount)
 
     if SQLITE.exists():

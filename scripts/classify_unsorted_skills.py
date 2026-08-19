@@ -186,8 +186,13 @@ def main() -> None:
         # 只改仍是兜底的那些：跑这个脚本期间可能有人在管理台手工分过类，
         # 不能拿 LLM 的判断盖掉人工的
         cur.execute(
+            # `AND NOT n.is_draft` 与上面那条注释是同一个道理，只是更隐蔽：主键是
+            # (id, is_draft)，同一 id 可能有两行，不钉住就把运营**尚未发布的草稿**
+            # 也一起改了。category 不是 status，撞不到 CHECK —— 不报错、不回滚，
+            # 运营下次点发布才发现分类被批处理改过。
             f"""UPDATE kg_node n SET category = t.cat FROM _sk_cat t
                 WHERE n.type = 'skill_level' AND ({SKILL_KEY_SQL}) = t.k
+                  AND NOT n.is_draft
                   AND COALESCE(NULLIF(n.category,''), '{FALLBACK_CODE}') = '{FALLBACK_CODE}'"""
         )
         print("PG 已更新节点：%d" % cur.rowcount)

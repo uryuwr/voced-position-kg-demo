@@ -127,7 +127,10 @@ def main() -> None:
             if not a.get("job_family") and raw[m["id"]].get("job_family"):
                 a["job_family"] = raw[m["id"]]["job_family"]
             cur.execute(
-                "UPDATE kg_node SET attrs = %s, level = %s WHERE id = %s",
+                # NOT is_draft：不钉住会连运营未发布的草稿行一起覆盖（attrs/level
+                # 不是 status，撞不到 CHECK，静默生效）
+                "UPDATE kg_node SET attrs = %s, level = %s "
+                "WHERE id = %s AND NOT is_draft",
                 (json.dumps(a, ensure_ascii=False), raw[m["id"]]["level"], m["id"]),
             )
             n += 1

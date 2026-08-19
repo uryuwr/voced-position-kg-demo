@@ -86,7 +86,12 @@ def main() -> None:
             return
 
         for nid, code in plan:
-            cur.execute("UPDATE kg_node SET category = %s WHERE id = %s", (code, nid))
+            # NOT is_draft：同一 id 有线上行与草稿行两行，漏了就把运营未发布的
+            # 草稿一起改掉，且 category 不是 status、撞不到 CHECK，静默生效
+            cur.execute(
+                "UPDATE kg_node SET category = %s WHERE id = %s AND NOT is_draft",
+                (code, nid),
+            )
         print("PG 已更新：%d" % len(plan))
 
     # SQLite：采集库的 nodes 表**没有 category 列**，分类只存在 attrs 里

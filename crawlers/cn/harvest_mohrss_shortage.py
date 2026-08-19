@@ -233,7 +233,8 @@ def main() -> int:
                 a["demand_source_url"] = args.url
                 a["demand_fetched_at"] = now
                 conn.execute(
-                    "UPDATE kg_node SET attrs=%s WHERE id=%s",
+                    # NOT is_draft：采集只动线上行，漏了会静默覆盖运营未发布的草稿
+                    "UPDATE kg_node SET attrs=%s WHERE id=%s AND NOT is_draft",
                     (json.dumps(a, ensure_ascii=False), node["id"]),
                 )
                 updated += 1

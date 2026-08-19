@@ -258,7 +258,8 @@ def main() -> int:
             plan = targets_by_weight([(s["name"], s["weight_pct"]) for s in cache[occ]])
             # 旧边全部让位：PG 归档留痕，sqlite 物理删（源库无 status 列）
             pg.execute("""UPDATE kg_edge SET status='archived'
-                          WHERE src_id=%s AND rel_type='requires'""", (occ,))
+                          WHERE src_id=%s AND rel_type='requires'
+                            AND NOT is_draft""", (occ,))
             sq.execute("DELETE FROM edges WHERE src_id=? AND rel_type='requires'", (occ,))
             for nm, wpct, lv in plan:
                 sid = f"{code}|{nm}|L{lv}"
@@ -271,9 +272,11 @@ def main() -> int:
                 desc = f"{t['name']}（{code}）· {nm} · L{lv} · 权重{wpct:g}%"
                 pg.execute("""
                     INSERT INTO kg_node (id,region,type,name,name_zh,description,attrs,
-                        source_system,source_id,source_url,license,fetched_at,confidence,status)
-                    VALUES (%s,%s,'skill_level',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'published')
-                    ON CONFLICT (id) DO UPDATE SET attrs=EXCLUDED.attrs,
+                        source_system,source_id,source_url,license,fetched_at,confidence,
+                        status,is_draft)
+                    VALUES (%s,%s,'skill_level',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                        'published',false)
+                    ON CONFLICT (id,is_draft) DO UPDATE SET attrs=EXCLUDED.attrs,
                         description=EXCLUDED.description
                 """, (nid, REGION, f"{nm} · L{lv}", f"{nm} · L{lv}", desc, ab,
                       SOURCE_SYSTEM, sid, FILL_URL, LICENSE, t["fetched_at"], FILL_CONF))
@@ -294,9 +297,10 @@ def main() -> int:
                 pg.execute("""
                     INSERT INTO kg_edge (id,src_id,dst_id,rel_type,region,weight,evidence,
                         attrs,source_system,source_id,source_url,license,fetched_at,
-                        confidence,status)
-                    VALUES (%s,%s,%s,'requires',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'published')
-                    ON CONFLICT (id) DO UPDATE SET weight=EXCLUDED.weight,
+                        confidence,status,is_draft)
+                    VALUES (%s,%s,%s,'requires',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                        'published',false)
+                    ON CONFLICT (id,is_draft) DO UPDATE SET weight=EXCLUDED.weight,
                         status='published', evidence=EXCLUDED.evidence
                 """, (eid, occ, nid, REGION, w, ev, eab, SOURCE_SYSTEM,
                       f"{sid}#req", FILL_URL, LICENSE, t["fetched_at"], FILL_CONF))

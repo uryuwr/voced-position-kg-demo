@@ -149,8 +149,11 @@ def main(apply: bool, check: bool = False) -> int:
             )
         conn.commit()
         print(f"\n[已提交] 归档 {len(drop_ids)} 条边（status='archived'）。")
+        # 回滚语句里的 `AND NOT is_draft` 不能省：这段是给人复制粘贴执行的，
+        # 少了它会往草稿行写 'published'，直接撞 ck_kg_edge_draft_status
         print("  回滚：UPDATE kg_edge SET status='published' WHERE id IN "
-              "(SELECT edge_id FROM kg_edge_dedupe_log WHERE batch='skill_composition');")
+              "(SELECT edge_id FROM kg_edge_dedupe_log WHERE batch='skill_composition') "
+              "AND NOT is_draft;")
     return 0
 
 
