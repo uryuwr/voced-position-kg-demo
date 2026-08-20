@@ -41,7 +41,8 @@ from scripts.audit_baseline_quality import CHECKS, _LIVE_N, _has_is_draft
 REPORT = ROOT / "reports" / "baseline_clean.json"
 
 # 从来没有效过 → 物理删；曾经有效 → 归档
-HARD_DELETE = {"test_fixture", "url_encoded_name", "parse_noise", "empty_name"}
+HARD_DELETE = {"test_fixture", "url_encoded_name", "parse_noise", "empty_name",
+               "manual_unpublished"}
 ARCHIVE = {"occupation_as_skill"}
 # 需要人判断，默认不动（--include-vague 才处理）
 OPT_IN = {"too_vague_skill"}

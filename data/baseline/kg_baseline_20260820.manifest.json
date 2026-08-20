@@ -1,0 +1,56 @@
+{
+  "version": "20260820",
+  "counts": {
+    "node": 32148,
+    "edge": 23051,
+    "skill_category": 12,
+    "skill_prereq": 62
+  },
+  "sha256_of_lines": "b4fe9811b0e9c2b069471817c5a58d14b686afb77857d8a89307313efb0ece1c",
+  "coverage": {
+    "occupation_coverage": {
+      "total": 2151,
+      "ind": 1126,
+      "maj": 1875,
+      "sk": 1311,
+      "adv": 758
+    },
+    "skill_level_dist": {
+      "1": 5208,
+      "2": 5596,
+      "3": 5628,
+      "4": 5575,
+      "5": 5774
+    },
+    "skill_category_dist": {
+      "TECH": 1352,
+      "SERVICE": 690,
+      "GENERAL": 670,
+      "OPERATE": 659,
+      "MANAGE": 508,
+      "DATA": 498,
+      "DESIGN": 488,
+      "UNSORTED": 372,
+      "MAINTAIN": 311,
+      "QUALITY": 236,
+      "SAFETY": 125,
+      "TEACH": 112
+    },
+    "node_by_type": {
+      "course": 132,
+      "industry": 149,
+      "major": 1935,
+      "occupation": 2151,
+      "skill_level": 27781
+    },
+    "edge_by_rel": {
+      "advances_to": 1621,
+      "belongs_to": 4115,
+      "offers_course": 95,
+      "prepares_for": 9238,
+      "requires": 7831,
+      "taught_by": 151
+    }
+  },
+  "note": "导入后用 coverage 自检：行数一致但语义退回的情况真发生过（attrs = EXCLUDED.attrs 把归一化结果盖回旧形态，行数一模一样）"
+}

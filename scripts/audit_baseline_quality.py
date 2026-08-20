@@ -130,6 +130,22 @@ CHECKS: list[tuple[str, str, str]] = [
         """,
     ),
     (
+        # 基准库的真实数据都来自采集（MOE_CN / MOHRSS_CN / BOSS / LLM_CN），
+        # id 是 `CN:manual:*` 的都是页面上手工建的。手工建**且已发布**是运营正式
+        # 录入的真实数据，不能碰；手工建**又没发布**的就是联调点出来的残留
+        # （「管理端联调专业A」「开心测试」这种），基准库里不该有。
+        # 用「来源 + 状态」两个维度判，比按名字猜「哪个像测试」可靠 ——
+        # 按名字匹配会把 `UI自动化测试`、`力学性能测试技术` 这些真课程一起捞进来。
+        "manual_unpublished",
+        "联调残留：手工建（CN:manual:*）且未发布",
+        """
+        SELECT n.id, n.name, COALESCE(n.status,'published') AS extra FROM kg_node n
+        WHERE COALESCE(n.is_draft, false) = false
+          AND n.id LIKE 'CN:manual:%'
+          AND COALESCE(n.status,'published') <> 'published'
+        """,
+    ),
+    (
         "empty_name",
         "名字为空或只有空白",
         """
@@ -215,6 +231,7 @@ def main() -> None:
         # 闸门只卡「必须清掉」的几类。过泛/职业名混入是数据质量问题，
         # 需要人判断，不该阻塞发布。
         blocking = ("test_fixture", "url_encoded_name", "parse_noise", "empty_name",
+                    "manual_unpublished",
                     "orphan_edge", "edge_to_archived")
         bad = {k: out[k]["count"] for k in blocking if out[k]["count"]}
         if bad:
