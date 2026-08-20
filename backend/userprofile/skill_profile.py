@@ -59,7 +59,9 @@ def assessment_levels(user_id: str) -> dict[str, int]:
 
     with connect() as conn:
         rows = conn.execute(
-            "SELECT skill_name, level FROM biz_user_skill WHERE user_id=%s", (user_id,)
+            # skill_id 必选：测评行的身份 code 从它剥，`skill_name` 列是展示名
+            "SELECT skill_id, skill_name, level FROM biz_user_skill WHERE user_id=%s",
+            (user_id,),
         ).fetchall()
         from backend.userprofile.skill_display import profile_levels
 

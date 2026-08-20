@@ -669,7 +669,8 @@ class AppliedResult(BaseModel):
     )
     linked_edges: list[KgEdge] | None = Field(None, description="自动建出的边")
     skill_bundle: bool | None = Field(None, description="true=走的是技能 bundle 写入路径")
-    skill_key: str | None = Field(None, description="技能聚合主键")
+    skill_key: str | None = Field(None, description="技能聚合主键（ASCII code）")
+    skill_name: str | None = Field(None, description="技能展示名（写入回执里给出，便于确认写对了）")
     levels: list[str] | list[dict[str, Any]] | None = Field(
         None,
         description=(
@@ -1174,10 +1175,23 @@ class SkillCategoryGroup(BaseModel):
 
 
 class SkillPrereqLink(BaseModel):
-    """技能前置关系：学 `to` 之前应先具备 `from`。"""
+    """技能前置关系：学 `to` 之前应先具备 `from`。
 
-    from_: str = Field(..., alias="from", description="先修技能的 skill_key")
-    to: str = Field(..., description="后继技能的 skill_key")
+    两端的 `*_name` 不是可选装饰：这里的 `from`/`to` 是 `SKxxxxxxxxxx`，图上的
+    连线端点标签得靠它们。**本模型没有 `extra="allow"`**，所以数据层
+    （`industry_graph.occupation_skills_graph`）就算把名字放进 dict，不在这里
+    声明也会被 Pydantic 静默丢掉 —— 真发生过：数据层加了 `from_name`/`to_name`
+    却漏了这份声明，接口出参里两个字段一个都没有，且不报错。
+    """
+
+    from_: str = Field(..., alias="from", description="先修技能的 skill_key（ASCII code）")
+    to: str = Field(..., description="后继技能的 skill_key（ASCII code）")
+    from_name: str | None = Field(
+        None, description="先修技能展示名 —— **连线标签用这个**，取不到时回落为 code"
+    )
+    to_name: str | None = Field(
+        None, description="后继技能展示名，同 `from_name`"
+    )
     # 同 PrereqOut.confidence：是来源等级文本，不是分数。原来写成 `float | str`
     # 「两种都收」看着安全，实际是把类型判断推给了前端 —— 每次读都要先判是数字
     # 还是字符串。库里存的只有那四个字面量，收窄成 str。
@@ -1423,6 +1437,14 @@ class NodeDetailOut(BaseModel):
     type: str | None = Field(None, description="节点类型")
     name: str | None = Field(None, description="名称")
     skill_key: str | None = Field(None, description="技能聚合主键（技能详情）")
+    skill_name: str | None = Field(
+        None,
+        description=(
+            "技能展示名（技能详情）—— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 "
+            "ASCII code（形如 SK0123456789）。注意与顶层 `name` 区分：`name` 是档位节点名"
+            "（「施工操作 · L3」），这里是逻辑技能的展示名"
+        ),
+    )
     category: str | None = Field(None, description="技能大类 code，见 /v1/kg/skill-categories")
     category_name: str | None = Field(None, description="技能大类展示名（由 code 派生，不入库）")
     levels: list[dict[str, Any]] | None = Field(

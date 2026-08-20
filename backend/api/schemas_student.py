@@ -365,7 +365,16 @@ class CourseResourceOut(BaseModel):
 class PositionCourseSkillGroup(BaseModel):
     """按技能分组的课程。技能顺序按岗位 requires 权重倒序。"""
 
-    skill_key: str = Field(..., description="逻辑技能名")
+    skill_key: str = Field(
+        ..., description="技能聚合主键（ASCII code，形如 SK0123456789）"
+    )
+    skill_name: str | None = Field(
+        None,
+        description=(
+            "技能展示名 —— **页面上要显示这个**。原来这里只有 `skill_key`，"
+            "且描述写的是「逻辑技能名」，那是 2026-08-19 之前 key 就是中文名时的遗留"
+        ),
+    )
     required_level: int | None = Field(
         None, ge=1, le=5, description="该岗位要求的档位 1–5，来自 attrs.level"
     )

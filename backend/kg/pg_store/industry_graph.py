@@ -304,9 +304,11 @@ def occupation_skills_graph(
         groups: dict[str, list[dict[str, Any]]] = {}
         keys: list[str] = []
         cat_of: dict[str, str] = {}
+        name_by_key: dict[str, str] = {}
         for r in rows:
             k = r["skill_key"]
             keys.append(k)
+            name_by_key[k] = r["skill_name"] or k
             # 分区 key 一律用 **code**。这里曾写 `or UNCATEGORIZED`，而那个常量
             # 是中文展示名 —— 结果有分类的分区 key 是 TECH、没分类的是「待归类」，
             # 同一个字段混着两种取值，下面按 key 取计数也就永远取不到。
@@ -338,6 +340,13 @@ def occupation_skills_graph(
                     {
                         "from": p["prereq_skill_key"],
                         "to": p["skill_key"],
+                        # 两端都在本岗位技能集内，前端理论上能拿 categories[].skills[]
+                        # 反查名字；但同样的「调用方自己反查」假设在 prereq_map 那边
+                        # 就不成立（先修可指向集合外），且前端为此维护过一张字典。
+                        # 名字很便宜，直接带上，别让调用方分辨哪种情况能反查
+                        "from_name": name_by_key.get(p["prereq_skill_key"])
+                        or p["prereq_skill_key"],
+                        "to_name": name_by_key.get(p["skill_key"]) or p["skill_key"],
                         "confidence": p["confidence"],
                         "evidence": p["evidence"],
                     }
@@ -350,7 +359,9 @@ def occupation_skills_graph(
         for s in skills:
             s["depth"] = depth.get(s["skill_key"], 0)
         # 区内按层深排，同层按名称，供前端纵向分层
-        skills.sort(key=lambda s: (s["depth"], s["skill_key"]))
+        # （次序键必须是 skill_name：按 code 排就是按 md5 排，同一份数据看着像每次都在变，
+        #  而注释这行一直写着「同层按名称」—— 改造后实现与注释悄悄分了岔）
+        skills.sort(key=lambda s: (s["depth"], s["skill_name"] or s["skill_key"]))
     # key 是 code，name 是展示名 —— 前端不要按 code 硬编码中文
     categories = [
         {"key": c, "name": name_of(c), "rank": category_rank(c), "skills": s}

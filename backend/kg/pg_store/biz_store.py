@@ -158,7 +158,9 @@ def position_match(
 
     with connect() as conn:
         urows = conn.execute(
-            "SELECT skill_name, level, score FROM biz_user_skill WHERE user_id=%s",
+            # **`skill_id` 不能省**：测评行的身份 code 从它剥（`skill_key:SKxxx`），
+            # `skill_name` 列现在装真展示名。少选这一列 = code 精确匹配整条路径失效
+            "SELECT skill_id, skill_name, level, score FROM biz_user_skill WHERE user_id=%s",
             (user_id,),
         ).fetchall()
         # code 与名字都建键：测评行按 code 精确命中、简历/对话行按名字模糊命中，
@@ -1457,9 +1459,14 @@ def session_meta(session_id: int) -> dict[str, Any] | None:
 
 def save_assessment_report(session_id: int, user_id: str, report: dict[str, Any]) -> None:
     """测评收敛后落库：写报告 + 结束会话 + 更新技能画像。"""
+    # `skill_key` 是身份（进 skill_id），`skill_name` 是展示名 —— 两者分开带。
+    # 改之前这里是 `"skill_name": i.get("skill_key")`：2026-08-19 前 key 就是中文名，
+    # 一列两用没问题；改成 code 之后 `biz_user_skill.skill_name` 存的就是哈希，
+    # `/v1/student/me/skills` 与「我的画像」直接把 SKxxxxxxxxxx 显示给学员。
     measured = [
         {
-            "skill_name": i.get("skill_key"),
+            "skill_key": i.get("skill_key"),
+            "skill_name": i.get("skill_name") or i.get("skill_key"),
             "level": i.get("measured_level"),
             "score": int((i.get("ratio") or 0) * 100),
         }
@@ -1500,7 +1507,15 @@ def save_assessment_report(session_id: int, user_id: str, report: dict[str, Any]
                   level=EXCLUDED.level, score=EXCLUDED.score,
                   source=EXCLUDED.source, updated_at=NOW()
                 """,
-                (user_id, f"skill_key:{s['skill_name']}", s["skill_name"], s["level"], s["score"]),
+                # skill_id 用 code（身份，别拿展示名拼 —— 改个技能名就等于换主键、
+                # 画像里长出重复一项）；skill_name 列存展示名
+                (
+                    user_id,
+                    f"skill_key:{s.get('skill_key') or s['skill_name']}",
+                    s["skill_name"],
+                    s["level"],
+                    s["score"],
+                ),
             )
         conn.commit()
     _unlock(user_id, user_id, "first_diag")
@@ -1713,7 +1728,8 @@ def get_diagnosis_report(
         # on-the-fly from skills + occupation
         with connect() as conn:
             skills = conn.execute(
-                "SELECT skill_name, level, score FROM biz_user_skill WHERE user_id=%s",
+                # skill_id 同上：身份 code 在它里面（见 skill_display.code_from_skill_id）
+                "SELECT skill_id, skill_name, level, score FROM biz_user_skill WHERE user_id=%s",
                 (user_id,),
             ).fetchall()
         if not skills and not occupation_id:

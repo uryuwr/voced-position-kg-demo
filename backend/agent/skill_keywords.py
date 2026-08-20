@@ -40,11 +40,18 @@ HIT_SCORE = 40
 
 
 def kg_recall(text: str, limit: int = 12) -> list[dict[str, Any]]:
-    """从库内真实技能表召回：文本里直接出现的 skill_key 即算命中。
+    """从库内真实技能表召回：文本里直接出现的**技能名**即算命中。
 
     比关键词表准得多——那套词表是互联网口径（直播/投放/千川…），与库内国标口径的
     技能名（生产准备/设备维护与保养/安全风险辨识与管控…）对不上，
     一份写满真实技能的简历也只能解析出「通用职业素养」。
+
+    **匹配 `SKILL_NAME_SQL`，不是 `SKILL_KEY_SQL`。** 2026-08-19 之前 key 就是
+    中文名，这里写 key 是对的；改成 `SK`+md5 后这条召回**恒为 0** —— 简历里
+    永远不会出现 `SK7d3a1b0c22`。而它是本函数的第一优先级，恒 0 的后果就是
+    每份简历都无声地退化到上面那套关键词表，即本模块开头警告的那个结果。
+    产出的 `skill_name` 还会写进 `biz_user_skill`，写 code 进去等于污染学员画像。
+    孪生体是 `agent/assessment/profile.recall_skills`，两处一起修的。
 
     库不可达时返回空列表，由调用方退化到 `SKILL_KEYWORDS`。
     """
@@ -54,16 +61,20 @@ def kg_recall(text: str, limit: int = 12) -> list[dict[str, Any]]:
     try:
         # 函数内 import：见模块 docstring 的依赖方向说明
         from backend.kg.pg_store.client import connect
-        from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
+        from backend.kg.pg_store.config import node_published, online_only
+        from backend.kg.pg_store.skill_aggregate import SKILL_NAME_SQL
+        from backend.kg.pg_store.skill_taxonomy import name_of as _cat_name
 
         with connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT DISTINCT ({SKILL_KEY_SQL}) AS k, n.category AS cat
+                SELECT DISTINCT ({SKILL_NAME_SQL}) AS nm, n.category AS cat
                 FROM kg_node n
-                WHERE n.type='skill_level' AND COALESCE(n.status,'published')='published'
-                  AND length({SKILL_KEY_SQL}) >= 2
-                  AND position({SKILL_KEY_SQL} in %s) > 0
+                WHERE n.type='skill_level'
+                  AND {node_published('n')}
+                  AND {online_only('n')}
+                  AND length({SKILL_NAME_SQL}) >= 2
+                  AND position({SKILL_NAME_SQL} in %s) > 0
                 LIMIT %s
                 """,
                 (t, limit * 3),
@@ -71,21 +82,22 @@ def kg_recall(text: str, limit: int = 12) -> list[dict[str, Any]]:
     except Exception:
         return []
     # 长名优先：命中「设备维护与保养」时不再重复计入其子串「设备维护」
-    hits = sorted(({"k": r["k"], "cat": r["cat"]} for r in rows), key=lambda x: -len(x["k"]))
+    hits = sorted(({"nm": r["nm"], "cat": r["cat"]} for r in rows), key=lambda x: -len(x["nm"]))
     out: list[dict[str, Any]] = []
     taken: list[str] = []
     for h in hits:
-        k = h["k"]
-        if any(k in t2 for t2 in taken):
+        nm = h["nm"]
+        if any(nm in t2 for t2 in taken):
             continue
-        taken.append(k)
+        taken.append(nm)
         out.append(
             {
-                "skill_name": k,
+                "skill_name": nm,
                 "level": HIT_LEVEL,
                 "score": HIT_SCORE,
-                "evidence": f"简历文本命中技能库条目「{k}」"
-                + (f"（{h['cat']}）" if h["cat"] else ""),
+                # evidence 是上屏文案：分类也要展示名，不能直拼 `TECH`/`OPERATE`
+                "evidence": f"简历文本命中技能库条目「{nm}」"
+                + (f"（{_cat_name(h['cat']) or h['cat']}）" if h["cat"] else ""),
             }
         )
         if len(out) >= limit:

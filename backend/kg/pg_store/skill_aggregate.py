@@ -129,6 +129,61 @@ def skill_key_from_node(n: dict[str, Any]) -> str:
     return _derive_key(n.get("id") or "unnamed")
 
 
+def resolve_skill_names(
+    keys: Any, conn: Any | None = None, *, online_only_rows: bool = True
+) -> dict[str, str]:
+    """批量 `code → 展示名`，**全仓唯一一份**。一次查库，不做 N+1。
+
+    凡是手上只有 `skill_key`、却要在出参里配展示名的地方都走这里
+    （`node_detail` 的先修/后继、`skill_prereq.prereq_map`、`userprofile
+    .skill_display.resolve_names`…）。这个项目已经因为「同一判定各写一份」
+    栽过四次，所以宁可多一层薄包装也不要第二份 SQL。
+
+    `online_only_rows=False` 时连草稿行一起查 —— 管理台详情要给刚建还没发布的
+    技能配名字，只读线上行会拿不到，出参就退回一串 code。
+    """
+    ks = sorted({str(k).strip() for k in (keys or []) if str(k or "").strip()})
+    if not ks:
+        return {}
+    from backend.kg.pg_store.client import use_conn
+
+    draft_pred = "AND NOT n.is_draft" if online_only_rows else ""
+    out: dict[str, str] = {}
+    with use_conn(conn) as c:
+        for r in c.execute(
+            f"""
+            SELECT DISTINCT ({SKILL_KEY_SQL}) AS k, ({SKILL_NAME_SQL}) AS nm
+            FROM kg_node n
+            WHERE n.type = 'skill_level' {draft_pred}
+              AND ({SKILL_KEY_SQL}) = ANY(%s)
+            """,
+            (ks,),
+        ).fetchall():
+            if r["k"] and r["nm"]:
+                out.setdefault(r["k"], r["nm"])
+    return out
+
+
+def named_skill_refs(
+    keys: Any, conn: Any | None = None, *, online_only_rows: bool = True
+) -> list[dict[str, str]]:
+    """code 列表 → `[{skill_key, skill_name}]`，保持传入顺序、去重。
+
+    专治「出参里挂一串裸 code 的数组」：先修、后继、gap_skills 这类字段原来是
+    `list[str]`，前端只能显示哈希。查不到名字时 `skill_name` 回落成 code
+    而不是留空 —— 指向已删技能的历史数据仍要看得见（同 `skill_display.display_name`）。
+    """
+    seen: list[str] = []
+    for k in keys or []:
+        s = str(k or "").strip()
+        if s and s not in seen:
+            seen.append(s)
+    if not seen:
+        return []
+    nm = resolve_skill_names(seen, conn, online_only_rows=online_only_rows)
+    return [{"skill_key": k, "skill_name": nm.get(k) or k} for k in seen]
+
+
 def level_from_node(n: dict[str, Any]) -> int | None:
     """产品等级 1–5（了解→专家）。直读 attrs.level，不做任何刻度换算。"""
     a = n.get("attrs") if isinstance(n.get("attrs"), dict) else _maybe_json(n.get("attrs")) or {}
@@ -1032,6 +1087,7 @@ def occupation_courses(
 
     sql = f"""
         SELECT ({SKILL_KEY_SQL})                AS skill_key,
+               ({SKILL_NAME_SQL})               AS skill_name,
                ({attrs_level_int('n')})         AS req_level,
                re.weight                        AS skill_weight,
                n.category                       AS category,
@@ -1061,6 +1117,8 @@ def occupation_courses(
                 continue
             g = groups.setdefault(key, {
                 "skill_key": key,
+                # 学员端的课程分组卡片，标题就是这个 —— 只给 code 的话卡头是一串哈希
+                "skill_name": r["skill_name"] or key,
                 "required_level": r["req_level"],
                 "weight": float(r["skill_weight"]) if r["skill_weight"] is not None else None,
                 "category": r["category"],

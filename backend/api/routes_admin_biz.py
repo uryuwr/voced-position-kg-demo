@@ -38,6 +38,19 @@ from backend.kg.pg_store.skill_write import (
 router = APIRouter(prefix="/v1/admin", tags=[])
 
 
+def _skill_name_or_code(skill_key: Any) -> str:
+    """技能展示名，查不到就回落成 code。给错误 detail / 回执用。
+
+    连草稿行一起查：这些提示出现在管理台的写入路径上，技能常常还没发布。
+    """
+    sk = str(skill_key or "").strip()
+    if not sk:
+        return ""
+    from backend.kg.pg_store.skill_aggregate import resolve_skill_names
+
+    return resolve_skill_names([sk], online_only_rows=False).get(sk) or sk
+
+
 class ChangeSubmitBody(BaseModel):
     """提交待审变更。"""
 
@@ -837,7 +850,17 @@ def admin_del_prereq(
     ok = remove_prereq(skill_key, prereq_key, region=region)
     if not ok:
         raise HTTPException(404, "prereq not found")
-    return {"deleted": True, "skill_key": skill_key, "prereq_skill_key": prereq_key}
+    # 名字在删除**之后**查也拿得到：先修边删了，两个技能节点还在
+    from backend.kg.pg_store.skill_aggregate import resolve_skill_names
+
+    nm = resolve_skill_names([skill_key, prereq_key])
+    return {
+        "deleted": True,
+        "skill_key": skill_key,
+        "skill_name": nm.get(skill_key) or skill_key,
+        "prereq_skill_key": prereq_key,
+        "prereq_skill_name": nm.get(prereq_key) or prereq_key,
+    }
 @router.patch(
     "/skills/{skill_key:path}",
     tags=["管理台 · 技能多档"],
@@ -1065,6 +1088,8 @@ def put_skill_composition(
             detail={
                 "message": str(e),
                 "skill_key": e.skill_key,
+                # 409 的 detail 会原样弹给运营：「SKxxx 已存在」看不出撞的是哪个技能
+                "skill_name": _skill_name_or_code(e.skill_key),
                 "current_level": e.current_level,
             },
         ) from e
@@ -1076,7 +1101,14 @@ class SkillDeletedOut(BaseModel):
     """删除逻辑技能的结果。"""
 
     deleted: bool = Field(..., description="恒为 true；失败走 4xx")
-    skill_key: str = Field(..., description="被删的逻辑技能名")
+    skill_key: str = Field(..., description="被删技能的聚合主键（ASCII code）")
+    skill_name: str | None = Field(
+        None,
+        description=(
+            "被删技能的展示名，**在归档前取**。没有它的话运营看到的回执是"
+            "「已删除 SKabd68031c5」，无从确认删对了没有"
+        ),
+    )
     archived_nodes: int = Field(0, ge=0, description="归档的档位节点数（L1–L5 里实际存在的）")
     archived_edges: int = Field(0, ge=0, description="一并归档的关联边数")
     occupations_affected: int = Field(

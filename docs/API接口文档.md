@@ -1066,6 +1066,12 @@ skill_key 或 bundle:{region}:{key}；返回 levels / level_descriptions / count
 
 > 聚合技能的 `used_by` 按岗位去重——同一技能在一个岗位下有 L1–L5 多个节点，只保留该岗位的最高要求档，避免同名岗位重复出现。
 
+**2026-08-20 契约变更**（本响应是 `extra=allow` 的动态结构，各分支的 `skills[]` 不进 OpenAPI schema，所以只能在这里说明）：
+
+- ⚠️ **破坏性**：岗位分支 `skills[].prereqs` 由 `string[]`（裸 skill_key）改为 `{skill_key, skill_name}[]`。先修可以指向本岗位技能集之外的技能，调用方无法拿同一份 `skills[]` 反查名字，所以名字直接带在项里。
+- 新增：专业分支 `skills[]`（直连 `covers`）与 `aggregated_skills[]` 补齐 `skill_name` + `category_name`；技能分支补齐 `skill_name` / `category_name`，且 `prereqs[]` 带 `prereq_skill_name`、`unlocks[]` 带 `skill_name`。
+- 展示一律用 `skill_name` / `category_name`：`skill_key` 与 `category` 是 ASCII code（`SK0123456789` / `TECH`），拿去渲染就是一串哈希。
+
 **请求参数**
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
@@ -1394,7 +1400,7 @@ industry 节点 + parent_of 边（父→子）。
 
 ## 数据模型
 
-共 152 个模型，按名称排序。端点处的类型链接都指向这里。
+共 153 个模型，按名称排序。端点处的类型链接都指向这里。
 
 ### AdminDashboardOut
 
@@ -1472,7 +1478,8 @@ industry 节点 + parent_of 边（父→子）。
 | `nodes` | `KgNode`[] |  | 技能 bundle 一次建出的多个档位节点 |
 | `linked_edges` | `KgEdge`[] |  | 自动建出的边 |
 | `skill_bundle` | boolean |  | true=走的是技能 bundle 写入路径 |
-| `skill_key` | string |  | 技能聚合主键 |
+| `skill_key` | string |  | 技能聚合主键（ASCII code） |
+| `skill_name` | string |  | 技能展示名（写入回执里给出，便于确认写对了） |
 | `levels` | string[] \| object[] |  | 本次建出的档位码，如 `["L1","L3"]`。**曾误声明成 `list[dict]`** —— 写入其实成功了，但响应按模型校验时失败，接口回 400，管理台显示「新建失败」而库里已经有了，人就会重复提交。各档明细在 `nodes` / `bundle` 里。留成联合类型是有意的：这一处窄声明已经踩过一次，多一个分支不会让任何生产方失败，而窄一格就可能重演「写进去了却回 400」 |
 | `bundle` | `SkillBundleBrief` |  | 聚合后的技能 bundle |
 | `status` | string |  | 落库后的状态；draft 表示门禁未过，停在草稿 |
@@ -1770,7 +1777,7 @@ industry 节点 + parent_of 边（父→子）。
 | `skill_key` | string | 是 | 技能聚合主键（ASCII code） |
 | `skill_name` | string |  | 展示名 —— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 ASCII code（形如 SK0123456789），拿它渲染就是一串哈希 |
 | `category` | string |  | 技能大类 |
-| `prereqs` | string[] |  | 先修技能的 skill_key 列表（来自 `kg_skill_prereq`）；空数组表示无先修。**不限本节点的技能集**——前置技能可能不被本岗位/专业要求，但学员仍需先具备 |
+| `prereqs` | `SkillRef`[] |  | 先修技能（来自 `kg_skill_prereq`），每项 `{skill_key, skill_name}`；空数组表示无先修。**不限本节点的技能集**——前置技能可能不被本岗位/专业要求，但学员仍需先具备。也正因如此，调用方**无法**拿同一份 `skills[]` 反查名字，所以这里直接带上（2026-08-20 从 `list[str]` 改过来，改之前那串 str 全是 code） |
 | `skill_level_id` | string | 是 | 边指向的那个 skill_level 节点 id |
 | `available_levels` | integer[] |  | 该技能已配齐的档位 1–5 |
 | `levels` | `CompositionLevelDetail`[] |  | 各档明细（含档位文案与要求描述） |
@@ -2223,7 +2230,7 @@ industry 节点 + parent_of 边（父→子）。
 | `links` | `GraphLink`[] |  | 层间连边 |
 | `progressions` | `ProgressionLink`[] |  | 同岗位族内按 level 递进的晋升链 |
 | `matrix` | `MajorOccupationMatrix` |  | 专业×岗位矩阵；仅 layout=matrix 时返回 |
-| `meta` | `Industry`GraphMeta`` |  | 口径与截断说明 |
+| `meta` | `IndustryGraphMeta` |  | 口径与截断说明 |
 
 ### IndustryItem
 
@@ -2465,7 +2472,7 @@ industry 节点 + parent_of 边（父→子）。
 | `goal` | `UserGoalBrief` |  | 当前学习目标；未锁定为 null |
 | `points` | integer |  | 成长值/积分（默认 `0`） |
 | `badges` | `UserBadgeOut`[] |  | 已解锁成就 |
-| `skills` | `User`SkillOut``[] |  | 技能画像 |
+| `skills` | `UserSkillOut`[] |  | 技能画像 |
 
 ### NextLevelOut
 
@@ -2521,6 +2528,7 @@ industry 节点 + parent_of 边（父→子）。
 | `type` | string |  | 节点类型 |
 | `name` | string |  | 名称 |
 | `skill_key` | string |  | 技能聚合主键（技能详情） |
+| `skill_name` | string |  | 技能展示名（技能详情）—— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 ASCII code（形如 SK0123456789）。注意与顶层 `name` 区分：`name` 是档位节点名（「施工操作 · L3」），这里是逻辑技能的展示名 |
 | `category` | string |  | 技能大类 code，见 /v1/kg/skill-categories |
 | `category_name` | string |  | 技能大类展示名（由 code 派生，不入库） |
 | `levels` | object[] |  | L1–L5 档位栅格，缺档的位置为空 |
@@ -2618,9 +2626,9 @@ industry 节点 + parent_of 边（父→子）。
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `occupation` | `GraphOccupationNode` |  | 岗位摘要 |
-| `categories` | ``SkillCategory`Group`[] |  | 技能大类分区，按学习顺序排；每区 skills[].depth 为前置层深（0=可直接学） |
+| `categories` | `SkillCategoryGroup`[] |  | 技能大类分区，按学习顺序排；每区 skills[].depth 为前置层深（0=可直接学） |
 | `prereqs` | `SkillPrereqLink`[] |  | 前置关系边 |
-| `meta` | `Skills`GraphMeta`` |  | 口径说明 |
+| `meta` | `SkillsGraphMeta` |  | 口径说明 |
 
 ### ParsedSkill
 
@@ -2649,7 +2657,8 @@ industry 节点 + parent_of 边（父→子）。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `skill_key` | string | 是 | 逻辑技能名 |
+| `skill_key` | string | 是 | 技能聚合主键（ASCII code，形如 SK0123456789） |
+| `skill_name` | string |  | 技能展示名 —— **页面上要显示这个**。原来这里只有 `skill_key`，且描述写的是「逻辑技能名」，那是 2026-08-19 之前 key 就是中文名时的遗留 |
 | `required_level` | integer |  | 该岗位要求的档位 1–5，来自 attrs.level |
 | `weight` | number |  | 该技能在岗位能力结构中的权重，**小数**（同岗位 Σ≈1） |
 | `category` | string |  | 技能大类 code，见 /v1/kg/skill-categories |
@@ -2747,7 +2756,7 @@ industry 节点 + parent_of 边（父→子）。
 | `strengths` | `MatchItem`[] |  | 已达标项（仅可评分项） |
 | `gaps` | `MatchItem`[] |  | 未达标项（仅可评分项），按权重降序 |
 | `no_baseline` | `MatchItem`[] |  | 无法评分的技能（岗位要求档缺失或越界），按权重降序；既不在 strengths 也不在 gaps。需要运营补要求档 |
-| `radar` | `Match`RadarOut`` |  | 单系列雷达图（按技能大类聚合的达成率）；无数据时为空对象 |
+| `radar` | `MatchRadarOut` |  | 单系列雷达图（按技能大类聚合的达成率）；无数据时为空对象 |
 | `diagnosis` | `DiagnosedBrief` |  | 该岗位的历史诊断摘要；没测过为 null |
 
 ### PositionOut
@@ -2806,12 +2815,17 @@ industry 节点 + parent_of 边（父→子）。
 ### PrereqDeletedOut
 
 > 删除先修关系的回执。
+>
+> 回执也要带名字：运营删完看到的提示是「已移除 SKa1fa1d005d 的先修
+> SK7d3a1b0c22」，无法确认删对了没有。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `deleted` | `True` | 是 | 固定 true |
-| `skill_key` | string | 是 | 技能聚合主键 |
-| `prereq_skill_key` | string | 是 | 被移除的先修技能 |
+| `skill_key` | string | 是 | 技能聚合主键（ASCII code） |
+| `skill_name` | string |  | 技能展示名 |
+| `prereq_skill_key` | string | 是 | 被移除的先修技能（ASCII code） |
+| `prereq_skill_name` | string |  | 被移除的先修技能展示名 |
 
 ### PrereqOut
 
@@ -3179,7 +3193,7 @@ industry 节点 + parent_of 边（父→子）。
 | `region` | string |  | 地区，如 CN（默认 `CN`） |
 | `scale` | string |  | 等级尺度（默认 `l1_l5`） |
 | `levels` | map<string, `SkillLevelObjIn` \| string \| object> |  | 键 L1–L5；值为对象（推荐）或字符串。创建时至少一档；更新可省略以保留原档 |
-| `occupation_links` | ``OccupationLink`In`[] |  | 岗位技能构成：权重在 requires 边上 |
+| `occupation_links` | `OccupationLinkIn`[] |  | 岗位技能构成：权重在 requires 边上 |
 | `occupation_ids` | string[] |  | 兼容：无权重时的岗位 id 列表 |
 | `category` | string |  | 技能大类 **code**（TECH / OPERATE …），候选见 `GET /v1/kg/skill-categories`。也接受中文名或别名，服务端会归一；认不出的落兜底 `UNSORTED`（待归类），不会硬塞进某一类。留空同样落兜底 |
 | `description` | string |  | 描述 |
@@ -3220,7 +3234,8 @@ industry 节点 + parent_of 边（父→子）。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `skill_key` | string | 是 | 技能聚合主键 |
+| `skill_key` | string | 是 | 技能聚合主键（ASCII code） |
+| `skill_name` | string |  | 技能展示名 —— 预览面板标题用它 |
 | `level_codes` | string[] | 是 | 将要写入的档位编码 |
 | `level_count` | integer | 是 | 档位数（≥0.0） |
 | `occupation_count` | integer | 是 | 关联岗位数（≥0.0） |
@@ -3301,7 +3316,8 @@ industry 节点 + parent_of 边（父→子）。
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `deleted` | boolean | 是 | 恒为 true；失败走 4xx |
-| `skill_key` | string | 是 | 被删的逻辑技能名 |
+| `skill_key` | string | 是 | 被删技能的聚合主键（ASCII code） |
+| `skill_name` | string |  | 被删技能的展示名，**在归档前取**。没有它的话运营看到的回执是「已删除 SKabd68031c5」，无从确认删对了没有 |
 | `archived_nodes` | integer |  | 归档的档位节点数（L1–L5 里实际存在的）（≥0.0，默认 `0`） |
 | `archived_edges` | integer |  | 一并归档的关联边数（≥0.0，默认 `0`） |
 | `occupations_affected` | integer |  | 删除前还挂着这个技能的岗位数，供前端提示影响面（≥0.0，默认 `0`） |
@@ -3456,13 +3472,35 @@ industry 节点 + parent_of 边（父→子）。
 ### SkillPrereqLink
 
 > 技能前置关系：学 `to` 之前应先具备 `from`。
+>
+> 两端的 `*_name` 不是可选装饰：这里的 `from`/`to` 是 `SKxxxxxxxxxx`，图上的
+> 连线端点标签得靠它们。**本模型没有 `extra="allow"`**，所以数据层
+> （`industry_graph.occupation_skills_graph`）就算把名字放进 dict，不在这里
+> 声明也会被 Pydantic 静默丢掉 —— 真发生过：数据层加了 `from_name`/`to_name`
+> 却漏了这份声明，接口出参里两个字段一个都没有，且不报错。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `from` | string | 是 | 先修技能的 skill_key |
-| `to` | string | 是 | 后继技能的 skill_key |
+| `from` | string | 是 | 先修技能的 skill_key（ASCII code） |
+| `to` | string | 是 | 后继技能的 skill_key（ASCII code） |
+| `from_name` | string |  | 先修技能展示名 —— **连线标签用这个**，取不到时回落为 code |
+| `to_name` | string |  | 后继技能展示名，同 `from_name` |
 | `confidence` | string |  | 来源等级：manual_seed / official / derived / ai_inferred |
 | `evidence` | string |  | 判定依据 |
+
+### SkillRef
+
+> 技能轻引用 —— **code 与展示名成对出现**。
+>
+> 专治「出参里挂一串裸 `skill_key` 的数组」。`skill_key` 从 2026-08-19 起是
+> ASCII code，只给 code 的数组前端无从渲染：如果那些技能不在同一响应的
+> `skills[]` 里（先修就是这种），连反查都做不到。查不到名字时 `skill_name`
+> 回落成 code 而不是留空，指向已删技能的历史数据仍要看得见。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `skill_key` | string | 是 | 技能聚合主键（ASCII code，形如 SK0123456789） |
+| `skill_name` | string | 是 | 展示名 —— **页面上要显示这个**；取不到时回落为 code |
 
 ### SkillsGraphMeta
 

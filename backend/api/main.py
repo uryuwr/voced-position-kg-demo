@@ -881,7 +881,7 @@ def explore(
                             }
                         ],
                         "shared_skills": [
-                            {"skill_key": "培训指导", "occ_count": 7, "levels": ["L2", "L3"], "occupation_ids": ["CN:occupation:...", "CN:occupation:..."]}
+                            {"skill_key": "SK6bf0e0f7cd", "skill_name": "培训指导", "occ_count": 7, "levels": ["L2", "L3"], "occupation_ids": ["CN:occupation:...", "CN:occupation:..."]}
                         ],
                         "meta": {
                             "matched": 1, "occupation_count": 20, "skill_total": 100,
@@ -968,7 +968,17 @@ def capability(
         "`prereqs[]` 先修、`unlocks[]` 后继 |\n\n"
         "**可见状态**：published + draft + disabled；archived 不返回。\n\n"
         "> 聚合技能的 `used_by` 按岗位去重——同一技能在一个岗位下有 L1–L5 多个节点，"
-        "只保留该岗位的最高要求档，避免同名岗位重复出现。"
+        "只保留该岗位的最高要求档，避免同名岗位重复出现。\n\n"
+        "**2026-08-20 契约变更**（本响应是 `extra=allow` 的动态结构，各分支的 "
+        "`skills[]` 不进 OpenAPI schema，所以只能在这里说明）：\n\n"
+        "- ⚠️ **破坏性**：岗位分支 `skills[].prereqs` 由 `string[]`（裸 skill_key）"
+        "改为 `{skill_key, skill_name}[]`。先修可以指向本岗位技能集之外的技能，"
+        "调用方无法拿同一份 `skills[]` 反查名字，所以名字直接带在项里。\n"
+        "- 新增：专业分支 `skills[]`（直连 `covers`）与 `aggregated_skills[]` 补齐 "
+        "`skill_name` + `category_name`；技能分支补齐 `skill_name` / `category_name`，"
+        "且 `prereqs[]` 带 `prereq_skill_name`、`unlocks[]` 带 `skill_name`。\n"
+        "- 展示一律用 `skill_name` / `category_name`：`skill_key` 与 `category` 是 "
+        "ASCII code（`SK0123456789` / `TECH`），拿去渲染就是一串哈希。"
     ),
     response_description="{ node, …（按类型的段）, counts, meta }",
     operation_id="kg_node_detail",

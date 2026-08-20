@@ -273,6 +273,24 @@ def reject_change(cid: int) -> dict[str, Any]:
     return {"rejected": True, "id": cid, "deleted": True}
 
 
+def _sk_name(skill_key: Any) -> str | None:
+    """技能操作回执里的展示名；没有 key 就返回 None，查不到回落成 code。
+
+    运营点完「发布 / 停用 / 删除」看到的就是这个回执。`skill_key` 从 2026-08-19
+    起是 `SKxxxxxxxxxx`，只回 code 的话运营无法确认自己操作的是哪个技能。
+
+    连草稿行一起查（`online_only_rows=False`）：审核路径里技能常常只有草稿行
+    （新建还没发布就存草稿），只读线上行会拿不到名字。这是管理台回执，
+    不存在草稿泄漏到学员端的问题。
+    """
+    sk = str(skill_key or "").strip()
+    if not sk:
+        return None
+    from backend.kg.pg_store.skill_aggregate import resolve_skill_names
+
+    return resolve_skill_names([sk], online_only_rows=False).get(sk) or sk
+
+
 def _gate_error_message(exc: PublishGateError) -> str:
     parts = [f"{v.get('rule')}: {v.get('message')}" for v in (exc.violations or [])]
     return "发布门禁未通过 — " + ("; ".join(parts) or str(exc))
@@ -309,7 +327,8 @@ def _try_publish_after_write(
         from backend.kg.pg_store.publish_rules import _set_skill_key_status
 
         _set_skill_key_status(skill_key, "published", region=region)
-        return {"status": "published", "gate": gate, "skill_key": skill_key}
+        return {"status": "published", "gate": gate, "skill_key": skill_key,
+                "skill_name": _sk_name(skill_key)}
     if node_id:
         patch_node(
             node_id,
@@ -379,6 +398,7 @@ def _apply(
                 return {
                     "skill_bundle": True,
                     "skill_key": sk,
+                    "skill_name": _sk_name(sk),
                     "nodes": result.get("nodes") or [],
                     "linked_edges": result.get("edges") or [],
                     "levels": result.get("levels") or [],
@@ -425,6 +445,7 @@ def _apply(
                 return {
                     "skill_bundle": True,
                     "skill_key": result.get("skill_key"),
+                    "skill_name": result.get("skill_name") or _sk_name(result.get("skill_key")),
                     "nodes": result.get("nodes") or [],
                     "linked_edges": result.get("edges") or [],
                     "levels": result.get("levels") or [],
@@ -473,6 +494,7 @@ def _apply(
                     cascaded += int((r or {}).get("cascaded_edges") or 0)
                 return {
                     "skill_key": sk,
+                    "skill_name": _sk_name(sk),
                     "status": "disabled",
                     "node_ids": ids,
                     "note": f"已停用 {len(ids)} 个档位，并同步停用 {cascaded} 条关联边",
@@ -526,6 +548,7 @@ def _apply(
                 return {
                     "node": get_node(tid, scope="online") if not sk else None,
                     "skill_key": sk,
+                    "skill_name": _sk_name(sk),
                     "node_ids": drafted if sk else None,
                     "status": last.get("status"),
                     "gate": last.get("gate"),
@@ -571,6 +594,7 @@ def _apply(
                 _set_skill_key_status(sk, "published", region=region)
                 return {
                     "skill_key": sk,
+                    "skill_name": _sk_name(sk),
                     "status": "published",
                     "gate": gate,
                 }

@@ -568,6 +568,9 @@ def apply_skill_bundle_create(
     bundle = get_skill_bundle(skill_key, region=region)
     return {
         "skill_key": skill_key,
+        # 顶层也要带：调用方（审核回执、管理台 toast）读的是顶层，
+        # 不会去 bundle 里翻
+        "skill_name": (bundle or {}).get("skill_name") or skill_name,
         "nodes": created_nodes,
         "node_ids": node_ids,
         "edges": created_edges,
@@ -631,10 +634,20 @@ def apply_skill_bundle_update(
 def preview_skill_bundle(payload: dict[str, Any]) -> dict[str, Any]:
     """提交前预览将生成的档位与边（不写库）。"""
     skill_key = resolve_skill_key(payload)
+    # 预览面板的标题用它。名字取不到就退回 code（预览不该因为缺展示名而 400，
+    # 那是提交时才校验的事，见 prepare_submit_payload）
+    try:
+        skill_name = resolve_skill_name(payload)
+    except ValueError:
+        skill_name = (
+            existing_skill_name(skill_key, (payload.get("region") or "CN").strip() or "CN")
+            or skill_key
+        )
     levels = normalize_levels(payload.get("levels"))
     occ_links = normalize_occupation_links(payload)
     return {
         "skill_key": skill_key,
+        "skill_name": skill_name,
         "level_codes": list(levels.keys()),
         "level_count": len(levels),
         "occupation_count": len(occ_links),
@@ -720,9 +733,11 @@ def archive_skill_bundle(
         # 过不了 `<> 'archived'` 这道筛，于是被选进 node_ids，下面 `SET status='archived'`
         # 写到草稿行上就撞 ck_kg_node_draft_status。也就是「编辑过某技能（留下草稿）
         # 再删它」必然报错，而删除动作其实已经部分执行 —— 与发布 500 同一形状。
+        # 名字**必须在归档前取**：回执要带展示名，否则运营看到的是
+        # 「已删除 SKabd68031c5」，无从确认删对了没有
         rows = conn.execute(
             f"""
-            SELECT n.id FROM kg_node n
+            SELECT n.id, ({SKILL_NAME_SQL}) AS nm FROM kg_node n
             WHERE n.type = 'skill_level'
               AND (%s::text IS NULL OR n.region = %s)
               AND ({SKILL_KEY_SQL}) = %s
@@ -732,22 +747,24 @@ def archive_skill_bundle(
             (region, region, skill_key),
         ).fetchall()
         node_ids = [r["id"] for r in rows]
+        skill_name = next((r["nm"] for r in rows if r["nm"]), "")
 
         # 草稿行单独取：可能存在「新建的技能还没发布就想删」，此时没有线上行，
         # 删除 = 丢弃草稿（同 write.archive_node 的处理），不能报「技能不存在」。
-        draft_ids = [
-            r["id"]
-            for r in conn.execute(
-                f"""
-                SELECT n.id FROM kg_node n
-                WHERE n.type = 'skill_level'
-                  AND (%s::text IS NULL OR n.region = %s)
-                  AND ({SKILL_KEY_SQL}) = %s
-                  AND n.is_draft
-                """,
-                (region, region, skill_key),
-            ).fetchall()
-        ]
+        draft_rows = conn.execute(
+            f"""
+            SELECT n.id, ({SKILL_NAME_SQL}) AS nm FROM kg_node n
+            WHERE n.type = 'skill_level'
+              AND (%s::text IS NULL OR n.region = %s)
+              AND ({SKILL_KEY_SQL}) = %s
+              AND n.is_draft
+            """,
+            (region, region, skill_key),
+        ).fetchall()
+        draft_ids = [r["id"] for r in draft_rows]
+        # 只有草稿行的情况（新建未发布就删），名字只能从草稿行取
+        if not skill_name:
+            skill_name = next((r["nm"] for r in draft_rows if r["nm"]), "")
         if not node_ids and not draft_ids:
             raise ValueError(f"技能不存在或已删除: {skill_key}")
 
@@ -797,6 +814,7 @@ def archive_skill_bundle(
     return {
         "deleted": True,
         "skill_key": skill_key,
+        "skill_name": skill_name or skill_key,
         "archived_nodes": int(node_n or 0),
         "archived_edges": int(edge_n or 0),
         "discarded_drafts": int(dropped or 0),

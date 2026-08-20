@@ -18,7 +18,8 @@ from backend.kg.pg_store.config import (
     prefer_draft,
     prefer_draft_edge,
 )
-from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
+from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL, SKILL_NAME_SQL
+from backend.kg.pg_store.skill_taxonomy import name_of as _cat_name
 
 def _ep(alias: str = "e") -> str:
     """【管理台】边可见性 —— **本文件所有边过滤都走它**。
@@ -191,10 +192,17 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
     # 否则专业详情与构成页又是两个答案
     from backend.kg.pg_store.skill_aggregate import entity_skill_composition
 
+    # 展示名与分类展示名 **一定要从 bundle 里挑出来**：出参带 code 就必须同层带名字。
+    # `entity_skill_composition` 早就返回 skill_name / category_name 了，这里漏挑了
+    # 一轮 —— 专业详情页上整列显示 `SKabd68031c5` / `TECH`。同文件的岗位分支
+    # （`_occupation_detail`）改对了，专业分支没跟上，闸门也没扫到：库里 covers 边
+    # 只有草稿态的两条，闸门挑的已发布专业拿到的是空数组，等于没测。
     direct_skills = [
         {
             "skill_key": b.get("skill_key"),
+            "skill_name": b.get("skill_name") or b.get("skill_key"),
             "category": b.get("category"),
+            "category_name": b.get("category_name"),
             "selected_level": b.get("required_level"),
             "dangling": bool(b.get("dangling")),
         }
@@ -210,7 +218,8 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
         rows = conn.execute(
             f"""
             SELECT e.src_id AS occ_id, o.name AS occ_name,
-                   ({SKILL_KEY_SQL}) AS skill_key, n.category,
+                   ({SKILL_KEY_SQL}) AS skill_key, ({SKILL_NAME_SQL}) AS skill_name,
+                   n.category,
                    {_LEVEL_N} AS level
             FROM kg_edge e
             JOIN kg_node n ON n.id = e.dst_id AND n.type='skill_level' AND {_NODE_VISIBLE}
@@ -226,7 +235,9 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
                 k,
                 {
                     "skill_key": k,
+                    "skill_name": r["skill_name"] or k,
                     "category": r["category"],
+                    "category_name": _cat_name(r["category"]) if r["category"] else None,
                     "_by_occ": {},
                     "required_level": None,
                 },
@@ -253,7 +264,8 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
         g["used_by"] = used
         g["used_count"] = len(used)      # 按**岗位数**计，不是记录行数
         aggregated.append(g)
-    aggregated.sort(key=lambda x: (-x["used_count"], x["skill_key"]))
+    # 次序键用展示名，不用 code：按 md5 排等于随机顺序，同一份数据每次看着都像变了
+    aggregated.sort(key=lambda x: (-x["used_count"], x["skill_name"] or x["skill_key"]))
 
     return {
         "industries": [dict(i) for i in industries],
@@ -321,6 +333,8 @@ def _occupation_detail(conn, oid: str) -> dict[str, Any]:
                 # 见 scripts/verify_skill_name_exposed.py
                 "skill_name": b.get("skill_name") or b.get("skill_key"),
                 "category": b.get("category"),
+                # 分类同理：`TECH` 是 code，展示名连 kg_skill_category 取
+                "category_name": b.get("category_name"),
                 "required_level": b.get("required_level"),
                 "weight": w,
                 "weight_pct": b.get("weight_pct"),
@@ -346,7 +360,12 @@ def _occupation_detail(conn, oid: str) -> dict[str, Any]:
 
 # ── 技能 ──────────────────────────────────────────────────────
 def _skill_detail(conn, node: dict[str, Any]) -> dict[str, Any]:
-    from backend.kg.pg_store.skill_aggregate import get_skill_bundle, skill_key_from_node
+    from backend.kg.pg_store.skill_aggregate import (
+        get_skill_bundle,
+        resolve_skill_names,
+        skill_key_from_node,
+        skill_name_from_node,
+    )
 
     key = skill_key_from_node(node)
     bundle = {}
@@ -378,16 +397,31 @@ def _skill_detail(conn, node: dict[str, Any]) -> dict[str, Any]:
         (key,),
     ).fetchall()
 
+    # 先修/后继两张表存的都是 code，两端都要配展示名，一次批量查完
+    _pk = [p["prereq_skill_key"] for p in prereqs] + [u["skill_key"] for u in unlocks]
+    _nm = resolve_skill_names(_pk, conn) if _pk else {}
+
+    def _with_name(d: dict[str, Any], code_field: str, name_field: str) -> dict[str, Any]:
+        out = dict(d)
+        c = out.get(code_field) or ""
+        out[name_field] = _nm.get(c) or c
+        return out
+
     avail = bundle.get("available_levels") or []
+    cat = node.get("category") or bundle.get("category")
     return {
         "skill_key": key,
-        "category": node.get("category") or bundle.get("category"),
+        # 技能详情自己也要带展示名：顶层 `node.name` 是「技能名 · L3」这种档位节点名，
+        # 不是逻辑技能的展示名，前端不该自己去剥后缀
+        "skill_name": skill_name_from_node(node) or bundle.get("skill_name") or key,
+        "category": cat,
+        "category_name": _cat_name(cat) if cat else None,
         # 原型技能库列表有「等级完整度」列 → 这里给 L1–L5 齐全度
         "levels": _levels_grid(avail, None),
         "level_completeness": f"{len(avail)}/5",
         "level_descriptions": bundle.get("level_descriptions") or {},
         "occupations": [dict(o) for o in occs],
-        "prereqs": [dict(p) for p in prereqs],
-        "unlocks": [dict(u) for u in unlocks],
+        "prereqs": [_with_name(p, "prereq_skill_key", "prereq_skill_name") for p in prereqs],
+        "unlocks": [_with_name(u, "skill_key", "skill_name") for u in unlocks],
         "counts": {"occupation": len(occs), "prereq": len(prereqs), "unlock": len(unlocks)},
     }

@@ -1,23 +1,39 @@
 """backend/userprofile/sync.py::build_text —— 提交给画像平台的自然语言。
 
-最关键的一条：**只写实测到的技能**。没测过不是证据，写进去等于让平台把「没测」
-记成「不会」，而这条记忆之后会被别的岗位当推断依据用，错一次会一直错下去。
+两条最关键的：
+
+- **只写实测到的技能**。没测过不是证据，写进去等于让平台把「没测」记成「不会」，
+  而这条记忆之后会被别的岗位当推断依据用，错一次会一直错下去。
+- **技能位只写展示名，一个 code 都不许出现**。写进去的文本是平台长期保存的语义
+  证据，`SKa1fa1d005d` 对任何推断都是零信息量；且 Idempotency-Key 按 session
+  派生，重推覆盖不了。取不到名字宁可丢这一项。
 """
 from __future__ import annotations
 
 import pytest
 
+from backend.kg.skill_key import derive_key
 from backend.userprofile.sync import _LEVEL_WORD, build_text
 
+_MISSING = object()
 
-def item(key, *, tested=True, measured=3, required=3, ok=True):
-    return {
-        "skill_key": key,
+
+def item(name, *, tested=True, measured=3, required=3, ok=True, skill_name=_MISSING):
+    """`name` 是技能名，`skill_key` 按它派生成 code 形态（即库里的真实形态）。
+
+    `skill_name=None` 模拟上游没给展示名；传字符串可模拟它回落成了 code。
+    """
+    d = {
+        "skill_key": derive_key(name),
         "tested": tested,
         "measured_level": measured,
         "required_level": required,
         "ok": ok,
     }
+    nm = name if skill_name is _MISSING else skill_name
+    if nm is not None:
+        d["skill_name"] = nm
+    return d
 
 
 REPORT = {
@@ -142,6 +158,86 @@ class TestNoMatchScore:
         none_ = build_text(self.NO_SCORE, occupation_name="X")
         assert "综合能力匹配度 0.0%" in zero
         assert "综合能力匹配度" not in none_
+
+
+class TestDisplayNameOnly:
+    """技能位写展示名，不写 `skill_key`（2026-08-19 改造后漏改了一天）。"""
+
+    def test_技能位写展示名(self):
+        text = build_text(REPORT, occupation_name="混凝土工")
+        assert "配料准备 达到 3 级" in text
+        assert derive_key("配料准备") not in text
+
+    def test_一个code形态都不出现(self):
+        text = build_text(REPORT, occupation_name="混凝土工")
+        assert "SK" not in text, "灌进五维记忆的文本里出现了 code"
+
+    def test_没给展示名的项直接丢掉(self):
+        rep = {
+            "match_score": 50,
+            "items": [item("配料准备"), item("搅拌操作", skill_name=None)],
+        }
+        text = build_text(rep, occupation_name="X")
+        assert "配料准备" in text
+        assert "搅拌操作" not in text and derive_key("搅拌操作") not in text
+
+    def test_展示名回落成code的项也丢掉(self):
+        """上游漏挑字段时 `skill_name` 会等于 `skill_key`（report.py 的 `or key`）。
+
+        只判空是不够的：那一格非空但装着 `SKxxxxxxxxxx`，照写就是脏数据。
+        """
+        k = derive_key("搅拌操作")
+        rep = {"match_score": 50, "items": [item("配料准备"), item("搅拌操作", skill_name=k)]}
+        text = build_text(rep, occupation_name="X")
+        assert k not in text and "SK" not in text
+        assert "配料准备" in text, "只该丢有问题的那一项"
+
+    def test_纯英文技能名不被当成code丢掉(self):
+        """判据必须是 `is_generated`，不能是 `is_valid_key`。
+
+        后者是 `^[A-Za-z0-9]{2,64}$`，`Python`/`SQL`/`Excel` 全都为真 ——
+        用它当判据会把一整批正常技能静默丢掉。
+        """
+        rep = {
+            "match_score": 80,
+            "items": [item("Python"), item("SQL"), item("Excel")],
+        }
+        text = build_text(rep, occupation_name="数据分析师")
+        for nm in ("Python", "SQL", "Excel"):
+            assert f"{nm} 达到" in text
+
+    def test_全部取不到展示名时返回空串(self):
+        rep = {"match_score": 50, "items": [item("A", skill_name=None)]}
+        assert build_text(rep, occupation_name="X") == ""
+
+    def test_达标与短板两句也用展示名(self):
+        text = build_text(REPORT, occupation_name="X")
+        assert "其中 配料准备 已达到" in text
+        assert "搅拌操作 低于岗位要求" in text
+
+
+class TestPushSkipped:
+    """整批被丢时不能静默 —— 那是上游 bug，要在 biz_event 里看得见。"""
+
+    def test_丢弃条数与原因都透出(self):
+        from backend.userprofile.sync import push_diagnosis
+
+        rep = {
+            "match_score": 50,
+            "items": [item("A", skill_name=None), item("B", skill_name=None)],
+        }
+        out = push_diagnosis("u1", 1, rep, occupation_name="X")
+        assert out["ok"] is False
+        assert out["dropped_no_name"] == 2
+        assert "取不到展示名" in out["error"]
+
+    def test_一项都没实测到时不报成取不到名字(self):
+        from backend.userprofile.sync import push_diagnosis
+
+        rep = {"match_score": 0, "items": [item("A", tested=False, measured=None)]}
+        out = push_diagnosis("u1", 2, rep, occupation_name="X")
+        assert "dropped_no_name" not in out
+        assert "没有实测到的技能" in out["error"]
 
 
 class TestFormat:

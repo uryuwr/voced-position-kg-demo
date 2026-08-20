@@ -213,13 +213,22 @@ def _quote_lines(text: str) -> list[str]:
 
 
 def _model_link(sch: dict, spec: dict) -> str:
-    """类型描述，遇到已注册模型就换成锚点链接。"""
+    """类型描述，遇到已注册模型就换成锚点链接。
+
+    **必须一趟扫完，不能逐个模型名 `str.replace`。** 库里有 10 对模型名互为
+    子串（`SkillRef` ⊂ `RequiredSkillRef`、`GraphMeta` ⊂ `IndustryGraphMeta`、
+    `SkillOut` ⊂ `UserSkillOut` …）。按长度倒序逐个替换时，长名先被包成
+    `` `RequiredSkillRef` ``，轮到短名时**又在这段已包好的文本里命中一次**，
+    结果是 `` `Required`SkillRef`` `` —— 类型名断成两截，飞书上直接显示出多余的
+    反引号，链接也失效。这里用「按长度倒序的整体 alternation」：`re.sub` 在每个
+    位置优先取最长的候选，且不回扫已替换的文本，两个毛病一起没了。
+    """
     schemas = (spec.get("components") or {}).get("schemas") or {}
     txt = _type_of(sch, spec)
-    for name in sorted(schemas, key=len, reverse=True):
-        if name in txt:
-            txt = txt.replace(name, _anchor(name))
-    return txt
+    if not schemas:
+        return txt
+    pat = re.compile("|".join(re.escape(n) for n in sorted(schemas, key=len, reverse=True)))
+    return pat.sub(lambda m: _anchor(m.group(0)), txt)
 
 
 def _field_table(name: str, spec: dict, out: list[str]) -> None:

@@ -18,7 +18,11 @@ from collections import defaultdict
 from typing import Any
 
 from backend.kg.pg_store.client import connect, use_conn
-from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL, skill_key_from_node
+from backend.kg.pg_store.skill_aggregate import (
+    SKILL_KEY_SQL,
+    SKILL_NAME_SQL,
+    skill_key_from_node,
+)
 from backend.kg.pg_store.skill_level_meta import REQUIRED_LEVEL_CODES
 
 WEIGHT_TOLERANCE = 0.01
@@ -103,6 +107,7 @@ def check_br03_occupation(
         excluded = conn.execute(
             f"""
             SELECT ({SKILL_KEY_SQL}) AS skill_key,
+                   ({SKILL_NAME_SQL}) AS skill_name,
                    COALESCE(n.status, 'published') AS skill_status,
                    max(e.weight) AS w
             FROM kg_edge e
@@ -112,8 +117,8 @@ def check_br03_occupation(
             WHERE e.src_id = %s AND e.rel_type = 'requires' AND {_PUB_E}
               AND e.weight IS NOT NULL
               AND NOT e.is_draft
-            GROUP BY 1, 2
-            ORDER BY 3 DESC
+            GROUP BY 1, 2, 3
+            ORDER BY 4 DESC
             """,
             (occupation_id,),
         ).fetchall()
@@ -136,6 +141,9 @@ def check_br03_occupation(
     ex_items = [
         {
             "skill_key": str(r["skill_key"]),
+            # 这条消息的**全部价值就是「是哪几项被扣掉了」**，所以必须是展示名：
+            # 「已排除 SKa1fa1d005d（已停用）」等于没说，运营还得再去查这串哈希
+            "skill_name": str(r["skill_name"] or r["skill_key"]),
             "status": str(r["skill_status"]),
             "weight": round(float(r["w"] or 0), 4),
         }
@@ -146,7 +154,7 @@ def check_br03_occupation(
     ex_note = ""
     if not ok and ex_items:
         names = "、".join(
-            f"{i['skill_key']}（{_STATUS_ZH.get(i['status'], i['status'])}，权重"
+            f"{i['skill_name']}（{_STATUS_ZH.get(i['status'], i['status'])}，权重"
             f"{i['weight']:g}）"
             for i in ex_items[:4]
         )
@@ -227,12 +235,24 @@ def _level_descriptions_for_skill_key(
     return found
 
 
+def _skill_name(skill_key: str, *, conn: Any = None) -> str:
+    """门禁文案用的技能展示名；查不到回落成 code。
+
+    门禁消息是运营唯一的排错线索，「缺少 L2, L4」不说是哪个技能等于没说，
+    而说成 `SKa1fa1d005d` 还得再查一次库。
+    """
+    from backend.kg.pg_store.skill_aggregate import resolve_skill_names
+
+    return resolve_skill_names([skill_key], conn).get(skill_key) or skill_key
+
+
 def check_br04_skill(
     skill_key: str, *, region: str = "CN", conn: Any = None
 ) -> list[dict[str, Any]]:
     found = _level_descriptions_for_skill_key(skill_key, region, conn=conn)
     missing = [c for c in REQUIRED_LEVEL_CODES if c not in found]
     ok = len(missing) == 0
+    nm = _skill_name(skill_key, conn=conn)
     return [
         {
             "rule": "BR-04",
@@ -240,10 +260,11 @@ def check_br04_skill(
             "message": (
                 "技能行为必填：L1–L5 描述齐全"
                 if ok
-                else f"技能行为必填：缺少 {', '.join(missing)}"
+                else f"技能行为必填：「{nm}」缺少 {', '.join(missing)}"
             ),
             "detail": {
                 "skill_key": skill_key,
+                "skill_name": nm,
                 "present": sorted(found.keys()),
                 "missing": missing,
             },
@@ -259,6 +280,9 @@ def check_br05_prereq_acyclic(
             "SELECT skill_key, prereq_skill_key FROM kg_skill_prereq WHERE region=%s",
             (region,),
         ).fetchall()
+        # 名字要在 with 块内取：`use_conn(None)` 的连接出块即关，
+        # 块外再拿这个 conn 去查就是「操作已关闭的连接」
+        nm = _skill_name(skill_key, conn=conn)
     graph: dict[str, list[str]] = defaultdict(list)
     for r in rows:
         graph[str(r["skill_key"])].append(str(r["prereq_skill_key"]))
@@ -290,8 +314,8 @@ def check_br05_prereq_acyclic(
         {
             "rule": "BR-05",
             "ok": ok,
-            "message": "先修无环" if ok else "先修成环，拒绝",
-            "detail": {"skill_key": skill_key},
+            "message": "先修无环" if ok else f"「{nm}」的先修成环，拒绝",
+            "detail": {"skill_key": skill_key, "skill_name": nm},
         }
     ]
 
@@ -770,11 +794,14 @@ def try_publish_node(
         gate = validate_publish(
             node_type="skill_bundle", skill_key=sk, region=region, action="enable"
         )
+        # 回执带展示名：运营点「启用」看到的就是它，只给 code 无从确认操作对象
+        sk_name = _skill_name(sk, conn=None)
         if not gate["ok"]:
             return {"status": str(n.get("status") or "draft"), "gate": gate,
-                    "skill_key": sk}
+                    "skill_key": sk, "skill_name": sk_name}
         _set_skill_key_status(sk, "published", region=region)
-        return {"status": "published", "gate": gate, "skill_key": sk}
+        return {"status": "published", "gate": gate, "skill_key": sk,
+                "skill_name": sk_name}
 
     gate = validate_publish(
         node_type=ntype, node_id=node_id, region=region, action="enable"

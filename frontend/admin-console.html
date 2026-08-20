@@ -335,16 +335,24 @@
     }
 
     /* 技能 code → 展示名的页面级字典。
-       先修（`prereqs`）出参里只有一串 code，而它可以指向本岗位技能集之外的技能
-       （见 pg_store/skill_prereq.prereq_map 的说明），所以没法只靠同一份 skills[]
-       查名字。凡渲染过技能就往字典里记一笔，先修就能显示成名字；查不到才退回 code。 */
+       曾经是必需品：先修（`prereqs`）出参只有一串 code，而它可以指向本岗位技能集
+       之外的技能，没法靠同一份 skills[] 反查名字。2026-08-20 起服务端在 `prereqs`
+       里直接给 `{skill_key, skill_name}`，这张字典降级为兜底 —— 留着是因为别处
+       （图谱连线、批量操作回执）仍可能只拿到 code。 */
     const SKILL_NAMES = {};
     function noteSkillNames(list) {
       (list || []).forEach((s) => {
         if (s && s.skill_key && s.skill_name) SKILL_NAMES[s.skill_key] = s.skill_name;
       });
     }
+    /* code → 展示名，只管这一件事。形状归一在 prereqLabel，别在两处各做一份 */
     function skillLabel(key) { return SKILL_NAMES[key] || key; }
+    /* 先修项：服务端给对象，老数据/别处可能还是裸 code，两种都吃。
+       直接 esc(对象) 会渲染成 [object Object]，所以这层归一不能省。 */
+    function prereqLabel(p) {
+      if (p && typeof p === "object") return p.skill_name || skillLabel(p.skill_key) || "";
+      return skillLabel(p);
+    }
 
     /* ---------- auth ---------- */
     async function bootAuth() {
@@ -684,7 +692,7 @@
           : `<span class="muted">—</span>`;
         return `<tr>
           <td>${esc(it.skill_name || it.skill_key)}<div class="muted">${(it.prereqs || []).length
-                ? "先修：" + (it.prereqs || []).map((k) => esc(skillLabel(k))).join("、")
+                ? "先修：" + (it.prereqs || []).map((p) => esc(prereqLabel(p))).join("、")
                 : "无先修"}</div></td>
           <td>${btns}${reqLine}</td>
           <td>${wCell}</td>
@@ -926,7 +934,7 @@
                    <td>L${sk.required_level ?? "-"}</td>
                    <td>${sk.weight_pct != null ? sk.weight_pct + "%" : "—"}</td>
                    <td class="muted">${esc(sk.category_name || sk.category || "待归类")}</td>
-                   <td class="muted">${(sk.prereqs || []).length ? sk.prereqs.map((k) => esc(skillLabel(k))).join("、") : "无先修"}</td>
+                   <td class="muted">${(sk.prereqs || []).length ? sk.prereqs.map((p) => esc(prereqLabel(p))).join("、") : "无先修"}</td>
                    <td>${(sk.levels || []).map((g) => g.required ? "■" : (g.exists ? "□" : "·")).join("")}</td>
                </tr>`).join("") + `</table>`
           : `<div class="muted">无</div>`;

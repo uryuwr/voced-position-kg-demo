@@ -132,6 +132,8 @@ def grade_open(
     final = min(self_level, ceiling) if self_level else ceiling
     return {
         "skill_key": question.get("skill_key"),
+        # 名字一路带下去，别让下游各自回落成 code（题目里本来就有，见 load_context）
+        "skill_name": question.get("skill_name"),
         "category": question.get("category"),
         "type": "open",
         "level": final,

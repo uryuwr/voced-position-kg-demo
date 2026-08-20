@@ -71,25 +71,58 @@ def display_name(raw: str | None, name_map: dict[str, str]) -> str:  # noqa: D40
     return name_map.get(v) or v
 
 
+_SKILL_ID_PREFIX = "skill_key:"
+
+
+def code_from_skill_id(skill_id: Any) -> str:
+    """`biz_user_skill.skill_id` → skill code；剥不出返回空串。
+
+    形态是 `skill_key:SKxxxxxxxxxx`（测评/诊断写入时拼的）。**身份要从这里读，
+    不要从 `skill_name` 列读**：那一列是展示名，运营改个技能名它就变，而 `skill_id`
+    是主键的一部分、写进去就不动。简历/对话来的行前缀不是这个，剥不出来就返回空串，
+    由名字模糊匹配那条路径接管。
+    """
+    s = str(skill_id or "").strip()
+    if not s.startswith(_SKILL_ID_PREFIX):
+        return ""
+    code = s[len(_SKILL_ID_PREFIX) :].strip()
+    return code if is_valid_key(code) else ""
+
+
 def profile_levels(rows: Iterable[dict[str, Any]], conn: Any | None = None) -> dict[str, int]:
     """画像行 → {标识: 档位}，**code 与名字都建键**。
 
     两条匹配路径都要喂到（见模块 docstring）：测评行按 code 精确命中，
     简历/对话行按名字模糊命中。同一技能两个键指向同一档位，不会重复计权 ——
     `_user_level_for` 命中一次就返回。
+
+    code 的来源是 `skill_id`（若查询里带了这一列），而不只是 `skill_name` 列。
+    2026-08-20 之前测评行的 `skill_name` 里装的就是 code，靠它反推身份能work；
+    现在那一列改存真展示名了，只看它就再也拿不到 code —— 症状是「测过的技能
+    显示未测、匹配度虚低」，而且不报错。**调用方的 SELECT 记得带上 `skill_id`。**
+    两种形态并存期（存量行 skill_name 还是 code）两条来源都收，集合去重，互不冲突。
     """
-    raws = [str(r.get("skill_name") or "").strip() for r in rows]
+    rows = [dict(r) for r in rows]  # 要遍历两次，Iterable 可能是游标
+    raws: list[str] = []
+    for r in rows:
+        nm = str(r.get("skill_name") or "").strip()
+        code = code_from_skill_id(r.get("skill_id"))
+        if nm:
+            raws.append(nm)
+        if code:
+            raws.append(code)
     names = resolve_names(raws, conn=conn)
     out: dict[str, int] = {}
     for r in rows:
-        v = str(r.get("skill_name") or "").strip()
-        if not v:
+        nm = str(r.get("skill_name") or "").strip()
+        code = code_from_skill_id(r.get("skill_id"))
+        if not nm and not code:
             continue
         try:
             lv = int(r.get("level") or 0)
         except (TypeError, ValueError):
             continue
-        for key in {v, names.get(v) or v}:
+        for key in {k for k in (nm, code, names.get(code), names.get(nm)) if k}:
             out[key] = max(out.get(key, 0), lv)
     return out
 

@@ -289,6 +289,56 @@ def check_learning_plan_payload() -> list[str]:
     return out
 
 
+def check_memory_signal_text() -> list[str]:
+    """**出站** 五维记忆文本 —— 与学习计划同一个形状，而后果更重。
+
+    2026-08-19 skill_key 改成 code 后这里漏改了一天，灌进画像平台的是
+    「`SKa1fa1d005d` 达到 3 级」。它比页面上的哈希难查也难收：
+    平台把这段文本当**语义证据长期保存**供别的岗位推断，而 `Idempotency-Key`
+    按 session 派生、重推覆盖不了；读回来那端（`profile.recall_skills`）
+    按技能名做子串召回，写哈希进去永远召不回。
+
+    只构造文本、**不提交**（提交是对外动作，闸门不该有副作用）。
+    """
+    from backend.kg.pg_store import biz_store as _biz
+    from backend.kg.pg_store.client import connect as _c
+    from backend.userprofile.sync import _writable, build_text
+
+    with _c() as c:
+        rows = c.execute(
+            """
+            SELECT s.id, s.user_id, s.target_occupation_id AS occ
+            FROM biz_diagnosis_session s
+            JOIN biz_diagnosis_result r ON r.session_id = s.id
+            WHERE s.target_occupation_id IS NOT NULL
+            ORDER BY r.created_at DESC LIMIT 5
+            """
+        ).fetchall()
+    if not rows:
+        return ["（跳过）库里没有带结果的诊断会话"]
+
+    out: list[str] = []
+    checked_any = False
+    for r in rows:
+        rep = _biz.get_diagnosis_report(r["user_id"], session_id=r["id"]) or {}
+        if not rep.get("items"):
+            continue
+        checked_any = True
+        text = build_text(rep, occupation_name=r["occ"] or "目标岗位")
+        if CODE_ANY.search(text):
+            out.append(f"session {r['id']} 的记忆文本里有 code：…{CODE_ANY.search(text).group(0)}…")
+        # 整批被丢说明上游 items 里根本没有展示名 —— 文本干净但证据全丢了，同样要红
+        rows_ok, dropped = _writable(rep)
+        if dropped and not rows_ok:
+            out.append(
+                f"session {r['id']}：{dropped} 项实测技能全都取不到展示名，"
+                f"这次测评的证据一条也同步不出去"
+            )
+    if not checked_any:
+        return ["（跳过）最近的诊断报告里都没有 items"]
+    return out
+
+
 print(f"探测用户 uid={PROBE_UID}（挑的是库里有测评快照的用户 —— "
       f"用没数据的用户扫，读历史快照的接口全是空壳）")
 print(f"扫了 {checked} 个 GET 接口，跳过 {len(skipped_list)} 个：")
@@ -317,4 +367,16 @@ elif plan_bad:
 else:
     print("    PASS 任务名 / 阶段名 / skills[].skill_name 里没有裸 code")
 
-sys.exit(1 if (bad or plan_bad) else 0)
+print("\n出站给用户画像服务的五维记忆文本（只构造不提交）：")
+mem_bad = check_memory_signal_text()
+if mem_bad and mem_bad[0].startswith("（跳过）"):
+    print(f"    {mem_bad[0]}")
+    mem_bad = []
+elif mem_bad:
+    print(f"★ {len(mem_bad)} 处：")
+    for x in mem_bad:
+        print(f"    - {x}")
+else:
+    print("    PASS 记忆文本里没有裸 code，且实测技能的展示名都取到了")
+
+sys.exit(1 if (bad or plan_bad or mem_bad) else 0)

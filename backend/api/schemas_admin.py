@@ -272,7 +272,8 @@ class OccupationLink(BaseModel):
 class SkillBundlePreviewOut(BaseModel):
     """技能 bundle 写入前的影响面预览：会建几个节点、几条边。"""
 
-    skill_key: str = Field(..., description="技能聚合主键")
+    skill_key: str = Field(..., description="技能聚合主键（ASCII code）")
+    skill_name: str | None = Field(None, description="技能展示名 —— 预览面板标题用它")
     level_codes: list[str] = Field(..., description="将要写入的档位编码")
     level_count: int = Field(..., ge=0, description="档位数")
     occupation_count: int = Field(..., ge=0, description="关联岗位数")
@@ -314,6 +315,19 @@ class IdName(BaseModel):
     name: str | None = Field(None, description="名称")
 
 
+class SkillRef(BaseModel):
+    """技能轻引用 —— **code 与展示名成对出现**。
+
+    专治「出参里挂一串裸 `skill_key` 的数组」。`skill_key` 从 2026-08-19 起是
+    ASCII code，只给 code 的数组前端无从渲染：如果那些技能不在同一响应的
+    `skills[]` 里（先修就是这种），连反查都做不到。查不到名字时 `skill_name`
+    回落成 code 而不是留空，指向已删技能的历史数据仍要看得见。
+    """
+
+    skill_key: str = Field(..., description="技能聚合主键（ASCII code，形如 SK0123456789）")
+    skill_name: str = Field(..., description="展示名 —— **页面上要显示这个**；取不到时回落为 code")
+
+
 class CompositionLevelDetail(BaseModel):
     """技能某一档的明细。"""
 
@@ -335,11 +349,13 @@ class CompositionItem(BaseModel):
     skill_key: str = Field(..., description="技能聚合主键（ASCII code）")
     skill_name: str | None = Field(None, description="展示名 —— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 ASCII code（形如 SK0123456789），拿它渲染就是一串哈希")
     category: str | None = Field(None, description="技能大类")
-    prereqs: list[str] = Field(
+    prereqs: list[SkillRef] = Field(
         default_factory=list,
         description=(
-            "先修技能的 skill_key 列表（来自 `kg_skill_prereq`）；空数组表示无先修。"
-            "**不限本节点的技能集**——前置技能可能不被本岗位/专业要求，但学员仍需先具备"
+            "先修技能（来自 `kg_skill_prereq`），每项 `{skill_key, skill_name}`；"
+            "空数组表示无先修。**不限本节点的技能集**——前置技能可能不被本岗位/专业要求，"
+            "但学员仍需先具备。也正因如此，调用方**无法**拿同一份 `skills[]` 反查名字，"
+            "所以这里直接带上（2026-08-20 从 `list[str]` 改过来，改之前那串 str 全是 code）"
         ),
     )
     skill_level_id: str = Field(..., description="边指向的那个 skill_level 节点 id")
@@ -458,11 +474,17 @@ class PrereqOut(BaseModel):
 
 
 class PrereqDeletedOut(BaseModel):
-    """删除先修关系的回执。"""
+    """删除先修关系的回执。
+
+    回执也要带名字：运营删完看到的提示是「已移除 SKa1fa1d005d 的先修
+    SK7d3a1b0c22」，无法确认删对了没有。
+    """
 
     deleted: Literal[True] = Field(..., description="固定 true")
-    skill_key: str = Field(..., description="技能聚合主键")
-    prereq_skill_key: str = Field(..., description="被移除的先修技能")
+    skill_key: str = Field(..., description="技能聚合主键（ASCII code）")
+    skill_name: str | None = Field(None, description="技能展示名")
+    prereq_skill_key: str = Field(..., description="被移除的先修技能（ASCII code）")
+    prereq_skill_name: str | None = Field(None, description="被移除的先修技能展示名")
 
 
 CompositionNodeHeader.model_rebuild()
