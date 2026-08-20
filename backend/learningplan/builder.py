@@ -121,6 +121,23 @@ def _skill_key_of(s: dict[str, Any]) -> str:
     return "技能"
 
 
+def _skill_name_of(s: dict[str, Any]) -> str:
+    """展示名 —— 和 `_skill_key_of` 分工：**它管身份，这个管上屏**。
+
+    `skill_key` 自 2026-08-19 起是 ASCII code（`SK` + md5 前 10 位），拿它当任务名
+    推给学习计划服务，学员在对方页面上看到的就是「补齐技能：SK208ab276b3（目标 专家）」。
+    这个错在本服务侧完全看不见 —— 我们只发不收，落库的 `path_snapshot` 也是照发的原样。
+
+    退回 key 而不是留空：指向已删技能的历史计划仍要能生成，显示成一串 code
+    也比任务没有名字好。
+    """
+    for f in ("skill_name", "name"):
+        v = str(s.get(f) or "").strip()
+        if v:
+            return v
+    return _skill_key_of(s)
+
+
 def _weight_of(s: dict[str, Any]) -> float:
     try:
         w = float(s.get("weight") or 0.0)
@@ -242,7 +259,8 @@ def build_payload(
             total_minutes += minutes
             wsum += _weight_of(s)
 
-            name = f"补齐技能：{key}"
+            disp = _skill_name_of(s)
+            name = f"补齐技能：{disp}"
             if req_int:
                 # 档位名只能从 skill_level_meta 读，禁止硬编码（CLAUDE.md）
                 name += f"（目标 {level_name(req_int)}）"
@@ -266,7 +284,9 @@ def build_payload(
                     description=desc[:1024] or None,
                     estimated_minutes=minutes,
                     completed=key in met_keys,
-                    skills=[Skill(skill_id=sid[:128], skill_name=key[:256])][
+                    # skill_id 是身份（bundle id），skill_name 是展示名 —— 这里曾经
+                    # 两个都塞 key，对方拿 skill_name 上屏就是一串 code
+                    skills=[Skill(skill_id=sid[:128], skill_name=disp[:256])][
                         :MAX_SKILLS_PER_TASK
                     ],
                     resources=res,

@@ -78,6 +78,9 @@ cli = TestClient(
 )
 
 CODE_RE = re.compile(r"^SK[0-9a-f]{10}$")
+# 整串等于 code 用 CODE_RE；**句子里夹着 code**（「补齐技能：SK208ab276b3」）要用这个 ——
+# CODE_RE 带 ^$ 锚点，拿它去 search 一句话永远匹配不上，判据会静默失效
+CODE_ANY = re.compile(r"SK[0-9a-f]{10}")
 # 任一个非空即算「有展示名」。顺序无所谓 —— 只要求存在，不规定用哪个
 NAME_FIELDS = (
     "skill_name",
@@ -231,6 +234,61 @@ for p, ops in sorted((spec.get("paths") or {}).items()):
     for hpath, hcodes, hkeys in hits[:3]:
         bad.append((full, hpath or "(root)", hcodes, hkeys))
 
+def check_learning_plan_payload() -> list[str]:
+    """**出站** payload 也要查 —— 这个方向本来完全在闸门视野外。
+
+    上面扫的是自家 GET 出参；而学习计划是我们**只发不收**地推给外部服务的，
+    错值在本服务任何页面上都看不见，落库的 `path_snapshot` 又是照发的原样。
+    2026-08-20 就这么漏出去过：任务名是 `补齐技能：SK208ab276b3（目标 专家）`、
+    `skills[].skill_name` 也塞的是 code —— 是学员在对方页面上看见才发现的。
+
+    只构造 payload、**不推送**（推送是对外动作，闸门不该有副作用）。
+    """
+    from backend.kg.pg_store import biz_store as _biz
+    from backend.kg.pg_store.client import connect as _c
+    from backend.learningplan import build_payload
+
+    from backend import settings as _s
+
+    with _c() as c:
+        r = c.execute(
+            """
+            SELECT s.id, s.user_id, s.target_occupation_id AS occ
+            FROM biz_diagnosis_session s
+            JOIN biz_diagnosis_result r ON r.session_id = s.id
+            WHERE s.target_occupation_id IS NOT NULL
+            ORDER BY r.created_at DESC LIMIT 1
+            """
+        ).fetchone()
+    if not r:
+        return ["（跳过）库里没有带结果的诊断会话"]
+    try:
+        payload = build_payload(
+            session_id=r["id"],
+            region=_s.KG_REGION,
+            occupation_id=r["occ"],
+            occupation_name=r["occ"],
+            skills=_biz.position_skills(r["occ"], limit=12, aggregate=True),
+            report=_biz.get_diagnosis_report(r["user_id"], session_id=r["id"]) or {},
+            courses_by_key={},
+            revision_of=None,
+        )
+    except ValueError as e:
+        return [f"（跳过）构造不出 payload：{e}"]
+    d = payload.model_dump() if hasattr(payload, "model_dump") else payload
+    out: list[str] = []
+    for ph in d.get("phases") or []:
+        for t in ph.get("tasks") or []:
+            if CODE_ANY.search(str(t.get("name") or "")):
+                out.append(f"任务名里有 code：{t.get('name')}")
+            for sk in t.get("skills") or []:
+                if CODE_RE.match(str(sk.get("skill_name") or "")):
+                    out.append(f"skills[].skill_name 是 code：{sk}")
+        if CODE_ANY.search(str(ph.get("phase_name") or "")):
+            out.append(f"阶段名里有 code：{ph.get('phase_name')}")
+    return out
+
+
 print(f"探测用户 uid={PROBE_UID}（挑的是库里有测评快照的用户 —— "
       f"用没数据的用户扫，读历史快照的接口全是空壳）")
 print(f"扫了 {checked} 个 GET 接口，跳过 {len(skipped_list)} 个：")
@@ -246,4 +304,17 @@ if bad:
         print(f"      该对象的键: {hk}")
 else:
     print("PASS 所有出参里的 skill_key 都配着同层展示名")
-sys.exit(1 if bad else 0)
+
+print("\n出站给学习计划服务的 payload（只构造不推送）：")
+plan_bad = check_learning_plan_payload()
+if plan_bad and plan_bad[0].startswith("（跳过）"):
+    print(f"    {plan_bad[0]}")
+    plan_bad = []
+elif plan_bad:
+    print(f"★ {len(plan_bad)} 处：")
+    for x in plan_bad:
+        print(f"    - {x}")
+else:
+    print("    PASS 任务名 / 阶段名 / skills[].skill_name 里没有裸 code")
+
+sys.exit(1 if (bad or plan_bad) else 0)
