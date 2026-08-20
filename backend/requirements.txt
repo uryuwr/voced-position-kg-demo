@@ -5,6 +5,10 @@
 #    只会让功能在线上悄悄降级（简历抽不出文字 / 测评断点丢失），最难排查。
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
+# starlette：**直接 import 的**（api/auth.py 用它的 BaseHTTPMiddleware / JSONResponse），
+# 不是只靠 fastapi 传递依赖捎带。按「运行路径 import 到的包必须登记」显式写上 ——
+# 万一将来 fastapi 换了实现不再依赖它，缺失就是 import 期崩，不是降级
+starlette>=0.40.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 # pool extra = psycopg_pool，**运行时真的会 import**（kg/pg_store/client.py 的
