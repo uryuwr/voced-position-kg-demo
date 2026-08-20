@@ -18,6 +18,15 @@ python -X utf8 scripts/verify_backfill.py after             # 灌完必跑：技
 python -X utf8 tests/e2e_skill_level.py        # Playwright E2E（自起 18099 端口实例）
 python -X utf8 tests/run_assessment_demo.py    # 命令行跑一次完整测评工作流
 python -X utf8 scripts/p0_e2e_acceptance.py    # 接口冒烟
+
+# 闸门（改动相关模块后必跑；都要 PYTHONPATH=. ）
+python -X utf8 tests/e2e_robustness.py                    # 每个 GET 接口注入脏参数，只判 5xx
+python -X utf8 scripts/verify_write_paths.py              # 21 个写接口各真调一次（GET 那套 fuzz 覆盖不到写路径）
+python -X utf8 scripts/verify_skill_name_exposed.py       # 出参有 code 必须配同层展示名
+python -X utf8 scripts/verify_skill_key.py                # skill_key 是 code、改名不换 key
+python -X utf8 scripts/verify_draft_leak.py               # 草稿不泄漏到学员端
+python -X utf8 scripts/verify_draft_closure_4dim.py       # 四维：编辑→草稿→前台不变→发布→前台变
+python -X utf8 scripts/verify_delete_with_draft.py        # 删除遇草稿不 500、不留孤儿草稿
 ```
 
 无 pytest / lint 配置。`tests/` 与 `scripts/` 都是**可直接执行的脚本**，Windows 下一律加 `-X utf8`（大量中文输出）。
@@ -86,6 +95,7 @@ pipelines/  旧路径 shim，勿写新逻辑
 - **「按名字反推 key」不能当查找机制**。采集端判断「这技能已经有了吗」要按 `attrs.skill_name` 查库（`link_boss_skill_chain.existing_skill_keys` 就是这么做的）：技能一旦改过名，md5 反推必然失效，会重复建一套节点，且不报错。
 - **`SKILL_KEY_SQL` 的兜底是现算 code，不是回落到名字**。同一技能的 5 个档位节点要算出同一个值才能聚成一组，行内唯一共享的东西只有名字，所以随机 id 在 SQL 里没法兜底 —— 这也是选 md5 而非 uuid 的唯一理由。入库期由 `level_scale.normalize_skill_level_node` 盖上（采集与灌库的必经之路，与刻度归一同一个位置）。
 - 展示一律用 `skill_name` / `SKILL_NAME_SQL`。搜索也要按名字匹配：`SKILL_KEY_SQL ILIKE` 在改造后**中文一个都搜不到**（下拉框会永远空着）。
+- **出参里带了 code 就必须在同一个对象里带展示名**，闸门是 `scripts/verify_skill_name_exposed.py`（遍历 61 个 GET 接口）。这条连着漏了四轮，每轮的形状都不一样，所以改任何返回技能的接口时三处都要过一遍：①数据层的 dict ②响应模型的字段声明（没声明 = 数据层给了也被 Pydantic 静默丢弃）③前端模板。**同一个 gap 常有两个并存的构造点**（`progression._gap` 与 `goal_overview` 各有一份），改一处漏一处的症状是「详情页有名字、目标卡没有」。
 - 存量迁移：`scripts/migrate_skill_key_to_code.py`（幂等，dry-run 默认）；闸门 `scripts/verify_skill_key.py`。
 
 **技能分类存 code，不存名字**——`kg_node.category` 存 `TECH`/`OPERATE` 这类 code，展示名连 `kg_skill_category` 表取（读路径统一走 `skill_taxonomy.name_of()`，出参里叫 `category_name`）。真源是 `kg/pg_store/skill_taxonomy.py`，启动时幂等 upsert 进表（只 upsert 不 delete，管理台自建的分类不会被抹）。11 个实类 + 兜底 `UNSORTED`（待归类），刻意做粗；改名只动表，不动 12000 条技能。管理台查字典用 `GET /v1/kg/skill-categories?q=`。改之前库里并存两套中文口径（国标「操作与加工」11 种 + LLM「技术工程」9 种），且 LLM 那 3135 个**只写了 `attrs.category`、列是空的**，读路径查列，页面上全显示「未分类」。新增分类来源时把中文别名加进 `aliases`，`to_code()` 认不出的一律落兜底，不猜。
