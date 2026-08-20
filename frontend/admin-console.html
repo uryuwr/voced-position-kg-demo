@@ -536,7 +536,7 @@
           } else {
             const list = Array.isArray(cached) ? cached : (o.skills || []);
             skillHtml = list.length
-              ? list.map((s) => `<span class="cap-sk">${esc(s.display_name || s.skill_key || s.name)}</span>`).join("")
+              ? list.map((s) => `<span class="cap-sk">${esc(s.display_name || s.skill_name || s.name || s.skill_key)}</span>`).join("")
               : `<span class="muted">（暂无技能）</span>`;
           }
         }
@@ -921,8 +921,8 @@
         body += kv("分类", esc(d.category_name || d.category || "待归类"));
         body += kv("等级完整度", esc(d.level_completeness || "—") + " " +
           (d.levels || []).map((g) => g.exists ? "■" : "·").join(""));
-        body += kv("先修", (d.prereqs || []).map((x) => esc(x.prereq_skill_key)).join("、") || "无");
-        body += kv("解锁", (d.unlocks || []).map((x) => esc(x.skill_key)).join("、") || "无");
+        body += kv("先修", (d.prereqs || []).map((x) => esc(x.prereq_skill_name || x.prereq_skill_key)).join("、") || "无");
+        body += kv("解锁", (d.unlocks || []).map((x) => esc(x.skill_name || x.skill_key)).join("、") || "无");
         body += `<h3>引用岗位（${(d.occupations || []).length}）</h3>` +
           ((d.occupations || []).map((o) => `<span class="cap-sk">${esc(o.name)}</span>`).join("") || `<div class="muted">无</div>`);
       }

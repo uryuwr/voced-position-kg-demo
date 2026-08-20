@@ -114,7 +114,7 @@
       const shared = d.shared_skills || [];
       if (shared.length) {
         h += '<div class="card"><b>共享技能</b> <span class="muted">（被 &ge;2 个岗位共同要求，共 ' + shared.length + ' 项 · 不画线）</span><div style="margin-top:6px">'
-           + shared.map(function(s){ return '<span class="chip">' + esc(s.skill_key) + ' <b>&times;' + s.occ_count + '</b></span>'; }).join("")
+           + shared.map(function(s){ return '<span class="chip">' + esc(s.skill_name || s.skill_key) + ' <b>&times;' + s.occ_count + '</b></span>'; }).join("")
            + '</div></div>';
       }
 
@@ -128,7 +128,7 @@
           else {
             const list = Array.isArray(cached) ? cached : (o.skills || []);
             inner = list.length
-              ? list.map(function(s){ return '<li>' + esc(s.display_name || s.skill_key || s.name) + '</li>'; }).join("")
+              ? list.map(function(s){ return '<li>' + esc(s.display_name || s.skill_name || s.name || s.skill_key) + '</li>'; }).join("")
               : '<li class="empty">（无技能）</li>';
           }
         }

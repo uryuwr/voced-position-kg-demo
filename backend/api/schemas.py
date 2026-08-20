@@ -1178,8 +1178,15 @@ class SharedSkill(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    skill_key: str | None = Field(None, description="技能聚合主键")
-    name: str | None = Field(None, description="技能名")
+    skill_key: str | None = Field(None, description="技能聚合主键（ASCII code，形如 SK0123456789）")
+    skill_name: str | None = Field(
+        None,
+        description=(
+            "技能展示名 —— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 code，"
+            "拿它渲染就是一串哈希（能力全景页的共享技能 chip 踩过）"
+        ),
+    )
+    name: str | None = Field(None, description="技能名（同 skill_name，历史字段）")
     category: str | None = Field(None, description="技能大类 code，见 /v1/kg/skill-categories")
     category_name: str | None = Field(None, description="技能大类展示名（由 code 派生，不入库）")
     occupation_count: int | None = Field(

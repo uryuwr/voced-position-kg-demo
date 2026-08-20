@@ -84,6 +84,7 @@ def _skill_keys(conn, occupation_id: str) -> dict[str, dict[str, Any]]:
     return {
         b["skill_key"]: {
             "skill_key": b["skill_key"],
+            "skill_name": b.get("skill_name") or b["skill_key"],
             "category": b.get("category"),
             "required_level": b.get("required_level"),
             "weight": b.get("weight"),

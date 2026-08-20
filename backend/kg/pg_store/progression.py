@@ -29,7 +29,7 @@ from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.config import attrs_level_int, edge_published, node_published
 from backend.kg.pg_store.occupation_level_meta import level_code as occ_level_code
 from backend.kg.pg_store.occupation_level_meta import level_name as occ_level_name
-from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
+from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL, SKILL_NAME_SQL
 from backend.kg.pg_store.skill_level_meta import label_map
 from backend.kg.pg_store.skill_taxonomy import name_of
 
@@ -78,7 +78,8 @@ def _out_edges(conn, occ_id: str) -> list[dict[str, Any]]:
 def _skill_map(conn, occ_id: str) -> dict[str, dict[str, Any]]:
     rows = conn.execute(
         f"""
-        SELECT ({SKILL_KEY_SQL}) AS skill_key, n.category,
+        SELECT ({SKILL_KEY_SQL}) AS skill_key,
+               ({SKILL_NAME_SQL}) AS skill_name, n.category,
                {attrs_level_int('n')} AS required_level, e.weight
         FROM kg_edge e
         JOIN kg_node n ON n.id = e.dst_id AND n.type = 'skill_level'
@@ -106,6 +107,8 @@ def _gap(cur: dict[str, dict], nxt: dict[str, dict], labels: dict, limit: int = 
         if c is None or (s.get("required_level") or 0) > (c.get("required_level") or 0):
             gaps.append({
                 "skill_key": key,
+                # 展示名必须一起给：key 现在是 SKxxxxxxxxxx，前端拿它渲染就是一串哈希
+                "skill_name": s.get("skill_name") or key,
                 "category": s.get("category"),
                 "category_name": name_of(s.get("category")),
                 "required_level": s.get("required_level"),

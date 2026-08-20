@@ -166,7 +166,8 @@ class StageOut(BaseModel):
 class ReportItem(BaseModel):
     """报告里的一项技能：岗位要求 vs 学员实测。"""
 
-    skill_key: str = Field(..., description="技能聚合主键")
+    skill_key: str = Field(..., description="技能聚合主键（ASCII code）")
+    skill_name: str | None = Field(None, description="展示名 —— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 ASCII code（形如 SK0123456789），拿它渲染就是一串哈希")
     category: str = Field(..., description="技能大类，缺失时为「未分类」")
     required_level: int | None = Field(None, ge=1, le=5, description="岗位要求档 1–5")
     required_label: str | None = Field(None, description="要求档文案，如「熟练」")

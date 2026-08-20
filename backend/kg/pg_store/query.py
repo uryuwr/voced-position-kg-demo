@@ -80,6 +80,22 @@ def _major_display_name(name: str | None, attrs: Any, source_id: str | None = No
     return " · ".join(parts) if parts else name
 
 
+def _skill_disp(row: dict[str, Any]) -> str:
+    """技能行 → 展示名。与 `skill_aggregate.skill_name_from_node` 同口径。
+
+    单独写一个而不是 import：那边取的是 dict 形态的 attrs，这里手上是数据库行
+    （attrs 可能还是 JSON 串）。口径就一条 —— attrs.skill_name 优先，否则从
+    节点名剥掉「 · L3」后缀。
+    """
+    a = _maybe_json(row.get("attrs")) or {}
+    if isinstance(a, dict):
+        v = str(a.get("skill_name") or "").strip()
+        if v:
+            return v
+    nm = str(row.get("name") or "").strip()
+    return nm.split(" · ")[0].split("·")[0].strip() or nm
+
+
 def _node_dict(row: dict[str, Any], *, admin: bool = False) -> dict[str, Any]:
     """库行 → API 节点对象。
 
@@ -1995,6 +2011,7 @@ def capability_by_major(
                 ).fetchall()
                 key_occs: dict[str, set[str]] = {}
                 key_levels: dict[str, set[str]] = {}
+                key_names: dict[str, str] = {}
                 for r in rows:
                     if include_skills:
                         lst = skills_by_occ.setdefault(r["_occ"], [])
@@ -2003,6 +2020,9 @@ def capability_by_major(
                     if shared_skill_min_occ > 0:
                         key = r["_skill_key"] or r.get("name") or ""
                         key_occs.setdefault(key, set()).add(r["_occ"])
+                        # 展示名单独记：key 现在是 SKxxxxxxxxxx，共享技能那排 chip
+                        # 直接渲染 key 就是一串哈希（能力全景页踩过）
+                        key_names.setdefault(key, _skill_disp(r))
                         code = (_maybe_json(r.get("attrs")) or {}).get("level_code")
                         if code:
                             key_levels.setdefault(key, set()).add(str(code).upper())
@@ -2010,6 +2030,7 @@ def capability_by_major(
                     (
                         {
                             "skill_key": k,
+                            "skill_name": key_names.get(k) or k,
                             "occ_count": len(v),
                             "levels": sorted(key_levels.get(k, [])),
                             "occupation_ids": sorted(v),

@@ -245,7 +245,8 @@ class SkillCompositionOut(BaseModel):
 class SkillGapOut(BaseModel):
     """进阶要补的一项技能：目标岗位要求里，当前岗位没有的 / 要求更高的。"""
 
-    skill_key: str = Field(..., description="逻辑技能名")
+    skill_key: str = Field(..., description="技能聚合主键（ASCII code）")
+    skill_name: str | None = Field(None, description="展示名 —— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 ASCII code（形如 SK0123456789），拿它渲染就是一串哈希")
     category: str | None = Field(None, description="技能大类 code，见 /v1/kg/skill-categories")
     category_name: str | None = Field(None, description="技能大类展示名（由 code 派生，不入库）")
     required_level: int | None = Field(

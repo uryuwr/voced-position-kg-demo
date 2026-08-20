@@ -1767,7 +1767,8 @@ industry 节点 + parent_of 边（父→子）。
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `edge_id` | string | 是 | requires / covers 边的 id |
-| `skill_key` | string | 是 | 技能聚合主键 |
+| `skill_key` | string | 是 | 技能聚合主键（ASCII code） |
+| `skill_name` | string |  | 展示名 —— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 ASCII code（形如 SK0123456789），拿它渲染就是一串哈希 |
 | `category` | string |  | 技能大类 |
 | `prereqs` | string[] |  | 先修技能的 skill_key 列表（来自 `kg_skill_prereq`）；空数组表示无先修。**不限本节点的技能集**——前置技能可能不被本岗位/专业要求，但学员仍需先具备 |
 | `skill_level_id` | string | 是 | 边指向的那个 skill_level 节点 id |
@@ -3053,7 +3054,8 @@ industry 节点 + parent_of 边（父→子）。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `skill_key` | string | 是 | 技能聚合主键 |
+| `skill_key` | string | 是 | 技能聚合主键（ASCII code） |
+| `skill_name` | string |  | 展示名 —— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 ASCII code（形如 SK0123456789），拿它渲染就是一串哈希 |
 | `category` | string | 是 | 技能大类，缺失时为「未分类」 |
 | `required_level` | integer |  | 岗位要求档 1–5 |
 | `required_label` | string |  | 要求档文案，如「熟练」 |
@@ -3139,8 +3141,9 @@ industry 节点 + parent_of 边（父→子）。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `skill_key` | string |  | 技能聚合主键 |
-| `name` | string |  | 技能名 |
+| `skill_key` | string |  | 技能聚合主键（ASCII code，形如 SK0123456789） |
+| `skill_name` | string |  | 技能展示名 —— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 code，拿它渲染就是一串哈希（能力全景页的共享技能 chip 踩过） |
+| `name` | string |  | 技能名（同 skill_name，历史字段） |
 | `category` | string |  | 技能大类 code，见 /v1/kg/skill-categories |
 | `category_name` | string |  | 技能大类展示名（由 code 派生，不入库） |
 | `occupation_count` | integer |  | 有多少个对口岗位要求它 |
@@ -3300,7 +3303,8 @@ industry 节点 + parent_of 边（父→子）。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `skill_key` | string | 是 | 逻辑技能名 |
+| `skill_key` | string | 是 | 技能聚合主键（ASCII code） |
+| `skill_name` | string |  | 展示名 —— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 ASCII code（形如 SK0123456789），拿它渲染就是一串哈希 |
 | `category` | string |  | 技能大类 code，见 /v1/kg/skill-categories |
 | `category_name` | string |  | 技能大类展示名（由 code 派生，不入库） |
 | `required_level` | integer |  | 目标岗位要求的档位 1–5 |

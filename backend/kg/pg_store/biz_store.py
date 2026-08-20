@@ -1763,7 +1763,11 @@ def _build_report(
             gaps = [
                 {
                     "skill_id": g.get("skill_key"),
-                    "skill_name": g.get("skill_key"),
+                    # 迁移前 skill_key 就是中文名，所以这里原样把 key 当名字用；
+                    # 2026-08-19 之后 key 是 SKxxxxxxxxxx，照旧写就会在页面上显示哈希。
+                    # 取真名、兜底才回落到 key —— 历史落库的诊断快照里 key 存的仍是
+                    # 中文名，回落之后那些老报告的显示不受影响。
+                    "skill_name": g.get("skill_name") or g.get("skill_key"),
                     "category": g.get("category"),
                     "required_level": g.get("required_level"),
                     "user_level": g.get("user_level"),

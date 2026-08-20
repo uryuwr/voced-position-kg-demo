@@ -102,7 +102,8 @@ def _build_radar(tested_rows: list[dict[str, Any]]) -> dict[str, Any]:
         top = sorted(rows, key=lambda x: -(x.get("weight") or 0))[:RADAR_MAX_AXES]
         return {
             "axis_type": "skill",
-            "categories": [r["skill_key"] for r in top],
+            # 轴标签是**给人看的**，用展示名。用 skill_key 的话雷达图上是一圈哈希
+            "categories": [r.get("skill_name") or r["skill_key"] for r in top],
             "series": [
                 {
                     "key": "user",
@@ -217,6 +218,8 @@ def build_report(
         rows.append(
             {
                 "skill_key": key,
+                # 展示名：key 是 SKxxxxxxxxxx，前端与雷达轴都要用这个
+                "skill_name": it.get("skill_name") or key,
                 "category": it.get("category") or "未分类",
                 "required_level": req,
                 "required_label": labels.get(req) if req else None,

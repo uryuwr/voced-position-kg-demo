@@ -332,7 +332,8 @@ class CompositionItem(BaseModel):
     """
 
     edge_id: str = Field(..., description="requires / covers 边的 id")
-    skill_key: str = Field(..., description="技能聚合主键")
+    skill_key: str = Field(..., description="技能聚合主键（ASCII code）")
+    skill_name: str | None = Field(None, description="展示名 —— **页面上要显示这个**。`skill_key` 从 2026-08-19 起是 ASCII code（形如 SK0123456789），拿它渲染就是一串哈希")
     category: str | None = Field(None, description="技能大类")
     prereqs: list[str] = Field(
         default_factory=list,

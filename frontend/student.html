@@ -394,7 +394,7 @@
               ${skills.map((s) => {
                 const mi = match && (match.items || []).find((x) => x.skill_key === s.skill_key);
                 return `<tr>
-                  <td>${esc(s.skill_key || s.name)} ${s.is_core ? '<span class="tag core">核心</span>' : ""}</td>
+                  <td>${esc(s.skill_name || s.name || s.skill_key)} ${s.is_core ? '<span class="tag core">核心</span>' : ""}</td>
                   <td>L${s.required_level ?? "-"}</td>
                   <td>${s.weight_pct != null ? s.weight_pct + "%" : "-"}</td>
                   <td class="muted">${esc(s.category_name || s.category || "待归类")}</td>
@@ -481,7 +481,7 @@
                   <div class="muted" style="font-size:12px;margin-top:6px">进阶要补的技能：</div>
                   <div style="margin-top:4px">
                     ${(h.unlock_skills || []).length
-                      ? h.unlock_skills.map((s) => `<span class="tag">${esc(s.skill_key)}${
+                      ? h.unlock_skills.map((s) => `<span class="tag">${esc(s.skill_name || s.skill_key)}${
                           s.required_level ? " L" + s.required_level : ""}${
                           s.current_required_level ? "（现 L" + s.current_required_level + "）" : "（新增）"}</span>`).join(" ")
                       : '<span class="muted">目标岗位暂未配置技能构成</span>'}
@@ -866,7 +866,7 @@
               <div class="muted" style="font-size:12px">进阶解锁需具备的关键核心技能：</div>
               <div style="margin-top:6px">
                 ${(nl.unlock_skills || []).length
-                  ? nl.unlock_skills.map((s) => `<span class="tag">${esc(s.skill_key)}${s.required_level ? " L" + s.required_level : ""}</span>`).join(" ")
+                  ? nl.unlock_skills.map((s) => `<span class="tag">${esc(s.skill_name || s.skill_key)}${s.required_level ? " L" + s.required_level : ""}</span>`).join(" ")
                   : '<span class="muted">下一级岗位暂未配置技能构成</span>'}
               </div>
               <div class="muted" style="font-size:12px;margin-top:10px">
@@ -936,7 +936,7 @@
                 return `
                 <div style="margin-bottom:10px">
                   <div class="row" style="justify-content:space-between">
-                    <span${x.tested ? "" : ' class="muted"'}>${esc(x.skill_key)}
+                    <span${x.tested ? "" : ' class="muted"'}>${esc(x.skill_name || x.skill_key)}
                       ${x.tested ? "" : '<span class="tag" style="margin-left:6px">未测评</span>'}</span>
                     <span class="muted">${x.tested ? "L" + (x.measured_level || 0) : "—"}
                       / 目标 L${x.required_level || "?"}
@@ -952,13 +952,13 @@
               <div class="card" style="margin:0 0 10px;background:#08201a">
                 <b style="color:#34d399">✦ 优势精通（已达标）</b>
                 <div class="muted" style="margin-top:6px">${strengths.length
-                  ? strengths.map((x) => `${esc(x.skill_key)}（L${x.measured_level}）`).join("、") + "，已满足岗位胜任标准。"
+                  ? strengths.map((x) => `${esc(x.skill_name || x.skill_key)}（L${x.measured_level}）`).join("、") + "，已满足岗位胜任标准。"
                   : "本次未测出达标项。"}</div>
               </div>
               <div class="card" style="margin:0;background:#231a08">
                 <b style="color:#f59e0b">⚠ 关键能力缺口（待攻关）</b>
                 <div class="muted" style="margin-top:6px">${gaps.length
-                  ? gaps.map((x) => `${esc(x.skill_key)}（L${x.measured_level || 0}→L${x.required_level}）`).join("、") + "。"
+                  ? gaps.map((x) => `${esc(x.skill_name || x.skill_key)}（L${x.measured_level || 0}→L${x.required_level}）`).join("、") + "。"
                   : "未发现明显缺口。"}</div>
               </div>
               <div class="muted" style="font-size:12px;margin-top:8px">

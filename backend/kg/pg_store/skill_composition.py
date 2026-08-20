@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from backend.kg.pg_store.client import connect
@@ -264,6 +265,17 @@ def list_skill_options(
     return out
 
 
+def _display_name(row: dict[str, Any]) -> str:
+    """技能展示名：从节点名剥掉「 · L3」后缀。
+
+    与 `skill_aggregate.SKILL_NAME_SQL` 的兜底分支同一条规则。这里不另发查询 ——
+    节点名本来就在行里（`skill_node_name`），而 attrs.skill_name 已经全库补齐、
+    与节点名同源（迁移脚本就是拿节点名回填的）。
+    """
+    nm = str(row.get("skill_node_name") or row.get("name") or "").strip()
+    return re.sub(r"\s*·\s*L[1-5]\s*$", "", nm, flags=re.I).strip() or nm
+
+
 def get_composition(node_id: str) -> dict[str, Any]:
     """当前技能构成：每项含 skill_key、该技能全部等级、选中等级、权重。"""
     with connect() as conn:
@@ -281,6 +293,9 @@ def get_composition(node_id: str) -> dict[str, Any]:
                 "weight": (r.get("edge") or {}).get("weight"),
                 "dst_id": r.get("id"),
                 "skill_key": _sk_from(r),
+                # 展示名：key 是 SKxxxxxxxxxx。节点名形如「C#编程开发 · L3」，
+                # 剥掉档位后缀就是展示名（与 SKILL_NAME_SQL 的兜底同一条规则）
+                "skill_name": _display_name(r),
                 "category": r.get("category"),
                 "attrs": r.get("attrs"),
                 "skill_node_name": r.get("name"),
@@ -324,6 +339,7 @@ def get_composition(node_id: str) -> dict[str, Any]:
             {
                 "edge_id": r["edge_id"],
                 "skill_key": r["skill_key"],
+                "skill_name": r.get("skill_name") or r["skill_key"],
                 "category": r["category"],
                 # 原型第一列副行展示「先修」；不限本节点技能集内
                 "prereqs": pmap.get(r["skill_key"], []),
