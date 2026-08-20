@@ -313,6 +313,10 @@ def goal_overview(user_id: str, occupation_id: str | None = None) -> dict[str, A
                     g.append(
                         {
                             "skill_key": key,
+                            # 展示名：`_skill_keys` 已经带上了（走 entity_skill_composition）。
+                            # 这里是与 `progression._gap` **并存的第二个构造点**，
+                            # 改一处漏一处就是「详情页有名字、目标卡没有」
+                            "skill_name": s.get("skill_name") or key,
                             "category": s.get("category"),
                             "category_name": name_of(s.get("category")),
                             "required_level": s.get("required_level"),

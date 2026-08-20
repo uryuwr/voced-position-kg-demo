@@ -1076,14 +1076,15 @@ class SkillNodeBrief(BaseModel):
     skill_key: str | None = Field(
         None, description="技能聚合主键（ASCII code，形如 SK0123456789）"
     )
-    name: str | None = Field(
+    skill_name: str | None = Field(
         None,
         description=(
             "技能展示名 —— **图上的节点标签用这个**。`skill_key` 从 2026-08-19 起是"
-            "code，拿它当标签就是一串哈希"
+            "code，拿它当标签就是一串哈希。"
+            "这里**没有** `name` 字段：它与 skill_name 装同一个值，留着只会让前端"
+            "每次判「用哪个」，判错了不报错、只是显示不对"
         ),
     )
-    skill_name: str | None = Field(None, description="同 `name`，与其它接口对齐的别名")
     depth: int | None = Field(
         None, ge=0, description="前置层深；0 表示无前置，可直接学"
     )

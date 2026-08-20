@@ -265,9 +265,8 @@ def occupation_skills_graph(
                 {
                     "skill_key": k,
                     # 展示名：key 是 SKxxxxxxxxxx，图上每个技能节点的标签用这个。
-                    # `name` 是这个出参里既有的字段名（响应模型 SkillNodeOut 用它），
-                    # 两个都给，前端不用改字段名也能立刻显示中文
-                    "name": r["skill_name"] or k,
+                    # 只给 `skill_name` —— 与 `name` 完全重复，两个字段装同一个值
+                    # 只会让前端每次都要判「用哪个」，而判错了不报错、只是显示不对
                     "skill_name": r["skill_name"] or k,
                     "levels": sorted([x for x in (r["levels"] or []) if x]),
                 }

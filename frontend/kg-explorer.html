@@ -387,7 +387,7 @@
           const k = (seen[dep] = (seen[dep] || 0) + 1) - 1;
           els.push({
             data: { id: s.skill_key, parent: gid,
-                    label: (s.name || s.skill_name || s.skill_key) + (s.levels.length ? " " + s.levels.join("/") : "") },
+                    label: (s.skill_name || s.skill_key) + (s.levels.length ? " " + s.levels.join("/") : "") },
             position: { x: bx + k * 116, y: 120 + dep * ROW_H },
           });
         });

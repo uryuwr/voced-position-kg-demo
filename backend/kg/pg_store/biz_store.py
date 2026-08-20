@@ -246,6 +246,8 @@ def match_with_profile(
         items.append(
             {
                 "skill_key": b.get("skill_key"),
+                # strengths / gaps 都是 items 的子集，所以名字只在这里补一次
+                "skill_name": b.get("skill_name") or b.get("skill_key"),
                 "category": b.get("category"),
                 "required_level": req or 0,
                 "user_level": ulv,

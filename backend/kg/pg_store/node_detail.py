@@ -299,6 +299,10 @@ def _occupation_detail(conn, oid: str) -> dict[str, Any]:
         skills.append(
             {
                 "skill_key": b.get("skill_key"),
+                # 展示名：key 是 SKxxxxxxxxxx。这一处是全站最后一个漏的，前两轮
+                # 靠「打开页面看有没有哈希」都没扫到它 —— 判据已下移到接口层，
+                # 见 scripts/verify_skill_name_exposed.py
+                "skill_name": b.get("skill_name") or b.get("skill_key"),
                 "category": b.get("category"),
                 "required_level": b.get("required_level"),
                 "weight": w,

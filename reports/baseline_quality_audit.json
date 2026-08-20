@@ -1,0 +1,44 @@
+{
+  "test_fixture": {
+    "desc": "测试 fixture：E2E/单测遗留，已扩散到真实岗位的技能构成上",
+    "count": 0,
+    "sample": []
+  },
+  "url_encoded_name": {
+    "desc": "名字里带 URL 编码：前端双重编码后建出来的幽灵记录",
+    "count": 0,
+    "sample": []
+  },
+  "parse_noise": {
+    "desc": "表格解析噪声：不是技能/岗位，是原表的合计行与表头",
+    "count": 0,
+    "sample": []
+  },
+  "occupation_as_skill": {
+    "desc": "职业名被当成技能：与岗位同名**且**以「人」的后缀结尾",
+    "count": 0,
+    "sample": []
+  },
+  "too_vague_skill": {
+    "desc": "疑似过泛：名字 ≤2 字，且整个逻辑技能（全部档位）都没有岗位引用",
+    "count": 30,
+    "sample": []
+  },
+  "empty_name": {
+    "desc": "名字为空或只有空白",
+    "count": 0,
+    "sample": []
+  },
+  "orphan_edge": {
+    "desc": "孤儿边：某一端的节点行根本不存在（与归档无关）",
+    "count": 0
+  },
+  "edge_to_archived": {
+    "desc": "边 published 但指向 archived 节点：列表按边计数、详情按可见节点，两个数字",
+    "count": 0
+  },
+  "weight_sum_off": {
+    "desc": "岗位 requires 权重和超出 0.85–1.15",
+    "count": 36
+  }
+}
