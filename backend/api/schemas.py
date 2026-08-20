@@ -596,16 +596,45 @@ class ChangePayload(BaseModel):
     attrs: dict[str, Any] | None = Field(
         None, description="自由属性（无数据库约束的 JSON 列）"
     )
-    industry_ids: list[str] | None = Field(None, description="关联行业 id 列表（专业用）")
-    major_ids: list[str] | None = Field(None, description="关联专业 id 列表（岗位用）")
-    occupation_ids: list[str] | None = Field(None, description="关联岗位 id 列表（技能用）")
+    industry_ids: list[str] | None = Field(
+        None,
+        description=(
+            "关联行业（专业用：major -belongs_to→ industry）。"
+            "**整体替换**：多的自动移除、少的自动新建。"
+            "不传=这类关联一个不动；传 `[]`=清空这一类"
+        ),
+    )
+    major_ids: list[str] | None = Field(
+        None,
+        description=(
+            "关联专业（岗位用：major -prepares_for→ occupation）。语义同 `industry_ids`"
+        ),
+    )
+    occupation_ids: list[str] | None = Field(
+        None,
+        description=(
+            "关联岗位。技能用（occupation -requires→ skill）；"
+            "专业也可用（major -prepares_for→ occupation）。语义同 `industry_ids`"
+        ),
+    )
     skill_key: str | None = Field(None, description="技能聚合主键（技能 bundle 用）")
     levels: dict[str, Any] | None = Field(
         None, description="L1–L5 各档内容（技能 bundle 用），键为档位号"
     )
-    src_id: str | None = Field(None, description="边的源节点 id（entity_kind=edge）")
-    dst_id: str | None = Field(None, description="边的目标节点 id")
-    rel_type: str | None = Field(None, description="边的关系类型")
+    # 边是**有向**的，方向不能反：belongs_to 专业→行业 / prepares_for 专业→岗位 /
+    # requires 岗位→技能。反了不会报错，只是查不到——读路径按方向拼 SQL。
+    # 能用 `*_ids` 就别自己拼边：那条路只能一条条加，没有「移除」语义
+    src_id: str | None = Field(
+        None,
+        description=(
+            "边的**起点** id（entity_kind=edge）。方向固定："
+            "`belongs_to` 专业→行业 | `prepares_for` 专业→岗位 | `requires` 岗位→技能"
+        ),
+    )
+    dst_id: str | None = Field(None, description="边的**终点** id，方向见 `src_id`")
+    rel_type: str | None = Field(
+        None, description="边的关系类型：belongs_to / prepares_for / requires / advances_to"
+    )
     weight: float | None = Field(None, description="边权重")
 
 
@@ -837,16 +866,23 @@ class NodeCreate(BaseModel):
     # `industry_ids`，返回 200、库里零条边，看着像详情接口没返回。
     # 语义：键缺席=不动这类关联；键在但空列表=清空（见 `write.extract_link_ids`）
     industry_ids: list[str] | None = Field(
-        None, description="关联行业 id 列表（专业用：major -belongs_to→ industry）"
+        None,
+        description=(
+            "关联行业（专业用：major -belongs_to→ industry）。**整体替换**："
+            "多的自动移除、少的自动新建。不传=不动；传 `[]`=清空"
+        ),
     )
     major_ids: list[str] | None = Field(
-        None, description="关联专业 id 列表（岗位用：major -prepares_for→ occupation）"
+        None,
+        description=(
+            "关联专业（岗位用：major -prepares_for→ occupation）。语义同 `industry_ids`"
+        ),
     )
     occupation_ids: list[str] | None = Field(
         None,
         description=(
-            "关联岗位 id 列表。技能用（occupation -requires→ skill）；"
-            "专业也可用（major -prepares_for→ occupation）"
+            "关联岗位。技能用（occupation -requires→ skill）；"
+            "专业也可用（major -prepares_for→ occupation）。语义同 `industry_ids`"
         ),
     )
 
@@ -856,13 +892,17 @@ class NodePatch(BaseModel):
 
     # 同 NodeCreate：不声明就等于不支持改关联（静默丢弃，不报错）
     industry_ids: list[str] | None = Field(
-        None, description="覆盖关联行业（专业用）；空列表=清空"
+        None,
+        description=(
+            "覆盖关联行业（专业用）。**整体替换**：多的自动移除、少的自动新建。"
+            "不传=不动；传 `[]`=清空"
+        ),
     )
     major_ids: list[str] | None = Field(
-        None, description="覆盖关联专业（岗位用）；空列表=清空"
+        None, description="覆盖关联专业（岗位用）。语义同 `industry_ids`"
     )
     occupation_ids: list[str] | None = Field(
-        None, description="覆盖关联岗位（技能 / 专业用）；空列表=清空"
+        None, description="覆盖关联岗位（技能 / 专业用）。语义同 `industry_ids`"
     )
     name: str | None = Field(None, description="新名称（可选）")
     name_en: str | None = Field(None, description="新英文名（可选）")

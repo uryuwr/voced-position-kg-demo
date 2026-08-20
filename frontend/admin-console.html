@@ -1769,12 +1769,49 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
     function closeModal() { $("modalMask").classList.remove("on"); }
     $("modalMask").onclick = (e) => { if (e.target === $("modalMask")) closeModal(); };
 
-    async function loadLinkOptions(peerType) {
+    async function loadLinkOptions(peerType, q) {
       // 管理端关联：含 draft（多数专业/岗位已降级为草稿，仍应可选）
+      // 带 q 走**服务端搜索**：岗位有几千个，page_size=200 只是第一页，
+      // 想挂的那个大概率不在里面 —— 纯客户端过滤找不到它
       const data = await api.apiFetch(
         `/v1/kg/nodes?type=${encodeURIComponent(peerType)}&page=1&page_size=200&region=CN&scope=manage`
+        + (q ? `&q=${encodeURIComponent(q)}` : "")
       );
       return data.items || [];
+    }
+
+    /** 关联多选框接搜索框：输入 → 防抖 → 远端查 → 重建选项。
+     *
+     * **已选项必须补回去**：搜索结果里通常没有它们，直接重建等于「搜一次把之前
+     * 选的全丢掉」，而多选框是整体替换语义（保存时空选=清空），丢了就是真删。
+     * 所以重建前先把当前选中的 id 与文案记下来，置顶拼回去。
+     */
+    function wireLinkSearch(qId, boxId, selId, peerType) {
+      const inp = $(qId);
+      if (!inp) return;
+      let timer = null;
+      inp.oninput = () => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+          const keep = [];
+          const el = document.getElementById(selId);
+          if (el && el.options) {
+            [...el.selectedOptions].forEach((o) => keep.push({ id: o.value, name: o.textContent }));
+          }
+          const box = $(boxId);
+          box.innerHTML = `<div class="muted">搜索中…</div>`;
+          let items = [];
+          try {
+            items = await loadLinkOptions(peerType, inp.value.trim());
+          } catch (e) {
+            box.innerHTML = `<div class="muted">搜索失败：${esc(e.message || e)}</div>`;
+            return;
+          }
+          const have = new Set(items.map((i) => i.id));
+          const merged = keep.filter((k) => !have.has(k.id)).concat(items);
+          box.innerHTML = multiSelectHtml(selId, merged, keep.map((k) => k.id));
+        }, 260);
+      };
     }
 
     function multiSelectHtml(id, items, selectedIds) {
@@ -2125,13 +2162,26 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
       } else if (typeNow === "skill_level") {
         peerType = "occupation"; linkKey = "occupation_ids"; linkLabel = "关联岗位（可多选）";
       }
-      let peers = [];
+      // 专业有**两类**关联：所属行业 + 关联岗位（major -prepares_for→ occupation）。
+      // 同一条 prepares_for 边从岗位那侧叫 major_ids，两端都能维护，所以专业这里
+      // 多出一个多选框，其余类型第二个框隐藏。
+      const peerType2 = typeNow === "major" ? "occupation" : null;
+      const linkKey2 = peerType2 ? "occupation_ids" : null;
+      const linkLabel2 = "关联岗位（可多选）";
+      let peers = [], peers2 = [];
       try {
-        if (peerType) peers = await loadLinkOptions(peerType);
+        // 两个列表并发拉，别串行等两次
+        [peers, peers2] = await Promise.all([
+          peerType ? loadLinkOptions(peerType) : [],
+          peerType2 ? loadLinkOptions(peerType2) : [],
+        ]);
       } catch (e) {
         toast("加载关联列表失败: " + (e.message || e), true);
       }
       const preselected = n[linkKey] || (n.link_ids && n.link_ids[linkKey]) || [];
+      const preselected2 = linkKey2
+        ? (n[linkKey2] || (n.link_ids && n.link_ids[linkKey2]) || [])
+        : [];
       openModal(`
         <h2>${isEdit ? "编辑节点" : "新建节点"}</h2>
         <div class="form-row"><label>类型</label>
@@ -2151,7 +2201,13 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
         <div class="form-row"><label>简介</label><textarea id="f_desc">${esc(n.description || "")}</textarea></div>
         <div class="form-row" id="linkRow" ${peerType ? "" : "style=\"display:none\""}>
           <label id="linkLab">${esc(linkLabel || "关联")}</label>
+          <input id="f_links_q" placeholder="输入关键词搜索（已选的会保留）" style="width:100%;margin-bottom:4px" />
           <div id="linkBox">${peerType ? multiSelectHtml("f_links", peers, preselected) : ""}</div>
+        </div>
+        <div class="form-row" id="linkRow2" ${peerType2 ? "" : "style=\"display:none\""}>
+          <label id="linkLab2">${esc(linkLabel2)}</label>
+          <input id="f_links2_q" placeholder="输入岗位关键词搜索（已选的会保留）" style="width:100%;margin-bottom:4px" />
+          <div id="linkBox2">${peerType2 ? multiSelectHtml("f_links2", peers2, preselected2) : ""}</div>
         </div>
         <p class="muted">关联由服务端自动建边（专业↔行业 / 岗位↔专业 / 技能↔岗位）。${
           reviewOn() ? "提交后进<strong>待审</strong>。" : "当前<strong>无审核</strong>，保存即生效。"
@@ -2187,9 +2243,25 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
         } catch (e) {
           box.innerHTML = `<div class="muted">加载失败</div>`;
         }
+        wireLinkSearch("f_links_q", "linkBox", "f_links", pt);
+        // 第二个框只有专业才有（关联岗位）
+        const row2 = $("linkRow2"), box2 = $("linkBox2");
+        row2.dataset.linkKey = t === "major" ? "occupation_ids" : "";
+        if (t !== "major") { row2.style.display = "none"; box2.innerHTML = ""; return; }
+        row2.style.display = "";
+        box2.innerHTML = `<div class="muted">加载中…</div>`;
+        try {
+          box2.innerHTML = multiSelectHtml("f_links2", await loadLinkOptions("occupation"), []);
+          wireLinkSearch("f_links2_q", "linkBox2", "f_links2", "occupation");
+        } catch (e) {
+          box2.innerHTML = `<div class="muted">加载失败</div>`;
+        }
       }
       // 新建/编辑都必须带上 linkKey，否则多选关联不会写入 payload
       $("linkRow").dataset.linkKey = linkKey || "";
+      $("linkRow2").dataset.linkKey = linkKey2 || "";
+      if (peerType) wireLinkSearch("f_links_q", "linkBox", "f_links", peerType);
+      if (peerType2) wireLinkSearch("f_links2_q", "linkBox2", "f_links2", peerType2);
       if (!isEdit) {
         $("f_type").onchange = () => refreshLinkForType($("f_type").value);
       }
@@ -2218,6 +2290,14 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
           const ids = selectedValues("f_links");
           if (ids.length) payload[lk] = ids;
           else if (isEdit) payload[lk] = []; // 编辑时空选表示清空关联
+        }
+        // 第二类关联（专业的关联岗位）。**新建时空选不能传 []**：那是「清空」的意思，
+        // 对新建没意义，还会白建一批墓碑草稿边
+        const lk2 = $("linkRow2").dataset.linkKey || "";
+        if (lk2) {
+          const ids2 = selectedValues("f_links2");
+          if (ids2.length) payload[lk2] = ids2;
+          else if (isEdit) payload[lk2] = [];
         }
         if (!payload.name) { toast("请填写名称", true); return; }
         try {

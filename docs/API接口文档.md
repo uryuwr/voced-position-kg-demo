@@ -1662,14 +1662,14 @@ industry 节点 + parent_of 边（父→子）。
 | `code` | string |  | 编码 |
 | `description` | string |  | 描述 |
 | `attrs` | object |  | 自由属性（无数据库约束的 JSON 列） |
-| `industry_ids` | string[] |  | 关联行业 id 列表（专业用） |
-| `major_ids` | string[] |  | 关联专业 id 列表（岗位用） |
-| `occupation_ids` | string[] |  | 关联岗位 id 列表（技能用） |
+| `industry_ids` | string[] |  | 关联行业（专业用：major -belongs_to→ industry）。**整体替换**：多的自动移除、少的自动新建。不传=这类关联一个不动；传 `[]`=清空这一类 |
+| `major_ids` | string[] |  | 关联专业（岗位用：major -prepares_for→ occupation）。语义同 `industry_ids` |
+| `occupation_ids` | string[] |  | 关联岗位。技能用（occupation -requires→ skill）；专业也可用（major -prepares_for→ occupation）。语义同 `industry_ids` |
 | `skill_key` | string |  | 技能聚合主键（技能 bundle 用） |
 | `levels` | object |  | L1–L5 各档内容（技能 bundle 用），键为档位号 |
-| `src_id` | string |  | 边的源节点 id（entity_kind=edge） |
-| `dst_id` | string |  | 边的目标节点 id |
-| `rel_type` | string |  | 边的关系类型 |
+| `src_id` | string |  | 边的**起点** id（entity_kind=edge）。方向固定：`belongs_to` 专业→行业 \| `prepares_for` 专业→岗位 \| `requires` 岗位→技能 |
+| `dst_id` | string |  | 边的**终点** id，方向见 `src_id` |
+| `rel_type` | string |  | 边的关系类型：belongs_to / prepares_for / requires / advances_to |
 | `weight` | number |  | 边权重 |
 
 ### ChangeRejectedOut
@@ -2504,9 +2504,9 @@ industry 节点 + parent_of 边（父→子）。
 | `source_url` | string |  | 溯源链接（可选）。无则服务端可填 manual://admin |
 | `confidence` | string |  | 置信度。取值建议：official=官方 \| derived=规则派生 \| ai_inferred=模型推断 \| manual_seed=人工录入（默认）（默认 `manual_seed`） |
 | `status` | `draft` \| `published` \| `archived` \| `disabled` |  | 发布状态。draft=草稿（默认，可进审核）\| published=已发布可见 \| archived=归档不可用（默认 `draft`） |
-| `industry_ids` | string[] |  | 关联行业 id 列表（专业用：major -belongs_to→ industry） |
-| `major_ids` | string[] |  | 关联专业 id 列表（岗位用：major -prepares_for→ occupation） |
-| `occupation_ids` | string[] |  | 关联岗位 id 列表。技能用（occupation -requires→ skill）；专业也可用（major -prepares_for→ occupation） |
+| `industry_ids` | string[] |  | 关联行业（专业用：major -belongs_to→ industry）。**整体替换**：多的自动移除、少的自动新建。不传=不动；传 `[]`=清空 |
+| `major_ids` | string[] |  | 关联专业（岗位用：major -prepares_for→ occupation）。语义同 `industry_ids` |
+| `occupation_ids` | string[] |  | 关联岗位。技能用（occupation -requires→ skill）；专业也可用（major -prepares_for→ occupation）。语义同 `industry_ids` |
 
 ### NodeDetailOut
 
@@ -2556,9 +2556,9 @@ industry 节点 + parent_of 边（父→子）。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `industry_ids` | string[] |  | 覆盖关联行业（专业用）；空列表=清空 |
-| `major_ids` | string[] |  | 覆盖关联专业（岗位用）；空列表=清空 |
-| `occupation_ids` | string[] |  | 覆盖关联岗位（技能 / 专业用）；空列表=清空 |
+| `industry_ids` | string[] |  | 覆盖关联行业（专业用）。**整体替换**：多的自动移除、少的自动新建。不传=不动；传 `[]`=清空 |
+| `major_ids` | string[] |  | 覆盖关联专业（岗位用）。语义同 `industry_ids` |
+| `occupation_ids` | string[] |  | 覆盖关联岗位（技能 / 专业用）。语义同 `industry_ids` |
 | `name` | string |  | 新名称（可选） |
 | `name_en` | string |  | 新英文名（可选） |
 | `name_zh` | string |  | 新中文名（可选） |

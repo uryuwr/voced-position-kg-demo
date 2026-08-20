@@ -725,7 +725,12 @@ def patch_node(
     to_draft: bool = True,
 ) -> dict[str, Any] | None:
     link_ids = extract_link_ids(data)
-    has_links = any(link_ids.values())
+    # **判「键在不在」，不能判「值空不空」**。原来写的是 `any(link_ids.values())`，
+    # 而 `any([[]])` 是 False —— 于是「只传一个空数组」这种请求被当成压根没传关联，
+    # `apply_node_links` 根本不会被调用，**清空关联这个动作永远做不到**（HTTP 200、
+    # 关联还在）。`extract_link_ids` 只返回请求里真出现过的键，语义就写在它的
+    # docstring 里：键缺席=不动，键在但空列表=清空。这里必须与它一致。
+    has_links = bool(link_ids)
     body = _strip_link_fields(data)
     if to_draft:
         return _patch_node_draft(

@@ -1562,6 +1562,24 @@ def attach_link_ids(
             ).fetchall()
             link_ids["industry_ids"] = [r["id"] for r in rows]
             node["industry_ids"] = link_ids["industry_ids"]
+            # 专业**也能挂岗位**（major -prepares_for→ occupation，同一条边从岗位侧
+            # 是 major_ids）。写路径支持了、这里不回显，编辑页一打开就是空多选框，
+            # 保存一次等于把已有关联全清掉 —— 回显与写入必须成对。
+            rows = conn.execute(
+                f"""
+                SELECT e.dst_id AS id FROM kg_edge e
+                JOIN kg_node o ON o.id = e.dst_id AND o.type = 'occupation'
+                     AND {_link_o}
+                WHERE e.src_id = %s AND e.rel_type = 'prepares_for'
+                  AND COALESCE(e.status, 'published') NOT IN ('archived')
+                  AND COALESCE(o.status, 'published') NOT IN ('archived')
+                  AND {_link_edge}
+                ORDER BY o.name
+                """,
+                (nid,),
+            ).fetchall()
+            link_ids["occupation_ids"] = [r["id"] for r in rows]
+            node["occupation_ids"] = link_ids["occupation_ids"]
         elif ntype == "occupation":
             rows = conn.execute(
                 f"""
