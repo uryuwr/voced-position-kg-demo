@@ -833,8 +833,12 @@ def student_profile(
     if parse or cached:
         prof = get_profile(user.user_id, use_cache=not parse)
     else:
+        # `len(a)` 会翻倍 —— a 是双键 map（见下方 canonical_levels 的说明）。
+        # 同一个数在两处各算一遍，这里是没走缓存的那条路，漏改就是「有时 5 有时 10」
+        from backend.userprofile.skill_display import canonical_levels as _canon
+
         prof = {"levels": dict(a), "source": "assessment" if a else "none",
-                "assessment_count": len(a), "memory_count": 0,
+                "assessment_count": len(_canon(a)), "memory_count": 0,
                 "meta": {"engine": "not_parsed"}}
 
     with connect() as conn:
@@ -866,6 +870,16 @@ def student_profile(
             for r in skill_rows
         ]
 
+    # `prof["levels"]` 是**双键**的（同一技能按 code 与名字各建一个键，好让匹配的
+    # 两条路径都命中）。那是给匹配用的形状，上屏前必须折叠回一项一技能，
+    # 否则每个技能列两遍、计数翻倍。折叠逻辑在 skill_display.canonical_levels
+    from backend.userprofile.skill_display import canonical_levels
+
+    _merged = [
+        {**x, "from": "assessment" if x["skill_key"] in a else "memory"}
+        for x in canonical_levels(prof["levels"])
+    ]
+
     return {
         "user": {"id": user.user_id, "name": user.user_name},
         "memory": memory,
@@ -875,13 +889,10 @@ def student_profile(
             "counts": {
                 "assessment": prof["assessment_count"],
                 "memory": prof["memory_count"],
-                "merged": len(prof["levels"]),
+                "merged": len(_merged),
             },
             "meta": prof.get("meta") or {},
-            "merged": [
-                {"skill_key": k, "level": v, "from": "assessment" if k in a else "memory"}
-                for k, v in sorted(prof["levels"].items(), key=lambda kv: -kv[1])
-            ],
+            "merged": _merged,
         },
         "assessment": [
             {

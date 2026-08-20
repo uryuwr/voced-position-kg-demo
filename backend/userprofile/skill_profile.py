@@ -154,11 +154,15 @@ def get_profile(user_id: str, *, use_cache: bool = True) -> dict[str, Any]:
     else:
         source = "none"
 
+    # **计数要先折叠双键**：`a`/`m` 里同一技能有 code 与名字两个键（匹配需要），
+    # 直接 len() 会让「已测 5 个技能」显示成 10。见 skill_display.canonical_levels
+    from backend.userprofile.skill_display import canonical_levels
+
     data = {
         "levels": levels,
         "source": source,
-        "assessment_count": len(a),
-        "memory_count": len(m),
+        "assessment_count": len(canonical_levels(a)),
+        "memory_count": len(canonical_levels(m)),
         "meta": meta,
     }
     _store(user_id, data)

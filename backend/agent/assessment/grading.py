@@ -49,6 +49,8 @@ def grade_choice(question: dict[str, Any], answer: Any) -> dict[str, Any]:
     if not picked:
         return {
             "skill_key": question.get("skill_key"),
+        "skill_name": question.get("skill_name") or question.get("skill_key"),
+            "skill_name": question.get("skill_name") or question.get("skill_key"),
             "type": "choice",
             "level": None,
             "invalid": True,
@@ -56,6 +58,7 @@ def grade_choice(question: dict[str, Any], answer: Any) -> dict[str, Any]:
         }
     return {
         "skill_key": question.get("skill_key"),
+        "skill_name": question.get("skill_name") or question.get("skill_key"),
         "category": question.get("category"),
         "type": "choice",
         "level": int(picked.get("level") or 0) or None,

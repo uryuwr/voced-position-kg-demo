@@ -136,9 +136,13 @@ def _build_radar(tested_rows: list[dict[str, Any]]) -> dict[str, Any]:
     def _avg(v: list[float]) -> int:
         return round(sum(v) / len(v)) if v else 0
 
+    from backend.kg.pg_store.skill_taxonomy import name_of as _cat_name
+
     return {
         "axis_type": "category",
-        "categories": order,
+        # 轴标签是给人看的：`order` 里是分类 **code**（TECH / OPERATE …），
+        # 直接上轴就是一圈英文缩写。字典见 kg_skill_category，只能从 name_of 取
+        "categories": [_cat_name(c) or c for c in order],
         "series": [
             {"key": "user", "name": "学员实测能力", "scores": [_avg(acc[c]["user"]) for c in order]},
             {"key": "required", "name": "岗位标准要求", "scores": [_avg(acc[c]["req"]) for c in order]},

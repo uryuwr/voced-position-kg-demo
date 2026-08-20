@@ -59,7 +59,7 @@ def resolve_names(codes: Iterable[str], conn: Any | None = None) -> dict[str, st
     return out
 
 
-def display_name(raw: str | None, name_map: dict[str, str]) -> str:
+def display_name(raw: str | None, name_map: dict[str, str]) -> str:  # noqa: D401
     """展示名：是 code 就查表，查不到或本来就是名字就原样用。
 
     查不到时回落到 code 而不是留空 —— 指向已删技能的历史画像项仍要看得见，
@@ -92,6 +92,28 @@ def profile_levels(rows: Iterable[dict[str, Any]], conn: Any | None = None) -> d
         for key in {v, names.get(v) or v}:
             out[key] = max(out.get(key, 0), lv)
     return out
+
+
+def canonical_levels(levels: dict[str, int], conn: Any | None = None) -> list[dict[str, Any]]:
+    """双键画像 map → **一项一技能**的列表 `[{skill_key, skill_name, level}]`。
+
+    `profile_levels` 故意给同一技能建两个键（code 与名字），那是**给匹配用的形状**：
+    测评行按 code 精确命中、简历行按名字模糊命中，两条路都要喂到。但凡是拿它
+    **计数或上屏**的地方都得先折叠回来 —— 否则每个技能出现两遍，
+    `/v1/student/profile` 的 `counts.merged` 与 `counts.assessment` 曾双双翻倍
+    （10 个技能显示 20），且 code 那一项没有展示名。
+
+    折叠规则：code 键保留并配上展示名；名字键若只是某个 code 键的别名就丢掉；
+    没有对应 code 的自由文本技能（简历/对话来的）原样保留，此时
+    `skill_key` 与 `skill_name` 是同一个值。
+    """
+    code2name = resolve_names([k for k in levels if is_valid_key(k)], conn=conn)
+    alias = set(code2name.values())
+    return [
+        {"skill_key": k, "skill_name": code2name.get(k) or k, "level": v}
+        for k, v in sorted(levels.items(), key=lambda kv: -kv[1])
+        if is_valid_key(k) or k not in alias
+    ]
 
 
 def normalize_stored_report_skills(rep: dict[str, Any], conn) -> None:
@@ -147,11 +169,21 @@ def normalize_stored_report_skills(rep: dict[str, Any], conn) -> None:
         if str(x.get("skill_key") or "").strip()
         and not is_valid_key(str(x.get("skill_key") or "").strip())
     }
+    def _name_missing(x: dict[str, Any]) -> bool:
+        """名字算不算缺 —— **空、或本身就是个 code，都算缺**。
+
+        只判空是不够的：测评链路曾把 code 写进 skill_name（源头
+        `service.load_context` 漏挑字段），落库快照里那一格非空但装的是
+        `SKxxxxxxxxxx`，于是修补器认为「有名字」直接放过。这条口径要和
+        `scripts/verify_skill_name_exposed.py` 的判据一致：名字字段不能是 code。
+        """
+        nm = str(x.get("skill_name") or "").strip()
+        return (not nm) or bool(is_valid_key(nm) and nm.startswith("SK"))
+
     need_name_codes = {
         str(x.get("skill_key") or "").strip()
         for x in rows
-        if is_valid_key(str(x.get("skill_key") or "").strip())
-        and not str(x.get("skill_name") or "").strip()
+        if is_valid_key(str(x.get("skill_key") or "").strip()) and _name_missing(x)
     }
 
     name2key: dict[str, str] = {}
@@ -170,12 +202,26 @@ def normalize_stored_report_skills(rep: dict[str, Any], conn) -> None:
                 name2key.setdefault(r["nm"], r["k"])
                 key2name.setdefault(r["k"], r["nm"])
 
+    # 雷达轴：落库快照里存的是**分类 code**（TECH / OPERATE）或 skill code，
+    # 冻结时就那样了，`report.py` 的修复只对新生成的报告生效。轴标签是给人看的，
+    # 这里一并换成展示名 —— 不换的话图上是一圈英文缩写。
+    radar = rep.get("radar")
+    if isinstance(radar, dict) and isinstance(radar.get("categories"), list):
+        cats = [str(c or "") for c in radar["categories"]]
+        if radar.get("axis_type") == "category":
+            from backend.kg.pg_store.skill_taxonomy import name_of as _cat_name
+
+            radar["categories"] = [(_cat_name(c) or c) for c in cats]
+        else:
+            _m = resolve_names(cats, conn=conn)
+            radar["categories"] = [display_name(c, _m) for c in cats]
+
     for x in rows:
         k = str(x.get("skill_key") or "").strip()
         if not k:
             continue
         if is_valid_key(k):
-            if not str(x.get("skill_name") or "").strip():
+            if _name_missing(x):
                 x["skill_name"] = key2name.get(k) or k
             continue
         # 老形态：key 就是名字

@@ -26,6 +26,7 @@ python -X utf8 scripts/verify_skill_name_exposed.py       # 出参有 code 必�
 python -X utf8 scripts/verify_skill_key.py                # skill_key 是 code、改名不换 key
 python -X utf8 scripts/verify_draft_leak.py               # 草稿不泄漏到学员端
 python -X utf8 scripts/verify_draft_closure_4dim.py       # 四维：编辑→草稿→前台不变→发布→前台变
+python -X utf8 scripts/verify_question_pairing.py         # 模型产出能对回技能，没静默降级成模板题
 python -X utf8 scripts/verify_delete_with_draft.py        # 删除遇草稿不 500、不留孤儿草稿
 ```
 
@@ -112,6 +113,14 @@ pipelines/  旧路径 shim，勿写新逻辑
 **id 生成**用 `kg/provenance.py` 的 `make_node_id` / `make_edge_id`，不要手拼。每条节点/边必带 `source_url` + `license` + `confidence` + `fetched_at`。
 
 **LLM 一律可降级**：`agent/` 下每处调模型都有规则兜底路径（`llm_ready()` 为 false 时生效），内测环境网关常为空。新增 AI 功能必须带降级分支，且流式与非流式两条路径产出同样的事件序列（见 `agent/stream.py`）。结构化产出类任务（出题、判分）用 `get_chat_model(fast=True)` 关闭深度思考。
+
+**降级是静默的，所以要有闸门盯着**——降级路径本身没错，错在「本该走模型却整批降级」看不出来：HTTP 200、日志无异常，只有 `meta.engine` 从 `llm` 变成 `llm_partial`、`fallback_count` 等于题数，题目从情境判断悄悄变成「你在 X 上处于哪一档」的自评模板。2026-08-20 这么坏了一天：出题提示词里给模型看的是**技能名**（喂 `SKa1fa1d005d` 进去它会照着哈希编题），而匹配还在 `gen.get(code)`，模型回的自然是它看到的名字，于是每批产出全对不上。当时抽查的两个岗位都命中题库缓存，看起来一切正常。三条：
+
+- **给模型看的标识和拿去查的标识必须是同一个**。现在靠 `bank._pair_generated` 三路匹配（`no` 序号 → 名字/code → 按出现顺序），提示词里带 `[序号]` 做锚点。
+- **题库缓存只缓存内容，身份归当次请求**（`bank._from_cache`）。`biz_assessment_item.payload` 是出题那一刻整个题目 dict 的快照，里面也有一份 `skill_key`；迁移脚本刷了列没刷 JSON，命中缓存就把中文 key、空 skill_name 原样吐给学员端。同形的还有改档后缓存带着旧 `required_level`。存量修复：`scripts/fix_assessment_payload_skill.py`。
+- 闸门 `scripts/verify_question_pairing.py`：六种回话形态的匹配 + 真出一批题断言 `fallback_count=0`（**必须 `use_cache=False`**，命中缓存等于没验；无网关时明确报 SKIP 而不算通过）。
+
+**双键的画像 map 不能直接上屏**——`skill_display.profile_levels` 故意给同一技能建两个键（code 与名字），因为 `match_with_profile._user_level_for` 有两条匹配路径（测评行按 code 精确、简历行按名字模糊）。凡拿它**计数或渲染**的地方都要先过 `canonical_levels` 折叠，否则每个技能列两遍、计数翻倍（`/v1/student/profile` 的 `counts.assessment` 与 `counts.merged` 曾双双翻倍，5 个技能显示 10）。同一个数在路由里有走缓存、不走缓存两条路，**两处都要改**，漏一处的症状是「有时 5 有时 10」。
 
 **鉴权**：UC MAC Token 中间件写 ContextVar，路由用 `Depends(require_auth_user)` 取。签名校验用 `scope["raw_path"]`（保留 %XX 编码），不能用已解码的 `request.url.path`。用户中心不在本服务，只认 Token 并冗余 `user_id`/`user_name`。
 

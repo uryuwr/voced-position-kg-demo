@@ -2622,7 +2622,8 @@ industry 节点 + parent_of 边（父→子）。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `skill_key` | string | 是 | 技能聚合主键 |
+| `skill_key` | string | 是 | 技能聚合主键（ASCII code） |
+| `skill_name` | string |  | 展示名 —— **题干与列表都显示这个**。`skill_key` 是 ASCII code（SK0123456789），拿它渲染就是一串哈希 |
 | `level` | integer | 是 | 推断档位 1–5（≥1.0，≤5.0） |
 
 ### ParsedUserSkill
@@ -2814,6 +2815,8 @@ industry 节点 + parent_of 边（父→子）。
 | --- | --- | --- | --- |
 | `skill_key` | string | 是 | 技能聚合主键 |
 | `prereq_skill_key` | string | 是 | 先修技能的聚合主键 |
+| `skill_name` | string |  | 技能展示名 |
+| `prereq_skill_name` | string |  | 先修技能展示名 |
 | `region` | string | 是 | 地区，如 CN |
 | `evidence` | string |  | 判定依据 |
 | `confidence` | string |  | 来源等级：manual_seed / official / derived / ai_inferred |
@@ -2978,6 +2981,7 @@ industry 节点 + parent_of 边（父→子）。
 | `type` | `choice` \| `open` | 是 | choice=情景判断选择题（当场判分）；open=开放问答题（后台判分） |
 | `variant` | string |  | 题目来源变体：sjt=模型生成的情景判断题；self_report=网关不可用时的自评降级题（考核力弱，报告里据此标注）；generic=通用开放题 |
 | `skill_key` | string |  | 考查的技能（聚合主键，非某一档节点 id） |
+| `skill_name` | string |  | 展示名 —— **题干与列表都显示这个**。`skill_key` 是 ASCII code（SK0123456789），拿它渲染就是一串哈希 |
 | `category` | string |  | 技能大类，雷达图按它聚合 |
 | `required_level` | integer |  | 岗位对该技能要求的档位 1–5，用于判定是否达标 |
 | `weight` | number |  | 该技能在岗位 requires 中的权重，Σ≈1 |

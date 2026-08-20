@@ -26,6 +26,17 @@ def list_prereqs(skill_key: str, *, region: str | None = None) -> list[dict[str,
         if hasattr(d.get("created_at"), "isoformat"):
             d["created_at"] = d["created_at"].isoformat()
         out.append(d)
+    # 两端都是 code，出参里必须配同层展示名（否则管理台的先修列表是两串哈希）。
+    # 一次批量查，不做 N+1；查不到就退回 code —— 指向已删技能的历史先修边仍要看得见
+    if out:
+        from backend.userprofile.skill_display import display_name, resolve_names
+
+        m = resolve_names(
+            [d.get("skill_key") for d in out] + [d.get("prereq_skill_key") for d in out]
+        )
+        for d in out:
+            d["skill_name"] = display_name(d.get("skill_key"), m)
+            d["prereq_skill_name"] = display_name(d.get("prereq_skill_key"), m)
     return out
 
 

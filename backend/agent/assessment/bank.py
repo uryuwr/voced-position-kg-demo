@@ -332,10 +332,16 @@ def fallback_choice(item: dict[str, Any]) -> dict[str, Any]:
         "type": "choice",
         "variant": "self_report",
         "skill_key": item.get("skill_key"),
+        # 出题对象直接经 SSE 吐给前端，名字要跟着走
+        "skill_name": item.get("skill_name") or item.get("skill_key"),
         "category": item.get("category"),
         "required_level": req or None,
         "weight": item.get("weight"),
-        "prompt": f"在「{item.get('skill_key')}」上，哪一条最符合你目前的实际水平？",
+        # 题干里的技能名 —— 拿 code 拼出来是「在「SKa1fa1d005d」上…」
+        "prompt": (
+            f"在「{item.get('skill_name') or item.get('skill_key')}」上，"
+            f"哪一条最符合你目前的实际水平？"
+        ),
         "options": [
             {
                 "value": i + 1,
@@ -352,11 +358,13 @@ def fallback_open(item: dict[str, Any]) -> dict[str, Any]:
         "type": "open",
         "variant": "generic",
         "skill_key": item.get("skill_key"),
+        "skill_name": item.get("skill_name") or item.get("skill_key"),
         "category": item.get("category"),
         "required_level": (as_level(item.get("required_level")) or 0) or None,
         "weight": item.get("weight"),
         "prompt": (
-            f"请具体描述一次你在「{item.get('skill_key')}」上的实际经历："
+            f"请具体描述一次你在"
+            f"「{item.get('skill_name') or item.get('skill_key')}」上的实际经历："
             "任务是什么、你用了什么方法、结果如何（有数据请一并给出）。"
         ),
         "rubric": ["有具体任务背景", "方法/步骤可复述", "结果可验证（最好有量化）"],
@@ -371,12 +379,14 @@ _SYS_CHOICE = """你是职业技能考核命题专家。为给定的每个技能
 每题恰好4个选项、每项≤35字，标注 level（该选项体现的能力档位，同题内互不相同），
 都要像合理答案（不要有荒谬项）；level 越高越体现独立性、系统性与前瞻性。
 档位标尺：{anchors}
-只输出JSON：{{"items":[{{"skill_key":"...","prompt":"...","options":[{{"level":1,"text":"..."}},{{"level":2,"text":"..."}},{{"level":3,"text":"..."}},{{"level":5,"text":"..."}}]}}]}}"""
+输入里每个技能前面有 [序号]，每道题必须回同一个 no，技能一个不漏、顺序保持一致。
+只输出JSON：{{"items":[{{"no":1,"skill":"技能名","prompt":"...","options":[{{"level":1,"text":"..."}},{{"level":2,"text":"..."}},{{"level":3,"text":"..."}},{{"level":5,"text":"..."}}]}}]}}"""
 
 _SYS_OPEN = """你是职业技能考核命题专家。为给定的每个技能各出一道开放追问题。
 题干≤70字，针对该技能的关键难点追问具体经历或方案，要能区分真做过与只听说过。
 每题给3条 rubric（评分要点），每条是一个可判断的观察点、≤20字。
-只输出JSON：{{"items":[{{"skill_key":"...","prompt":"...","rubric":["...","...","..."]}}]}}"""
+输入里每个技能前面有 [序号]，每道题必须回同一个 no，技能一个不漏、顺序保持一致。
+只输出JSON：{{"items":[{{"no":1,"skill":"技能名","prompt":"...","rubric":["...","...","..."]}}]}}"""
 
 
 def _extract(raw: str) -> list[dict[str, Any]]:
@@ -410,7 +420,9 @@ def _extract(raw: str) -> list[dict[str, Any]]:
             if depth == 0 and buf:
                 try:
                     obj = json.loads(buf)
-                    if isinstance(obj, dict) and obj.get("skill_key"):
+                    # 认 prompt 而不是认 skill_key：标识字段改成 no/skill 之后，
+                    # 只认 skill_key 会把截断恢复这条路整条废掉（且不报错）
+                    if isinstance(obj, dict) and obj.get("prompt"):
                         out.append(obj)
                 except json.JSONDecodeError:
                     pass
@@ -422,9 +434,13 @@ def _extract(raw: str) -> list[dict[str, Any]]:
 
 def _skill_lines(items: list[dict[str, Any]], *, with_context: str = "") -> str:
     lines = []
-    for it in items:
+    for n, it in enumerate(items, 1):
         line = (
-            f"- {it.get('skill_key')}｜大类：{it.get('category') or '未分类'}"
+            # **给模型看的是序号 + 技能名，不是 code**。喂 `SKa1fa1d005d` 进去，
+            # 生成的题目就会围着一串哈希写，而这类错不报错、只是题目莫名其妙。
+            # 序号是回对的锚点 —— 见 `_pair_generated`
+            f"- [{n}] {it.get('skill_name') or it.get('skill_key')}"
+            f"｜大类：{it.get('category') or '未分类'}"
             f"｜岗位要求档：L{it.get('required_level') or '?'}"
         )
         hint = _requirement_hint(it)
@@ -432,6 +448,74 @@ def _skill_lines(items: list[dict[str, Any]], *, with_context: str = "") -> str:
             line += f"\n  国标该档描述：{hint}"
         lines.append(line)
     return "\n".join(lines) + (f"\n\n{with_context}" if with_context else "")
+
+
+def _pair_generated(
+    items: list[dict[str, Any]], gens: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """把模型产出**按位对回**技能项，返回与 `items` 等长的列表（对不上的位置是 `{}`）。
+
+    这里曾经只有一行 `gen.get(str(it["skill_key"]))`，而提示词给模型看的是**技能名**
+    （喂 code 进去它会照着 `SKa1fa1d005d` 编题），JSON 模板却要它回 `skill_key` ——
+    模型回的自然是它看到的那个名字，于是**每一批 LLM 产出全部对不上**，逐题落到
+    自评模板题。症状极轻：`meta.engine='llm_partial'`、`fallback_count=N`，
+    HTTP 200、日志无异常，只是题目从情境判断变成「你在 X 上处于哪一档」。
+
+    所以三路都认，按可靠性排序：
+
+    1. `no` —— 提示词里 `[序号]` 的锚点，与语言无关，最不容易错
+    2. `skill` / `skill_key` / `name` 里的**名字或 code**，含规范化后互相包含
+    3. 剩下的按**出现顺序**配 —— 模型基本按输入顺序作答，且题干里通常带着技能名，
+       配错了肉眼能看出来；比整批降级成模板题划算
+    """
+
+    def norm(s: Any) -> str:
+        return re.sub(r"[\s·、,，/（）()【】\[\]-]+", "", str(s or "")).casefold()
+
+    by_no: dict[str, int] = {str(n): i for i, n in enumerate(range(1, len(items) + 1))}
+    by_id: dict[str, int] = {}
+    for i, it in enumerate(items):
+        for v in (it.get("skill_key"), it.get("skill_name")):
+            if v and norm(v):
+                by_id.setdefault(norm(v), i)
+
+    out: list[dict[str, Any]] = [{} for _ in items]
+    leftover: list[dict[str, Any]] = []
+    for g in gens:
+        if not isinstance(g, dict):
+            continue
+        idx = None
+        no = g.get("no")
+        if no is not None and str(no).strip() in by_no:
+            cand = by_no[str(no).strip()]
+            if not out[cand]:
+                idx = cand
+        if idx is None:
+            for field in ("skill", "skill_key", "skill_name", "name"):
+                key = norm(g.get(field))
+                if not key:
+                    continue
+                cand = by_id.get(key)
+                if cand is None:
+                    # 名字被改写过（加了后缀、少了括号）时的互相包含兜底
+                    for k, v in by_id.items():
+                        if len(k) >= 3 and (k in key or key in k):
+                            cand = v
+                            break
+                if cand is not None and not out[cand]:
+                    idx = cand
+                    break
+        if idx is None:
+            leftover.append(g)
+        else:
+            out[idx] = g
+
+    for g in leftover:
+        for i in range(len(out)):
+            if not out[i]:
+                out[i] = g
+                break
+    return out
 
 
 def _norm_choice(gen: dict[str, Any], item: dict[str, Any]) -> dict[str, Any] | None:
@@ -456,6 +540,7 @@ def _norm_choice(gen: dict[str, Any], item: dict[str, Any]) -> dict[str, Any] | 
         "type": "choice",
         "variant": "sjt",
         "skill_key": item.get("skill_key"),
+        "skill_name": item.get("skill_name") or item.get("skill_key"),
         "category": item.get("category"),
         "required_level": (as_level(item.get("required_level")) or 0) or None,
         "weight": item.get("weight"),
@@ -473,6 +558,7 @@ def _norm_open(gen: dict[str, Any], item: dict[str, Any]) -> dict[str, Any] | No
         "type": "open",
         "variant": "sjt",
         "skill_key": item.get("skill_key"),
+        "skill_name": item.get("skill_name") or item.get("skill_key"),
         "category": item.get("category"),
         "required_level": (as_level(item.get("required_level")) or 0) or None,
         "weight": item.get("weight"),
@@ -480,6 +566,29 @@ def _norm_open(gen: dict[str, Any], item: dict[str, Any]) -> dict[str, Any] | No
         "rubric": rubric[:3] or ["有具体任务背景", "方法可复述", "结果可验证"],
         "min_chars": 80,
     }
+
+
+def _from_cache(payload: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+    """缓存命中：**题干与选项用缓存的，身份字段一律用本次上下文的**。
+
+    缓存 payload 是出题当时冻结的整个题目 dict，里面也带着那一刻的 skill_key。
+    2026-08-19 skill_key 改成 ASCII code 时，迁移脚本刷了 `biz_assessment_item`
+    的 `skill_key` **列**、没动 `payload` 里的 JSON —— 73 条缓存里 58 条
+    `payload.skill_key` 还是中文名，且全都没有 `skill_name`。原样吐出来的后果有两个：
+    学员端看到 `skill_name=null`；前端拿 `skill_key` 和技能构成对比，一边中文一边
+    code，**匹配静默失败**（「我的等级」整列空白，不报错）。
+
+    所以这里划一条线：**身份归请求，内容归缓存**。这样缓存里冻结的是哪一代形态都
+    不会漏出去，也顺带修掉「改档后缓存还带着旧 required_level」这类同形状的问题
+    （改档 = 删旧边建新边，要求档位是当下的边说的，不是出题时说的）。
+    """
+    q = dict(payload)
+    q["skill_key"] = item.get("skill_key")
+    q["skill_name"] = item.get("skill_name") or item.get("skill_key")
+    q["category"] = item.get("category")
+    q["required_level"] = (as_level(item.get("required_level")) or 0) or None
+    q["weight"] = item.get("weight")
+    return q
 
 
 def generate_batch(
@@ -507,7 +616,11 @@ def generate_batch(
 
         hit = load_choice_items(occ_id, [str(i.get("skill_key")) for i in pending_choice])
         if hit:
-            out += [dict(hit[str(i.get("skill_key"))]) for i in pending_choice if str(i.get("skill_key")) in hit]
+            out += [
+                _from_cache(hit[str(i.get("skill_key"))], i)
+                for i in pending_choice
+                if str(i.get("skill_key")) in hit
+            ]
             pending_choice = [i for i in pending_choice if str(i.get("skill_key")) not in hit]
             meta["cached"] = len(out)
 
@@ -525,9 +638,9 @@ def generate_batch(
                     [("system", _SYS_CHOICE.format(anchors=anchors)), ("user", user)],
                     max_tokens=1200 * max(1, len(pending_choice)),
                 )
-                gen = {str(g.get("skill_key") or ""): g for g in _extract(raw)}
-                for it in pending_choice:
-                    q = _norm_choice(gen.get(str(it.get("skill_key")), {}), it)
+                paired = _pair_generated(pending_choice, _extract(raw))
+                for it, g in zip(pending_choice, paired, strict=True):
+                    q = _norm_choice(g, it)
                     if q is None:
                         q, miss = fallback_choice(it), miss + 1
                     out.append(q)
@@ -543,7 +656,8 @@ def generate_batch(
                         str(g.get("skill_key")) == str(i.get("skill_key")) for i in want_open
                     ):
                         ctx += (
-                            f"学员在「{g.get('skill_key')}」的选择显示其做法为："
+                            # 喂给模型的是**名字**：给 code 它会照着 SKxxxxxxxxxx 编题
+                            f"学员在「{g.get('skill_name') or g.get('skill_key')}」的选择显示其做法为："
                             f"{(g.get('picked_text') or '')[:80]}（判为L{g.get('level')}）。"
                             "请针对这个层级追问，验证其真实性。\n"
                         )
@@ -555,9 +669,9 @@ def generate_batch(
                     [("system", _SYS_OPEN), ("user", user)],
                     max_tokens=800 * max(1, len(want_open)),
                 )
-                gen = {str(g.get("skill_key") or ""): g for g in _extract(raw)}
-                for it in want_open:
-                    q = _norm_open(gen.get(str(it.get("skill_key")), {}), it)
+                paired = _pair_generated(want_open, _extract(raw))
+                for it, g in zip(want_open, paired, strict=True):
+                    q = _norm_open(g, it)
                     if q is None:
                         q, miss = fallback_open(it), miss + 1
                     out.append(q)

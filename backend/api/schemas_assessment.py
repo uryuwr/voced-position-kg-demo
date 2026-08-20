@@ -41,6 +41,7 @@ class QuestionOut(BaseModel):
         ),
     )
     skill_key: str | None = Field(None, description="考查的技能（聚合主键，非某一档节点 id）")
+    skill_name: str | None = Field(None, description="展示名 —— **题干与列表都显示这个**。`skill_key` 是 ASCII code（SK0123456789），拿它渲染就是一串哈希")
     category: str | None = Field(None, description="技能大类，雷达图按它聚合")
     required_level: int | None = Field(
         None, ge=1, le=5, description="岗位对该技能要求的档位 1–5，用于判定是否达标"
@@ -123,7 +124,8 @@ class AnswerRecordOut(BaseModel):
 class ParsedSkill(BaseModel):
     """简历解析推断出的一项技能档位。"""
 
-    skill_key: str = Field(..., description="技能聚合主键")
+    skill_key: str = Field(..., description="技能聚合主键（ASCII code）")
+    skill_name: str | None = Field(None, description="展示名 —— **题干与列表都显示这个**。`skill_key` 是 ASCII code（SK0123456789），拿它渲染就是一串哈希")
     level: int = Field(..., ge=1, le=5, description="推断档位 1–5")
 
 

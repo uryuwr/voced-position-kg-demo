@@ -440,6 +440,10 @@ class PrereqOut(BaseModel):
 
     skill_key: str = Field(..., description="技能聚合主键")
     prereq_skill_key: str = Field(..., description="先修技能的聚合主键")
+    # 两个 key 都是 ASCII code，各配一个同层展示名 —— 少了这两个声明，
+    # 数据层给了也会被 Pydantic 静默丢弃，管理台先修列表就是两串哈希
+    skill_name: str | None = Field(None, description="技能展示名")
+    prereq_skill_name: str | None = Field(None, description="先修技能展示名")
     region: str = Field(..., description="地区，如 CN")
     evidence: str | None = Field(None, description="判定依据")
     # **是文本不是分数**：这个项目的 confidence 一律是来源等级

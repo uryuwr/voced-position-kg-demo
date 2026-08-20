@@ -43,10 +43,35 @@ def _from_row(r: dict[str, Any]) -> dict[str, Any]:
         "type": r["type"],
         "variant": r["variant"],
         "skill_key": r["skill_key"],
+        # skill_name 只在 payload 里（表没有这一列），所以**不能**在这里显式覆盖 ——
+        # `**payload` 已经把它带进来了，这里再写一遍 None 就把它抹掉
         "category": r["category"],
         "required_level": r["required_level"],
         "weight": r["weight"],
     }
+
+
+def _fill_names(qs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """给读回来的题补展示名 —— **一次批量查，不做 N+1**。
+
+    `skill_name` 只活在 `payload` 里（表没有这一列），而迁移前落库的题目 payload
+    里根本没有这个字段，读回来就是 `skill_name=null`。落库快照改不动（那是当时冻结
+    的事实），所以在读侧补：按 code 查一次名字表，查不到就退回 code —— 指向已删技能
+    的历史题目仍要看得见，显示成一串 code 也比整行空白好排查。
+
+    值本来就是中文名的老题（key 还没迁的那批）走 `display_name` 会原样返回，
+    正好也是对的展示名。
+    """
+    miss = [str(q.get("skill_key") or "") for q in qs if not str(q.get("skill_name") or "").strip()]
+    if not miss:
+        return qs
+    from backend.userprofile.skill_display import display_name, resolve_names
+
+    m = resolve_names(miss)
+    for q in qs:
+        if not str(q.get("skill_name") or "").strip():
+            q["skill_name"] = display_name(q.get("skill_key"), m) or q.get("skill_key")
+    return qs
 
 
 def save_questions(session_id: int, questions: list[dict[str, Any]], start_idx: int) -> int:
@@ -76,7 +101,7 @@ def list_questions(session_id: int) -> list[dict[str, Any]]:
             "SELECT * FROM biz_assessment_question WHERE session_id=%s ORDER BY idx",
             (session_id,),
         ).fetchall()
-    return [_from_row(r) for r in rows]
+    return _fill_names([_from_row(r) for r in rows])
 
 
 def get_question(session_id: int, idx: int) -> dict[str, Any] | None:
@@ -85,7 +110,7 @@ def get_question(session_id: int, idx: int) -> dict[str, Any] | None:
             "SELECT * FROM biz_assessment_question WHERE session_id=%s AND idx=%s",
             (session_id, idx),
         ).fetchone()
-    return _from_row(r) if r else None
+    return _fill_names([_from_row(r)])[0] if r else None
 
 
 def question_count(session_id: int) -> int:

@@ -725,6 +725,9 @@ class MergedSkillEntry(BaseModel):
     """合并后的一项技能档位，标明证据来自哪一侧。"""
 
     skill_key: str = Field(..., description="技能聚合主键")
+    # 出参里有 code 就必须配同层展示名（闸门 scripts/verify_skill_name_exposed.py）。
+    # 简历/对话来的自由文本技能没有 code，那时 skill_key 与 skill_name 是同一个值
+    skill_name: str | None = Field(None, description="技能展示名")
     level: int = Field(..., ge=1, le=5, description="档位 1–5")
     from_: Literal["assessment", "memory"] = Field(
         ...,

@@ -334,6 +334,18 @@
       return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }
 
+    /* 技能 code → 展示名的页面级字典。
+       先修（`prereqs`）出参里只有一串 code，而它可以指向本岗位技能集之外的技能
+       （见 pg_store/skill_prereq.prereq_map 的说明），所以没法只靠同一份 skills[]
+       查名字。凡渲染过技能就往字典里记一笔，先修就能显示成名字；查不到才退回 code。 */
+    const SKILL_NAMES = {};
+    function noteSkillNames(list) {
+      (list || []).forEach((s) => {
+        if (s && s.skill_key && s.skill_name) SKILL_NAMES[s.skill_key] = s.skill_name;
+      });
+    }
+    function skillLabel(key) { return SKILL_NAMES[key] || key; }
+
     /* ---------- auth ---------- */
     async function bootAuth() {
       const main = $("main");
@@ -628,6 +640,7 @@
       }
       const h = d.node || {};
       const weighted = !!d.weighted;
+      noteSkillNames(d.items || d.skills);
 
       // 头部：所属行业 / 关联专业 / 职级 / 薪资 / 状态（原型构成页上方）
       const headRows = `<div class="kv-grid">` + [
@@ -671,7 +684,7 @@
           : `<span class="muted">—</span>`;
         return `<tr>
           <td>${esc(it.skill_name || it.skill_key)}<div class="muted">${(it.prereqs || []).length
-                ? "先修：" + (it.prereqs || []).map(esc).join("、")
+                ? "先修：" + (it.prereqs || []).map((k) => esc(skillLabel(k))).join("、")
                 : "无先修"}</div></td>
           <td>${btns}${reqLine}</td>
           <td>${wCell}</td>
@@ -904,6 +917,7 @@
         body += kv("所属行业", (d.industries || []).map((i) => esc(i.name)).join("、") || "—");
         body += kv("关联专业", (d.majors || []).map((i) => esc(i.name)).join("、") || "—");
         body += kv("层级", n.level != null ? "L" + n.level : "—");
+        noteSkillNames(d.skills);
         body += `<h3>技能构成（${(d.skills || []).length}）<span class="muted"> · 权重和 ${d.weight_sum}</span></h3>`;
         body += (d.skills || []).length
           ? `<table class="data"><tr><th>技能</th><th>要求等级</th><th>权重</th><th>类别</th><th>先修</th><th>L1–L5</th></tr>` +
@@ -912,7 +926,7 @@
                    <td>L${sk.required_level ?? "-"}</td>
                    <td>${sk.weight_pct != null ? sk.weight_pct + "%" : "—"}</td>
                    <td class="muted">${esc(sk.category_name || sk.category || "待归类")}</td>
-                   <td class="muted">${(sk.prereqs || []).length ? esc(sk.prereqs.join("、")) : "无先修"}</td>
+                   <td class="muted">${(sk.prereqs || []).length ? sk.prereqs.map((k) => esc(skillLabel(k))).join("、") : "无先修"}</td>
                    <td>${(sk.levels || []).map((g) => g.required ? "■" : (g.exists ? "□" : "·")).join("")}</td>
                </tr>`).join("") + `</table>`
           : `<div class="muted">无</div>`;
@@ -1209,7 +1223,7 @@
               : `<div class="empty">暂无分档节点</div>`;
             const prereqs = detail.prerequisites || [];
             const preHtml = prereqs.length
-              ? `<p class="muted">先修：${prereqs.map((p) => esc(p.name || p.skill_key)).join("、")}</p>`
+              ? `<p class="muted">先修：${prereqs.map((p) => esc(p.skill_name || p.name || skillLabel(p.skill_key))).join("、")}</p>`
               : `<p class="muted">先修：无</p>`;
             openModal(`
               <h2>技能档位 · ${esc(detail.name || key)} ${statusTag(recordStatusOf(detail))}</h2>
@@ -1845,7 +1859,7 @@ L1–L5 全部档位与关联边会一起归档（软删，可恢复）。${warn
       }).join("");
       // 先修：{key, name} 一起留着 —— key 提交用、name 显示用
       const preList = (detail?.prerequisites || [])
-        .map((p) => ({ key: p.skill_key, name: p.name || p.skill_key }))
+        .map((p) => ({ key: p.skill_key, name: p.skill_name || p.name || skillLabel(p.skill_key) }))
         .filter((x) => x.key);
       // 编辑时回显原分类；新建默认落兜底类，让人主动去选而不是被塞进某一类
       const curCat = seed.category || detail?.category

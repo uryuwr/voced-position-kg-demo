@@ -63,6 +63,11 @@ def load_context(session_id: int, occupation_id: str) -> dict[str, Any]:
     items = [
         {
             "skill_key": i.get("skill_key"),
+            # **名字必须在这里就带上**：这是整条测评链路的第一步，漏了它，
+            # 出题 / 判分 / 报告全程只有 code，最后落库的报告快照里
+            # skill_name 是一串 SKxxxxxxxxxx，而快照是冻结的、改不回来。
+            # `get_composition` 本来就给了这个字段。
+            "skill_name": i.get("skill_name") or i.get("skill_key"),
             "category": i.get("category"),
             "required_level": i.get("selected_level"),
             "weight": i.get("weight"),
@@ -254,6 +259,7 @@ def build_session_report(session_id: int, *, user_id: str, occupation_id: str) -
             **a,
             "type": q.get("type"),
             "skill_key": q.get("skill_key"),
+            "skill_name": q.get("skill_name") or q.get("skill_key"),
             "category": q.get("category"),
             "required_level": q.get("required_level"),
             "weight": q.get("weight"),
