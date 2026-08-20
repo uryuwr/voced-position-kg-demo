@@ -24,7 +24,7 @@ from typing import Any
 
 from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.config import attrs_level_int, edge_published, node_published
-from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
+from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL, SKILL_NAME_SQL
 from backend.kg.pg_store.skill_level_meta import label_map
 from backend.kg.pg_store.skill_taxonomy import name_of
 
@@ -119,6 +119,9 @@ def _latest_report(conn, user_id: str, occupation_id: str) -> dict[str, Any] | N
     rep["session_id"] = row["session_id"]
     rep["channel"] = row["channel"]
     rep["created_at"] = row["created_at"].isoformat() if row["created_at"] else None
+    from backend.userprofile.skill_display import normalize_stored_report_skills
+
+    normalize_stored_report_skills(rep, conn)
     return rep
 
 

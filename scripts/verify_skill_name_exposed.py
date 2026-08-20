@@ -48,9 +48,32 @@ from fastapi.testclient import TestClient  # noqa: E402
 from backend.api.main import app  # noqa: E402
 from backend.kg.pg_store.client import connect  # noqa: E402
 
+def _probe_uid() -> str:
+    """挑一个**库里真有数据**的用户。
+
+    原来固定用 uid=0，而那个用户没有任何测评快照、没有锁定目标 —— 于是
+    `/v1/student/goal/overview`、`/diagnosis/report` 这些读**落库历史数据**的接口
+    扫到的全是空壳，判据形同虚设。历史快照恰恰是最容易留着旧形态的地方：
+    迁移前落库的 27 份报告里 skill_key 存的是中文名（2026-08-19 那次改造）。
+    """
+    from backend.kg.pg_store.client import connect as _c
+
+    with _c() as c:
+        r = c.execute(
+            """
+            SELECT s.user_id FROM biz_diagnosis_result r
+            JOIN biz_diagnosis_session s ON s.id = r.session_id
+            WHERE s.user_id IS NOT NULL AND r.report_json ? 'items'
+            ORDER BY r.created_at DESC LIMIT 1
+            """
+        ).fetchone()
+        return str((r or {}).get("user_id") or "0")
+
+
+PROBE_UID = _probe_uid()
 cli = TestClient(
     app,
-    headers={"X-Test-Uid": "0", "X-Test-Uname": "nameprobe"},
+    headers={"X-Test-Uid": PROBE_UID, "X-Test-Uname": "nameprobe"},
     raise_server_exceptions=False,
 )
 
@@ -208,6 +231,8 @@ for p, ops in sorted((spec.get("paths") or {}).items()):
     for hpath, hcodes, hkeys in hits[:3]:
         bad.append((full, hpath or "(root)", hcodes, hkeys))
 
+print(f"探测用户 uid={PROBE_UID}（挑的是库里有测评快照的用户 —— "
+      f"用没数据的用户扫，读历史快照的接口全是空壳）")
 print(f"扫了 {checked} 个 GET 接口，跳过 {len(skipped_list)} 个：")
 for s in skipped_list:
     print(f"    - {s}")

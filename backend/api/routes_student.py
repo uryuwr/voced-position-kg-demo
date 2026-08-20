@@ -855,6 +855,16 @@ def student_profile(
             "FROM biz_user_skill WHERE user_id=%s ORDER BY level DESC, skill_name",
             (user.user_id,),
         ).fetchall()
+        # `skill_name` 列里测评来的行装的是 code（历史原因，见
+        # backend/userprofile/skill_display.py）—— 展示前换成中文名，
+        # 否则学员看到的是一串 SKxxxxxxxxxx
+        from backend.userprofile.skill_display import display_name, resolve_names
+
+        _nm = resolve_names([r["skill_name"] for r in skill_rows], conn=conn)
+        skill_rows = [
+            {**dict(r), "skill_name": display_name(r["skill_name"], _nm)}
+            for r in skill_rows
+        ]
 
     return {
         "user": {"id": user.user_id, "name": user.user_name},

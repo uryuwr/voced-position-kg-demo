@@ -161,11 +161,11 @@ def position_match(
             "SELECT skill_name, level, score FROM biz_user_skill WHERE user_id=%s",
             (user_id,),
         ).fetchall()
-    user_levels: dict[str, int] = {}
-    for r in urows:
-        nm = (r["skill_name"] or "").strip()
-        if nm:
-            user_levels[nm] = max(user_levels.get(nm, 0), int(r["level"] or 0))
+        # code 与名字都建键：测评行按 code 精确命中、简历/对话行按名字模糊命中，
+        # 两条路径都要喂到（见 backend/userprofile/skill_display.py 的说明）
+        from backend.userprofile.skill_display import profile_levels
+
+        user_levels = profile_levels([dict(r) for r in urows], conn=conn)
     return match_with_profile(occ, required, user_levels)
 
 
@@ -1099,6 +1099,15 @@ def me_summary(user_id: str, user_name: str) -> dict[str, Any]:
             "SELECT * FROM biz_user_skill WHERE user_id=%s ORDER BY updated_at DESC",
             (user_id,),
         ).fetchall()
+        # 测评来的行 `skill_name` 里装的是 code（历史原因，见
+        # backend/userprofile/skill_display.py）——展示前换成中文名
+        from backend.userprofile.skill_display import display_name, resolve_names
+
+        _snm = resolve_names([r["skill_name"] for r in skills], conn=conn)
+        skills = [
+            {**dict(r), "skill_name": display_name(r["skill_name"], _snm)}
+            for r in skills
+        ]
     return {
         "user_id": user_id,
         "user_name": user_name,
@@ -1714,6 +1723,14 @@ def get_diagnosis_report(
     rep = row.get("report_json") or {}
     if isinstance(rep, str):
         rep = json.loads(rep)
+    # **落库快照的第三个读入口**（另两个是 goal_overview._latest_report 与
+    # stages.py）。这里返回的是 report_json 原文，里面可能是迁移前的形态：
+    # skill_key 存中文名、没有 skill_name。不修补的话页面显示一串 code，
+    # 而且前端拿它和技能构成比对会静默失败（见 normalize_stored_report_skills）。
+    from backend.userprofile.skill_display import normalize_stored_report_skills
+
+    with connect() as _c:
+        normalize_stored_report_skills(rep, _c)
     return rep
 
 

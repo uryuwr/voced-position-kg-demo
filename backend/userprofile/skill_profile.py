@@ -61,12 +61,10 @@ def assessment_levels(user_id: str) -> dict[str, int]:
         rows = conn.execute(
             "SELECT skill_name, level FROM biz_user_skill WHERE user_id=%s", (user_id,)
         ).fetchall()
-    out: dict[str, int] = {}
-    for r in rows:
-        nm = (r["skill_name"] or "").strip()
-        if nm:
-            out[nm] = max(out.get(nm, 0), int(r["level"] or 0))
-    return out
+        from backend.userprofile.skill_display import profile_levels
+
+        # 同 biz_store 那处：code 与名字都建键，两条匹配路径都要喂到
+        return profile_levels([dict(r) for r in rows], conn=conn)
 
 
 def memory_levels(user_id: str) -> tuple[dict[str, int], dict[str, Any]]:
