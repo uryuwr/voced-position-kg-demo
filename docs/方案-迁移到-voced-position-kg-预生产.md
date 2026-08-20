@@ -218,6 +218,99 @@ LLM 三件套（网关 + 模型 + token）齐备、BTS 四件套齐备、`OPENQ_
 > 密码里含 `!`，URL 里合法、psycopg 能解析，但**在 shell 里手工拼这个连接串时要用单引号**，
 > 否则 bash 的 history expansion 会吃掉它。
 
+### 2.2c 出站 TLS 证书：**全部公网可信，不需要 CA bundle**（2026-08-20 实测）
+
+用 `certifi` 的信任库（= 干净镜像里 httpx 默认用的那份，**刻意不用本机 OS 信任库**，
+否则公司电脑装了内网 CA 会给出假的「可信」）逐个握手：
+
+| 域名 | 签发者 | 到期 | 用途 |
+|---|---|---|---|
+| `betabts.cn.ndhy.com` | ZeroSSL GmbH | 2026-10-13 | BTS 取 token + 业务调用 |
+| `uc-gateway.beta.cn.ndhy.com` | ZeroSSL GmbH | 2026-10-12 | UC 鉴权 |
+| `uc-component.beta.cn.ndhy.com` | ZeroSSL GmbH | 2026-10-12 | UC 组件 |
+| `ai-manager-v2.beta.ndaeweb.com` | TrustAsia | 2027-03-12 | 用户画像 / 记忆 |
+| `e-ai-frontend.beta.ndaeweb.com` | TrustAsia | 2027-03-12 | `E_AI_SPACE` |
+| `ai-gateway.aiae.ndhy.com` | TrustAsia | 2026-11-02 | LLM 网关 |
+| `voced-position-kg.beta.ndaeweb.com` | TrustAsia | 2027-03-12 | **本服务准备绑的域名** |
+
+**结论：`VERIFY_TLS` 保持默认 `1`、`TLS_CA_BUNDLE` 不用配。**（§2.2b 的 B2 解除。）
+本地 `.env` 里那个 `VERIFY_TLS=0` 是历史遗留，**不要抄到预生产**。
+
+> 复查节奏：ZeroSSL 那三张 2026-10 到期。证书换发不需要我们改配置（公网 CA 链不变），
+> 但如果某天换成内网自签，症状是**所有出站调用突然 SSL 错误**——届时才需要 `TLS_CA_BUNDLE`。
+
+### 2.2d 跨域怎么配（域名 `https://voced-position-kg.beta.ndaeweb.com`）
+
+当前 `main.py` 的 CORS kwargs 是 `allow_credentials=True` + `allow_methods/headers/expose_headers=["*"]`，
+CORS 中间件最后 add（包在鉴权外层）。**实测结论如下。**
+
+#### 自定义请求头：已经全支持，不用改代码
+
+Starlette 的 `allow_headers=["*"]` 语义是**回显浏览器 `Access-Control-Request-Headers` 里的那些头**，
+不是回一个字面 `*`，所以它与 `allow_credentials=True` 兼容（不像 `allow_origins=["*"]` 会冲突）。
+实测预检：
+
+```
+Access-Control-Request-Headers: authorization,sdp-app-id,sdp-biz-type,x-request-id,content-type
+→ 200
+  Access-Control-Allow-Headers: authorization,sdp-app-id,sdp-biz-type,x-request-id,content-type
+  Access-Control-Allow-Credentials: true
+  Access-Control-Allow-Methods: DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT
+  Access-Control-Max-Age: 600
+  Vary: Origin
+```
+
+`sdp-app-id` / `sdp-biz-type` 原样通过。**新增任何 `sdp-*` / `x-*` 头都不需要改服务端**——
+这正是用 `*` 而不是枚举白名单的好处：对方加一个头我们不用跟着发版。
+
+服务端自己也读 `sdp-app-id`（`api/auth.py:189`、`uc/client.py`、`bts/client.py`），口径一致。
+
+#### `CORS_ORIGINS` 填什么：**四种写错的方式，全都静默失败**
+
+`allow_origins` 是**字符串精确相等**匹配 `Origin` 请求头，而 `Origin` 头永远是
+`scheme://host[:port]`——没有路径、没有结尾斜杠。实测（照搬 `main.py` 的 kwargs 逻辑）：
+
+| `CORS_ORIGINS` | 预检 | 结果 |
+|---|---|---|
+| `*` | 200 | ✅ 走 `allow_origin_regex=".*"`，回显具体 Origin |
+| `https://voced-position-kg.beta.ndaeweb.com` | 200 | ✅ **正确写法** |
+| `https://voced-position-kg.beta.ndaeweb.com/` | **400** | ★ 多一个斜杠就不匹配 |
+| `voced-position-kg.beta.ndaeweb.com` | **400** | ★ 少了 scheme |
+| `http://voced-position-kg.beta.ndaeweb.com` | **400** | ★ scheme 不同算不同 origin |
+| `https://a.example.com,https://b.example.com` | 200 | ✅ 逗号分隔多个 |
+
+失败时**响应里干脆没有 `Access-Control-Allow-Origin`**，浏览器只报「跨域」，
+看不到「你把域名写错了」——所以这一格是"要么对、要么查半天"。
+
+#### 关键一问：`CORS_ORIGINS` 要填的是**前端的 origin**，不是 API 自己的域名
+
+同源请求不走 CORS。`https://voced-position-kg.beta.ndaeweb.com` 是**API 的**域名：
+
+- 如果学员端/管理台页面也部署在这个域名下（同源）→ **CORS 根本不参与**，
+  `CORS_ORIGINS` 填什么都无所谓。但预生产 `SERVE_DEV_UI=0`，本服务不吐页面，
+  所以只有把前端静态资源也挂到同一域名（不同路径）才成立。
+- 如果前端在别的域名（大概率）→ **要填前端那个 origin**，把 API 自己的域名填进去没有用。
+
+> **待确认：前端页面部署在哪个域名？** 这决定 `CORS_ORIGINS` 的值。
+> 域名没定之前先留 `*` 是可以的（当前就是），定了立刻收窄。
+
+#### 收窄前值得知道的风险量级
+
+现在 `*` + `allow_credentials=True` 会回显任意 Origin 并允许带凭据。听起来很危险，
+但本服务的身份是 `Authorization: MAC …`，**由前端 JS 主动加，不是 cookie 自动携带**——
+恶意站点拿不到别人的 token，所以实际可利用面比"允许所有来源 + cookie"小得多。
+仍然建议收窄：`allow_credentials=True` 同时也允许 cookie 通道，且这是预生产。
+
+#### 两个还没验证的点（绑域名后必须验）
+
+1. **Kong / ingress 会不会自己也加一份 CORS 头。** API 网关常自带 CORS 插件，
+   两份 `Access-Control-Allow-Origin` 会让浏览器直接拒收（规范要求恰好一个）。
+   绑完域名用 `curl -i -X OPTIONS -H "Origin: …" -H "Access-Control-Request-Method: GET"`
+   打真实域名，**数一下 ACAO 出现了几次**。
+2. **预检会不会被网关拦在到达应用之前。** 本服务已经把 CORS 放在鉴权外层（`main.py:160` 那段
+   注释说明了为什么），但如果 Kong 上还有一层鉴权插件，不带 `Authorization` 的 OPTIONS
+   可能在网关就被 401，应用侧的正确配置根本没机会生效。
+
 ### 2.3 两个操作层面的坑（已在记忆里，这里重申）
 
 - **`sdp config update` 有 bug**（0.3.4 / 0.4.0 / 0.4.1 均未修），症状 `envId may not be empty`。
