@@ -13,13 +13,30 @@ from typing import Any
 from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.config import (
     attrs_level_int,
-    edge_published,
+    edge_not_archived,
     node_not_archived,
     prefer_draft,
+    prefer_draft_edge,
 )
 from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
 
-_EP = edge_published("e")
+def _ep(alias: str = "e") -> str:
+    """【管理台】边可见性 —— **本文件所有边过滤都走它**。
+
+    这个文件只服务 `GET /v1/kg/node-detail`，契约写的是「可见状态：published +
+    draft + disabled；archived 不返回」。节点那边确实是这么做的（`_NODE_VISIBLE`），
+    边却一直用 `edge_published`（前台口径），两边不一致。后果：新建的专业只有草稿行、
+    关联也只有草稿边，详情里「所属行业」永远是空的 —— 看着像「关联没存进去」，
+    而库里的边是好的；管理台改关联同理，存了看不见、要发布才出现。
+
+    必须跟一个 `prefer_draft_edge`：管理台口径对草稿行与线上行**同时成立**，
+    不去重同一条边会出现两次 —— 用在 `count(DISTINCT …)` / `sum(weight)` 上就是
+    技能数与权重和翻倍。
+    """
+    return f"{edge_not_archived(alias)} AND {prefer_draft_edge(alias)}"
+
+
+_EP = _ep("e")
 # 管理台口径（`<> 'archived'`）对草稿行也成立，所以每处都要跟一个 prefer_draft，
 # 否则同一条数据在关联列表里出现两次。这里合成一个常量：本文件 12 处 JOIN 共用它，
 # 分开写迟早漏一处 —— 这个项目已经因为「同一判定各写一份」栽过四次。
@@ -108,7 +125,7 @@ def _industry_detail(conn, iid: str) -> dict[str, Any]:
         FROM kg_edge e
         JOIN kg_node n ON n.id = e.src_id AND n.type='major' AND {_NODE_VISIBLE}
         LEFT JOIN kg_edge pe ON pe.src_id = n.id AND pe.rel_type='prepares_for'
-             AND {edge_published('pe')}
+             AND {_ep('pe')}
         LEFT JOIN kg_node o ON o.id = pe.dst_id AND o.type='occupation'
         WHERE e.dst_id = %s AND e.rel_type='belongs_to' AND {_EP}
         GROUP BY n.id, n.name, n.status, n.attrs
@@ -160,7 +177,7 @@ def _major_detail(conn, mid: str) -> dict[str, Any]:
         FROM kg_edge e
         JOIN kg_node n ON n.id = e.dst_id AND n.type='occupation' AND {_NODE_VISIBLE}
         LEFT JOIN kg_edge re ON re.src_id = n.id AND re.rel_type='requires'
-             AND {edge_published('re')}
+             AND {_ep('re')}
         WHERE e.src_id = %s AND e.rel_type='prepares_for' AND {_EP}
         GROUP BY n.id, n.name, n.status, n.level, n.attrs
         ORDER BY n.level NULLS LAST, n.name

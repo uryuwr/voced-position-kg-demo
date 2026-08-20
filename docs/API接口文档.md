@@ -2504,6 +2504,9 @@ industry 节点 + parent_of 边（父→子）。
 | `source_url` | string |  | 溯源链接（可选）。无则服务端可填 manual://admin |
 | `confidence` | string |  | 置信度。取值建议：official=官方 \| derived=规则派生 \| ai_inferred=模型推断 \| manual_seed=人工录入（默认）（默认 `manual_seed`） |
 | `status` | `draft` \| `published` \| `archived` \| `disabled` |  | 发布状态。draft=草稿（默认，可进审核）\| published=已发布可见 \| archived=归档不可用（默认 `draft`） |
+| `industry_ids` | string[] |  | 关联行业 id 列表（专业用：major -belongs_to→ industry） |
+| `major_ids` | string[] |  | 关联专业 id 列表（岗位用：major -prepares_for→ occupation） |
+| `occupation_ids` | string[] |  | 关联岗位 id 列表。技能用（occupation -requires→ skill）；专业也可用（major -prepares_for→ occupation） |
 
 ### NodeDetailOut
 
@@ -2553,6 +2556,9 @@ industry 节点 + parent_of 边（父→子）。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
+| `industry_ids` | string[] |  | 覆盖关联行业（专业用）；空列表=清空 |
+| `major_ids` | string[] |  | 覆盖关联专业（岗位用）；空列表=清空 |
+| `occupation_ids` | string[] |  | 覆盖关联岗位（技能 / 专业用）；空列表=清空 |
 | `name` | string |  | 新名称（可选） |
 | `name_en` | string |  | 新英文名（可选） |
 | `name_zh` | string |  | 新中文名（可选） |

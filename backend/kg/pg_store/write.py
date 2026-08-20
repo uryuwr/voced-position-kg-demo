@@ -249,6 +249,12 @@ def apply_node_links(
         # major -belongs_to→ industry
         if "industry_ids" in link_ids:
             plans.append(("industry", "belongs_to", link_ids["industry_ids"], True))
+        # major -prepares_for→ occupation：**专业侧也要能挂岗位**。
+        # 原来只有岗位侧的 `major_ids`，专业编辑传 `occupation_ids` 会走到
+        # extract_link_ids 拿到值、这里没有对应 plan，于是 HTTP 200、零条边 ——
+        # 同一条 `prepares_for` 边，从哪一端维护都该成立
+        if "occupation_ids" in link_ids:
+            plans.append(("occupation", "prepares_for", link_ids["occupation_ids"], True))
     elif ntype == "occupation":
         # major -prepares_for→ occupation  （对方是 src）
         if "major_ids" in link_ids:

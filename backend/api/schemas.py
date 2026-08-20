@@ -831,11 +831,39 @@ class NodeCreate(BaseModel):
             "published=已发布可见 | archived=归档不可用"
         ),
     )
+    # 关联关系的简化写法，服务端自动建边（`write.apply_node_links`），
+    # 客户端不必自己拼 edge。**必须在这里声明**：Pydantic 默认 `extra="ignore"`，
+    # 少一个字段就是「传了也当没传」——`POST /v1/kg/nodes` 曾经因此静默丢掉
+    # `industry_ids`，返回 200、库里零条边，看着像详情接口没返回。
+    # 语义：键缺席=不动这类关联；键在但空列表=清空（见 `write.extract_link_ids`）
+    industry_ids: list[str] | None = Field(
+        None, description="关联行业 id 列表（专业用：major -belongs_to→ industry）"
+    )
+    major_ids: list[str] | None = Field(
+        None, description="关联专业 id 列表（岗位用：major -prepares_for→ occupation）"
+    )
+    occupation_ids: list[str] | None = Field(
+        None,
+        description=(
+            "关联岗位 id 列表。技能用（occupation -requires→ skill）；"
+            "专业也可用（major -prepares_for→ occupation）"
+        ),
+    )
 
 
 class NodePatch(BaseModel):
     """编辑节点请求体。全部可选，只传需要修改的字段。"""
 
+    # 同 NodeCreate：不声明就等于不支持改关联（静默丢弃，不报错）
+    industry_ids: list[str] | None = Field(
+        None, description="覆盖关联行业（专业用）；空列表=清空"
+    )
+    major_ids: list[str] | None = Field(
+        None, description="覆盖关联专业（岗位用）；空列表=清空"
+    )
+    occupation_ids: list[str] | None = Field(
+        None, description="覆盖关联岗位（技能 / 专业用）；空列表=清空"
+    )
     name: str | None = Field(None, description="新名称（可选）")
     name_en: str | None = Field(None, description="新英文名（可选）")
     name_zh: str | None = Field(None, description="新中文名（可选）")
