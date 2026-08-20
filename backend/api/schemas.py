@@ -1196,14 +1196,23 @@ class SharedSkill(BaseModel):
             "拿它渲染就是一串哈希（能力全景页的共享技能 chip 踩过）"
         ),
     )
-    name: str | None = Field(None, description="技能名（同 skill_name，历史字段）")
     category: str | None = Field(None, description="技能大类 code，见 /v1/kg/skill-categories")
     category_name: str | None = Field(None, description="技能大类展示名（由 code 派生，不入库）")
-    occupation_count: int | None = Field(
-        None, ge=0, description="有多少个对口岗位要求它"
+    # 这里原来声明的是 `occupation_count`，而生产者（query.py 的 shared_skills）发的是
+    # `occ_count` —— 前者恒为 null，真实计数靠 `extra="allow"` 从未声明的字段漏出去，
+    # 前端读的也正是 `occ_count`。**契约上写的字段名和实际发的不是一个**，
+    # /docs 照着写的人会拿到 null。按实际发送的改名。
+    # 同时删掉两个从未被填过的字段：`name`（与 skill_name 装同一个值）与
+    # `max_required_level`（生产者没有这个概念）—— 声明了却永远是 null 的字段
+    # 比不声明更坏：前端会以为拿不到值是数据问题。
+    occ_count: int | None = Field(
+        None, ge=0, description="有多少个对口岗位共同要求它；命中越多越是「专业基本功」"
     )
-    max_required_level: int | None = Field(
-        None, ge=1, le=5, description="这些岗位里要求最高的档 1–5"
+    levels: list[str] = Field(
+        default_factory=list, description="这些岗位要求到的档位码（如 L2 / L3）"
+    )
+    occupation_ids: list[str] = Field(
+        default_factory=list, description="要求它的岗位 id，供前端点开定位"
     )
 
 
