@@ -43,7 +43,13 @@ def search_industries(
             f"""
             SELECT n.id, n.name, n.region,
                    count(DISTINCT m.id) AS major_count,
-                   count(DISTINCT o.id) AS occupation_count
+                   -- 岗位数 = 经专业两跳的 + **直接挂在行业下的**，按 id 去重。
+                   -- 只算两跳时「互联网/AI」显示 occupation_count=0，而它下面
+                   -- 直接挂着 274 个岗位 —— 149 个行业里 89 个是这种形态（六成），
+                   -- 下拉框里全显示「0 个岗位」。
+                   -- 注意别在 SQL 注释里写百分号：psycopg 会把它当占位符，
+                   -- 报的还是个 UnicodeDecodeError，完全看不出是注释的问题。
+                   count(DISTINCT COALESCE(o.id, od.id)) AS occupation_count
             FROM kg_node n
             LEFT JOIN kg_edge be ON be.dst_id = n.id AND be.rel_type = 'belongs_to'
                  AND {EP_BE}
@@ -53,6 +59,9 @@ def search_industries(
                  AND {EP_PE}
             LEFT JOIN kg_node o ON o.id = pe.dst_id AND o.type = 'occupation'
                  AND COALESCE(o.status,'published') = 'published'
+            -- 同一条 belongs_to 边的 src 可能是专业也可能是岗位，所以复用 be 即可
+            LEFT JOIN kg_node od ON od.id = be.src_id AND od.type = 'occupation'
+                 AND COALESCE(od.status,'published') = 'published'
             WHERE n.type = 'industry' AND {_PUB_N}
               AND (%s::text IS NULL OR n.region = %s)
               AND (%s = '%%%%' OR n.name ILIKE %s)
@@ -163,6 +172,48 @@ def industry_graph(
                 )
                 o["major_ids"].append(r["major_id"])
                 links.append({"from": r["major_id"], "to": r["id"], "rel": "prepares_for"})
+
+        # 直接挂在行业下的岗位（occupation -belongs_to-> industry），不经专业。
+        #
+        # 缺了这段，149 个行业里有 **89 个的行业图是全空的**（占 60%）：BOSS 那套
+        # 行业下直接挂岗位、一个专业都没有，而上面只查 type='major' 的子节点，
+        # 专业查出 0 个，岗位又是从专业两跳来的，于是 layers 全空、页面只剩一个孤零零
+        # 的行业圆点。「互联网/AI」下面明明直接挂着 274 个岗位。
+        direct_total = conn.execute(
+            f"""SELECT count(DISTINCT n.id) c FROM kg_edge be
+                JOIN kg_node n ON n.id = be.src_id AND n.type='occupation' AND {_PUB_N}
+                WHERE be.dst_id = %s AND be.rel_type='belongs_to' AND {EP_BE}""",
+            (iid,),
+        ).fetchone()["c"]
+        if direct_total:
+            # 取前 N 个：按技能数倒序（技能多的更有代表性），与经专业那条口径一致。
+            # 上限用 limit_majors × limit_occupations_per_major，让「有专业」与
+            # 「无专业」两种行业的画布规模大致相当。
+            cap = max(limit_majors * limit_occupations_per_major, limit_occupations_per_major)
+            for r in conn.execute(
+                f"""
+                SELECT n.id, n.name, n.level, n.region,
+                       count(DISTINCT re.dst_id) AS skill_count
+                FROM kg_edge be
+                JOIN kg_node n ON n.id = be.src_id AND n.type='occupation' AND {_PUB_N}
+                LEFT JOIN kg_edge re ON re.src_id = n.id AND re.rel_type='requires'
+                     AND {EP_RE}
+                WHERE be.dst_id = %s AND be.rel_type='belongs_to' AND {EP_BE}
+                GROUP BY n.id, n.name, n.level, n.region
+                ORDER BY count(DISTINCT re.dst_id) DESC, n.name
+                LIMIT %s
+                """,
+                (iid, cap),
+            ).fetchall():
+                if r["id"] in occs:
+                    continue  # 已经从专业那条路进来了，别重复
+                occs[r["id"]] = {
+                    "id": r["id"], "name": r["name"], "level": r["level"],
+                    "region": r["region"], "skill_count": int(r["skill_count"] or 0),
+                    "major_ids": [],
+                }
+                links.append({"from": iid, "to": r["id"], "rel": "belongs_to"})
+            occ_total += direct_total
 
         occ_ids = list(occs)
         # 晋升链：只保留两端都在当前画布内的边
