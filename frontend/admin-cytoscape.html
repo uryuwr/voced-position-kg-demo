@@ -1121,7 +1121,7 @@
       panel.hidden = false;
       $("spSub").textContent = `${list.length} 项`;
       $("spBody").innerHTML = list.slice(0, 40).map((s, i) =>
-        `<div class="sp-item${sharedSel === s.skill_key ? " on" : ""}" data-sp="${i}" title="${esc(s.skill_key)}">`
+        `<div class="sp-item${sharedSel === s.skill_key ? " on" : ""}" data-sp="${i}" title="${esc(s.skill_name || s.skill_key)}">`
         + `<span class="nm">${esc(s.skill_name || s.skill_key)}</span><span class="ct">×${s.occ_count}</span></div>`).join("");
       $("spBody").querySelectorAll("[data-sp]").forEach((el) => {
         el.onclick = () => {

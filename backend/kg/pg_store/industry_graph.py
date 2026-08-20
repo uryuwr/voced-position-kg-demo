@@ -10,7 +10,7 @@ from typing import Any
 
 from backend.kg.pg_store.client import connect
 from backend.kg.pg_store.config import DEFAULT_REGION, edge_published
-from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL
+from backend.kg.pg_store.skill_aggregate import SKILL_KEY_SQL, SKILL_NAME_SQL
 from backend.kg.pg_store.skill_taxonomy import (
     FALLBACK_CODE,
     category_rank,
@@ -233,13 +233,18 @@ def occupation_skills_graph(
 
         rows = conn.execute(
             f"""
-            SELECT ({SKILL_KEY_SQL}) AS skill_key, n.category,
+            SELECT ({SKILL_KEY_SQL}) AS skill_key,
+                   min({SKILL_NAME_SQL}) AS skill_name, n.category,
                    array_agg(DISTINCT (n.attrs::json->>'level_code')) AS levels
             FROM kg_edge e JOIN kg_node n ON n.id = e.dst_id
             WHERE e.src_id=%s AND e.rel_type='requires' AND {EP_E}
               AND n.type='skill_level' AND {_PUB_N}
-            GROUP BY 1, 2
-            ORDER BY 1
+            -- **按表达式分组，不用位置序号**：原来写 `GROUP BY 1, 2`，
+            -- 在 SELECT 第 2 位插一列（skill_name）之后，2 就指到聚合函数上，
+            -- PG 直接报 "aggregate functions are not allowed in GROUP BY"。
+            -- 位置序号让 SELECT 列表的顺序变成隐式契约，加列就炸。
+            GROUP BY ({SKILL_KEY_SQL}), n.category
+            ORDER BY ({SKILL_KEY_SQL})
             LIMIT %s
             """,
             (occupation_id, limit),
@@ -259,6 +264,11 @@ def occupation_skills_graph(
             groups.setdefault(cat, []).append(
                 {
                     "skill_key": k,
+                    # 展示名：key 是 SKxxxxxxxxxx，图上每个技能节点的标签用这个。
+                    # `name` 是这个出参里既有的字段名（响应模型 SkillNodeOut 用它），
+                    # 两个都给，前端不用改字段名也能立刻显示中文
+                    "name": r["skill_name"] or k,
+                    "skill_name": r["skill_name"] or k,
                     "levels": sorted([x for x in (r["levels"] or []) if x]),
                 }
             )

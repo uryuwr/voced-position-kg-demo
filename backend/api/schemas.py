@@ -1073,8 +1073,17 @@ class SkillNodeBrief(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    skill_key: str | None = Field(None, description="技能聚合主键")
-    name: str | None = Field(None, description="技能名")
+    skill_key: str | None = Field(
+        None, description="技能聚合主键（ASCII code，形如 SK0123456789）"
+    )
+    name: str | None = Field(
+        None,
+        description=(
+            "技能展示名 —— **图上的节点标签用这个**。`skill_key` 从 2026-08-19 起是"
+            "code，拿它当标签就是一串哈希"
+        ),
+    )
+    skill_name: str | None = Field(None, description="同 `name`，与其它接口对齐的别名")
     depth: int | None = Field(
         None, ge=0, description="前置层深；0 表示无前置，可直接学"
     )

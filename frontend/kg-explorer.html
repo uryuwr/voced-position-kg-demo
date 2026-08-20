@@ -378,7 +378,7 @@
       const COL_W = 260, ROW_H = 64;
       d.categories.forEach((g, gi) => {
         const gid = "g" + gi;
-        els.push({ data: { id: gid, label: `${gi + 1}. ${g.key}（${g.skills.length}）` }, classes: "grp" });
+        els.push({ data: { id: gid, label: `${gi + 1}. ${g.name || g.key}（${g.skills.length}）` }, classes: "grp" });
         const bx = 150 + gi * COL_W;
         // 同一 depth 的技能在区内并排，避免纵向拉太长
         const seen = {};
@@ -387,7 +387,7 @@
           const k = (seen[dep] = (seen[dep] || 0) + 1) - 1;
           els.push({
             data: { id: s.skill_key, parent: gid,
-                    label: s.skill_key + (s.levels.length ? " " + s.levels.join("/") : "") },
+                    label: (s.name || s.skill_name || s.skill_key) + (s.levels.length ? " " + s.levels.join("/") : "") },
             position: { x: bx + k * 116, y: 120 + dep * ROW_H },
           });
         });
