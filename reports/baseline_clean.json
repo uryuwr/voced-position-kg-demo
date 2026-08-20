@@ -1,22 +1,7 @@
 {
-  "test_fixture": {
-    "desc": "测试 fixture：E2E/单测遗留，已扩散到真实岗位的技能构成上",
+  "manual_unpublished": {
+    "desc": "联调残留：手工建（CN:manual:*）且未发布",
     "how": "delete",
-    "count": 14
-  },
-  "url_encoded_name": {
-    "desc": "名字里带 URL 编码：前端双重编码后建出来的幽灵记录",
-    "how": "delete",
-    "count": 20
-  },
-  "parse_noise": {
-    "desc": "表格解析噪声：不是技能/岗位，是原表的合计行与表头",
-    "how": "delete",
-    "count": 30
-  },
-  "occupation_as_skill": {
-    "desc": "职业名被当成技能：与岗位同名**且**以「人」的后缀结尾",
-    "how": "archive",
-    "count": 4
+    "count": 3
   }
 }

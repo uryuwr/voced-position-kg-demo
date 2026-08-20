@@ -21,7 +21,12 @@
   },
   "too_vague_skill": {
     "desc": "疑似过泛：名字 ≤2 字，且整个逻辑技能（全部档位）都没有岗位引用",
-    "count": 30,
+    "count": 0,
+    "sample": []
+  },
+  "manual_unpublished": {
+    "desc": "联调残留：手工建（CN:manual:*）且未发布",
+    "count": 0,
     "sample": []
   },
   "empty_name": {
