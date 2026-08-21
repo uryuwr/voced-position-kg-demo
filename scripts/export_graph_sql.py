@@ -86,13 +86,19 @@ ALIAS = {"kg_node": "n", "kg_edge": "e", "kg_skill_prereq": "p"}
 ORDER = {"kg_node": "n.id", "kg_edge": "e.id", "kg_skill_prereq": "p.skill_key, p.prereq_skill_key"}
 
 
-def psql(db: str, sql: str, container: str) -> str:
+# 生成的 SQL 语句**内部带换行**（每行一个值组，见 gen_table 的说明），所以不能再按
+# 行切分 psql 的输出 —— 用一个数据里绝不会出现的记录分隔符（psql 的 -R）。
+_REC = "\x1e@@STMT@@\x1e"
+
+
+def psql(db: str, sql: str, container: str, sep: str | None = None) -> str:
     """在容器里跑 psql，取无表头无对齐的原始输出。"""
-    r = subprocess.run(
-        ["docker", "exec", "-i", container, "psql", "-U", "voced", "-d", db,
-         "-A", "-t", "--no-psqlrc", "-v", "ON_ERROR_STOP=1", "-c", sql],
-        capture_output=True, text=True, encoding="utf-8",
-    )
+    cmd = ["docker", "exec", "-i", container, "psql", "-U", "voced", "-d", db,
+           "-A", "-t", "--no-psqlrc", "-v", "ON_ERROR_STOP=1"]
+    if sep is not None:
+        cmd += ["-R", sep]
+    cmd += ["-c", sql]
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
     if r.returncode != 0:
         raise SystemExit(f"psql 失败：{r.stderr[:600]}")
     return r.stdout
@@ -127,6 +133,10 @@ def gen_table(db: str, table: str, batch: int, container: str) -> tuple[list[str
     # 不在 Python 里手写转义（那是最容易出错的地方）
     tuple_expr = "format('(' || " + " || ',' || ".join([f"'%L'" for _ in cols]) + " || ')', " \
                  + ", ".join(f"{a}.{c}" for c in cols) + ")"
+    # **每个值组单独一行**（`,` + chr(10)）。第一版把一条 INSERT 写成一整行，
+    # 200 行数据挤成 224 KB 的单行 —— SDP 的 DB 管理台在第一条 INSERT 上就失败
+    # （总数 61、成功 2 = 只有两条 SET 过了）。Web 端的 SQL 执行器普遍对单语句/单行
+    # 长度有上限，所以既要缩小批次，也要把长行拆开：现在最长行 ≈ 一行数据的长度。
     sql = f"""
         WITH rows AS (
           SELECT {tuple_expr} AS v,
@@ -134,13 +144,13 @@ def gen_table(db: str, table: str, batch: int, container: str) -> tuple[list[str
           FROM {table} {a}
           WHERE {WHERE[table]}
         )
-        SELECT 'INSERT INTO {table} ({", ".join(cols)}) VALUES '
-               || string_agg(v, ',' ORDER BY v)
-               || ' ON CONFLICT DO NOTHING;'
+        SELECT 'INSERT INTO {table} ({", ".join(cols)}) VALUES' || chr(10) || '  '
+               || string_agg(v, ',' || chr(10) || '  ' ORDER BY v)
+               || chr(10) || 'ON CONFLICT DO NOTHING;'
         FROM rows GROUP BY grp ORDER BY grp
     """
-    out = psql(db, sql, container)
-    stmts = [s for s in out.split("\n") if s.strip().startswith("INSERT INTO")]
+    out = psql(db, sql, container, sep=_REC)
+    stmts = [s.strip() for s in out.split(_REC) if s.strip().startswith("INSERT INTO")]
     n = int(psql(db, f"SELECT count(*) FROM {table} {a} WHERE {WHERE[table]}", container).strip())
     return stmts, n
 
@@ -167,8 +177,9 @@ def main() -> int:
     ap.add_argument("--db", default="voced_kg", help="源库名（基准库 voced_kg / 开发库 voced_kg_dev）")
     ap.add_argument("--container", default="voced-pg")
     ap.add_argument("--out", default="out")
-    ap.add_argument("--batch", type=int, default=200, help="每条 INSERT 多少行")
-    ap.add_argument("--max-mb", type=float, default=8.0, help="单个 .sql 文件上限（MB）")
+    ap.add_argument("--batch", type=int, default=50,
+                    help="每条 INSERT 多少行。**别调大**：管理台对单语句长度有上限")
+    ap.add_argument("--max-mb", type=float, default=4.0, help="单个 .sql 文件上限（MB）")
     args = ap.parse_args()
 
     when = psql(args.db, "SELECT now()::timestamp(0)", args.container).strip()
