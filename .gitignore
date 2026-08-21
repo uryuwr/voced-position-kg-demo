@@ -105,3 +105,6 @@ data/graph/*.sqlite.bak*
 # 那份 md 有 10 万字符，整篇写不进飞书 API，得按二级标题切块逐块写，
 # 切出来的块是纯中间态 —— 真源是 openapi.json，块随时可重新生成。
 /.lark_sync_tmp/
+
+# 导出的图数据 .sql（38 MB 数据产物，用 scripts/export_graph_sql.py 随时重生成）
+out/
